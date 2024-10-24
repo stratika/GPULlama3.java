@@ -1,0 +1,68 @@
+# Maven
+target/
+pom.xml.tag
+pom.xml.releaseBackup
+pom.xml.versionsBackup
+pom.xml.next
+release.properties
+dependency-reduced-pom.xml
+buildNumber.properties
+.mvn/timing.properties
+.mvn/wrapper/maven-wrapper.jar
+
+# model files
+*.gguf
+*.ggml
+*.bin
+
+# IDE - IntelliJ IDEA
+.idea/
+*.iws
+*.iml
+*.ipr
+
+# IDE - Eclipse
+.settings/
+.classpath
+.project
+.factorypath
+bin/
+.metadata/
+.settings/
+.loadpath
+
+# IDE - VS Code
+.vscode/
+.code-workspace
+
+# Java
+*.class
+*.log
+*.jar
+*.war
+*.nar
+*.ear
+*.zip
+*.tar.gz
+*.rar
+hs_err_pid*
+replay_pid*
+
+# OS specific
+.DS_Store
+Thumbs.db
+Desktop.ini
+
+# Misc
+*.swp
+*.bak
+*.tmp
+*.temp
+log/
+logs/target/
+.idea/
+*.iml
+.settings/
+.project
+.classpath
+.vscode/
