@@ -34,15 +34,6 @@ public final class ModelLoader {
 
     private static final String LLAMA_3_PATTERN = "(?i:'s|'t|'re|'ve|'m|'ll|'d)|[^\\r\\n\\p{L}\\p{N}]?\\p{L}+|\\p{N}{1,3}| ?[^\\s\\p{L}\\p{N}]+[\\r\\n]*|\\s*[\\r\\n]+|\\s+(?!\\S)|\\s+";
 
-    //    private static Vocabulary loadVocabulary(Map<String, Object> metadata) {
-    //        String model = (String) metadata.get("tokenizer.ggml.model");
-    //        if (!TOKENIZER_LLAMA_3_MODEL.equals(model)) {
-    //            throw new IllegalArgumentException("expected " + TOKENIZER_LLAMA_3_MODEL + " but found " + model);
-    //        }
-    //        String[] tokens = (String[]) metadata.get("tokenizer.ggml.tokens");
-    //        return new Vocabulary(tokens, null);
-    //    }
-
     public static Llama loadModel(Path ggufPath, int contextLength, boolean loadWeights) throws IOException {
         GGUF gguf = GGUF.loadModel(ggufPath);
         FileChannel fileChannel = FileChannel.open(ggufPath, StandardOpenOption.READ);

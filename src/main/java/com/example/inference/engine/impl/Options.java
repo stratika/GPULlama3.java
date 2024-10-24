@@ -11,7 +11,7 @@ public record Options(Path modelPath, String prompt, String systemPrompt, boolea
 
     public Options {
         require(modelPath != null, "Missing argument: --model <path> is required");
-        require(interactive || prompt != null, "Missing argument: --prompt is required in --instruct mode e.g. --prompt \"Why is the sky blue?\"");
+        require(interactive || prompt != null, "Missing argument: --prompt is required in --instruct mode e.g. --prompt \"Why is the sky blue?\"" );
         require(0 <= temperature, "Invalid argument: --temperature must be non-negative");
         require(0 <= topp && topp <= 1, "Invalid argument: --top-p must be within [0, 1]");
     }
@@ -50,11 +50,11 @@ public record Options(Path modelPath, String prompt, String systemPrompt, boolea
     }
 
     public static Options parseOptions(String[] args) {
-        String prompt = null;
+        String prompt = "Tell me a joke"; // Hardcoded for testing
         String systemPrompt = null;
         float temperature = 0.1f;
         float topp = 0.95f;
-        Path modelPath = null;
+        Path modelPath = Path.of("Llama-3.2-1B-Instruct-Q8_0.gguf"); // Harcoded for testings
         long seed = System.nanoTime();
         // Keep max context length small for low-memory devices.
         int maxTokens = DEFAULT_MAX_TOKENS;
