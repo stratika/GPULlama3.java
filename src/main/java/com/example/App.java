@@ -19,6 +19,8 @@ import java.util.random.RandomGeneratorFactory;
 
 
 public class App {
+    public static final boolean USE_VECTOR_API = Boolean.parseBoolean(System.getProperty("llama.VectorAPI", "true"));
+    public static final boolean USE_AOT = Boolean.parseBoolean(System.getProperty("llama.AOT", "false"));
 
     static Sampler selectSampler(int vocabularySize, float temperature, float topp, long rngSeed) {
         Sampler sampler;
@@ -125,13 +127,12 @@ public class App {
         }
     }
 
-
-
     public static void main(String[] args) throws IOException {
         Options options = Options.parseOptions(args);
-        Llama model = AOT.tryUsePreLoaded(options.modelPath(), options.maxTokens());
-        if (model == null) {
-            // No compatible preloaded model found, fallback to fully parse and load the specified file.
+        Llama model;
+        if (USE_AOT) {
+             model = AOT.tryUsePreLoaded(options.modelPath(), options.maxTokens());
+        } else  {
             model = ModelLoader.loadModel(options.modelPath(), options.maxTokens(), true);
         }
         Sampler sampler = selectSampler(model.configuration().vocabularySize, options.temperature(), options.topp(), options.seed());
@@ -140,7 +141,6 @@ public class App {
         } else {
             runInstructOnce(model, sampler, options);
         }
-
     }
 }
 

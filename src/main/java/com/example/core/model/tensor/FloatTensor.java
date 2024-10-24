@@ -17,11 +17,6 @@ import java.util.Arrays;
  * e.g. can represent a sequence of quantized floats.
  */
 public abstract class FloatTensor {
-    static final boolean USE_VECTOR_API = Boolean.parseBoolean(System.getProperty("llama.VectorAPI", "true"));
-
-    // static final ValueLayout.OfFloat JAVA_FLOAT_LE = ValueLayout.JAVA_FLOAT.withOrder(ByteOrder.LITTLE_ENDIAN);
-    // static final ValueLayout.OfShort JAVA_SHORT_LE = ValueLayout.JAVA_SHORT.withOrder(ByteOrder.LITTLE_ENDIAN);
-
 
     // The use of Unsafe in this file is a temporary workaround to support native-image.
     static final Unsafe UNSAFE;

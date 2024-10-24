@@ -1,5 +1,6 @@
 package com.example.core.model.tensor;
 
+import com.example.App;
 import com.example.core.model.GGMLType;
 import com.example.core.types.Float16;
 import jdk.incubator.vector.ByteVector;
@@ -66,7 +67,7 @@ public final class Q4_0FloatTensor extends FloatTensor {
 
     @Override
     public float dot(int thisOffset, FloatTensor that, int thatOffset, int size) {
-        if (FloatTensor.USE_VECTOR_API) {
+        if (App.USE_VECTOR_API) {
             return vectorDot(this, thisOffset, (ArrayFloatTensor) that, thatOffset, size);
         } else {
             return FloatTensor.scalarDot(this, thisOffset, that, thatOffset, size);

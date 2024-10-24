@@ -12,6 +12,8 @@ import java.lang.foreign.MemorySegment;
 import java.lang.foreign.ValueLayout;
 import java.nio.ByteOrder;
 
+import static com.example.App.USE_VECTOR_API;
+
 public final class Q8_0FloatTensor extends FloatTensor {
 
     final int size;
@@ -57,7 +59,7 @@ public final class Q8_0FloatTensor extends FloatTensor {
 
     @Override
     public float dot(int thisOffset, FloatTensor that, int thatOffset, int size) {
-        if (FloatTensor.USE_VECTOR_API) {
+        if (USE_VECTOR_API) {
             return vectorDot(this, thisOffset, (ArrayFloatTensor) that, thatOffset, size);
         } else {
             return FloatTensor.scalarDot(this, thisOffset, that, thatOffset, size);
