@@ -18,7 +18,7 @@ import java.util.random.RandomGenerator;
 import java.util.random.RandomGeneratorFactory;
 
 
-public class App {
+public class LlamaApp {
     public static final boolean USE_VECTOR_API = Boolean.parseBoolean(System.getProperty("llama.VectorAPI", "true"));
     public static final boolean USE_AOT = Boolean.parseBoolean(System.getProperty("llama.AOT", "false"));
 

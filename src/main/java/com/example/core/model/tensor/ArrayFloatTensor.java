@@ -6,7 +6,7 @@ import jdk.incubator.vector.VectorSpecies;
 
 import java.util.Arrays;
 
-import static com.example.App.USE_VECTOR_API;
+import static com.example.LlamaApp.USE_VECTOR_API;
 
 public final class ArrayFloatTensor extends FloatTensor {
 

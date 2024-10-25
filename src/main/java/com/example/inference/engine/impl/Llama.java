@@ -150,7 +150,7 @@ public record Llama(Configuration configuration, Tokenizer tokenizer, Weights we
         rmsnorm(state.x, state.x, weights.rms_final_weight, dim, config.rmsNormEps);
 
         // classifier into logits
-        weights.wcls.matmul(state.x, state.logits, config.vocabularySize, dim);
+        System.out.print("\nSizes " + state.x.size() + " logits " + state.logits.size() + " vocab size : " + config.vocabularySize + " dim: "  +dim + " \n");
 
         return state.logits;
     }

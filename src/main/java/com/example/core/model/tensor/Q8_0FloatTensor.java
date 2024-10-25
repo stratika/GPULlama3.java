@@ -12,7 +12,7 @@ import java.lang.foreign.MemorySegment;
 import java.lang.foreign.ValueLayout;
 import java.nio.ByteOrder;
 
-import static com.example.App.USE_VECTOR_API;
+import static com.example.LlamaApp.USE_VECTOR_API;
 
 public final class Q8_0FloatTensor extends FloatTensor {
 
@@ -70,6 +70,7 @@ public final class Q8_0FloatTensor extends FloatTensor {
         float result = 0f;
         int j = 0;
 
+//        System.out.print("XXXX  Using the q8 vectorized " );
         // Align thisOffset + startIndex to type().getBlockSize().
         assert Integer.bitCount(GGMLType.Q8_0.getBlockSize()) == 1 : "power of 2";
         int alignmentBound = Math.min(size, -thisOffset & (GGMLType.Q8_0.getBlockSize() - 1));
