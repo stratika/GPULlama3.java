@@ -11,7 +11,7 @@ public interface Timer extends AutoCloseable {
     }
 
     static Timer log(String label, TimeUnit timeUnit) {
-        return new Timer() {
+                return new Timer() {
             final long startNanos = System.nanoTime();
 
             @Override

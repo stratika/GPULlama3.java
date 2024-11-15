@@ -199,6 +199,7 @@ public final class GGUF {
         this.metadata_kv_count = Math.toIntExact(readLong(fileChannel)); // uint64_t metadata_kv_count;
         // The metadata key-value pairs.
         // gguf_metadata_kv_t metadata_kv[metadata_kv_count];
+
         this.metadata = HashMap.newHashMap(metadata_kv_count);
         for (int i = 0; i < metadata_kv_count; ++i) {
             Pair<String, Object> keyValue = readKeyValuePair(fileChannel);

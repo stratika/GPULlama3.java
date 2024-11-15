@@ -15,6 +15,8 @@ import com.example.inference.engine.impl.Llama;
 import com.example.inference.operation.RoPE;
 import com.example.tokenizer.impl.Tokenizer;
 import com.example.tokenizer.vocabulary.Vocabulary;
+import uk.ac.manchester.tornado.api.types.arrays.FloatArray;
+import uk.ac.manchester.tornado.api.types.tensors.TensorFP32;
 
 import java.io.IOException;
 import java.nio.ByteOrder;
@@ -136,12 +138,16 @@ public final class ModelLoader {
     public static FloatTensor loadQuantized(GGMLTensorEntry entry) {
         GGMLType ggmlType = entry.ggmlType();
         return switch (ggmlType) {
-            //case F32 -> new F32FloatTensor(FloatTensor.numberOfElements(entry.shape()), entry.memorySegment());
+//            case F32 -> new F32FloatTensor(FloatTensor.numberOfElements(entry.shape()), entry.memorySegment());
             case Q8_0 -> new Q8_0FloatTensor(FloatTensor.numberOfElements(entry.shape()), entry.memorySegment());
             case Q4_0 -> new Q4_0FloatTensor(FloatTensor.numberOfElements(entry.shape()), entry.memorySegment());
             default -> throw new UnsupportedOperationException("Quantization format " + ggmlType);
         };
     }
+
+//    public static TensorFP32[] loadArrayOfQuantizedAsTensor(int size, IntFunction<GGMLTensorEntry> getTensorEntry) {
+//
+//    }
 
     public static FloatTensor[] loadArrayOfQuantized(int size, IntFunction<GGMLTensorEntry> getTensorEntry) {
         FloatTensor[] array = new FloatTensor[size];
