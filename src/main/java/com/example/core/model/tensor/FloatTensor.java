@@ -39,7 +39,6 @@ public abstract class FloatTensor {
 
     static byte readByte(MemorySegment memorySegment, long offset) {
         // The MemorySegment.get* methods should be used instead.
-        memorySegment.get(ValueLayout.JAVA_BYTE, memorySegment.address() + offset);
         return UNSAFE.getByte(memorySegment.address() + offset);
     }
 
