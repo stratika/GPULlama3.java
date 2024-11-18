@@ -50,7 +50,7 @@ public record Options(Path modelPath, String prompt, String systemPrompt, boolea
     }
 
     public static Options parseOptions(String[] args) {
-        String prompt = "Tell me a joke"; // Hardcoded for testing
+        String prompt = "Tell me a story with Java"; // Hardcoded for testing
         String systemPrompt = null;
         float temperature = 0.1f;
         float topp = 0.95f;
