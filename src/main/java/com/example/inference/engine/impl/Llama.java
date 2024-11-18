@@ -6,6 +6,8 @@ import com.example.inference.Sampler;
 import com.example.loader.weights.State;
 import com.example.loader.weights.Weights;
 import com.example.tokenizer.impl.Tokenizer;
+import uk.ac.manchester.tornado.api.types.arrays.FloatArray;
+import uk.ac.manchester.tornado.api.types.tensors.TensorQ8;
 
 import java.nio.FloatBuffer;
 import java.util.ArrayList;
@@ -150,11 +152,54 @@ public record Llama(Configuration configuration, Tokenizer tokenizer, Weights we
         rmsnorm(state.x, state.x, weights.rms_final_weight, dim, config.rmsNormEps);
 
         // classifier into logits
-        weights.wcls.matmul(state.x, state.logits, config.vocabularySize, dim);
-        // wcls + x = logits
-        //        System.out.print("\nSizes " + state.x.size() + " logits " + state.logits.size() + " vocab size : " + config.vocabularySize + " dim: "  +dim + " \n");
+//        weights.wcls.matmul(state.x, state.logits, config.vocabularySize, dim);
+        // Tornado types host code      matmul(weights.wclsTornadoQ8, state.x, state.logits, config.vocabularySize, dim);
+
+        // Update state.x
+        state.wrapXFloat.getSegment().copyFrom(state.x.asMemorySegment());
+        matmul(weights.wclsTornadoQ8, state.wrapXFloat, state.wrapLogits, config.vocabularySize, dim);
+        state.logits.asMemorySegment().copyFrom(state.wrapLogits.getSegment());
+        // This should be replaced with a Tornado call
+
+        //
+        // state.x.size() -> 2048
+        // state.logits.size() -> 2048
+        // config.vocabularySize -> 128256
+        // dim -> 2048
 
         return state.logits;
+    }
+
+    public static float dot(TensorQ8 thisx,int thisOffset, FloatArray that, int thatOffset, int size) {
+        return scalarDot(thisx, thisOffset, that, thatOffset, size);
+    }
+
+    public static void matmul(TensorQ8 thisx, FloatArray that, FloatArray out, int dim0, int dim1) {
+        Parallel.parallelFor(0, dim0, i -> out.set(i, dot(thisx,i * dim1, that, 0, dim1)));
+    }
+
+   public static float scalarDot(TensorQ8 thiz, int thisOffset, FloatArray that, int thatOffset, int size) {
+        float result = 0f;
+        for (int j = 0; j < size; j++) {
+            result += thiz.getFloat(thisOffset + j) * that.get(thatOffset + j);
+        }
+        return result;
+    }
+
+    public static float dot(TensorQ8 thisx,int thisOffset, FloatTensor that, int thatOffset, int size) {
+        return scalarDot(thisx, thisOffset, that, thatOffset, size);
+    }
+
+    public static void matmul(TensorQ8 thisx, FloatTensor that, FloatTensor out, int dim0, int dim1) {
+        Parallel.parallelFor(0, dim0, i -> out.setFloat(i, dot(thisx,i * dim1, that, 0, dim1)));
+    }
+
+    public static float scalarDot(TensorQ8 thiz, int thisOffset, FloatTensor that, int thatOffset, int size) {
+        float result = 0f;
+        for (int j = 0; j < size; j++) {
+            result += thiz.getFloat(thisOffset + j) * that.getFloat(thatOffset + j);
+        }
+        return result;
     }
 
     /**

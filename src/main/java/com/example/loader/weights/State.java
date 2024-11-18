@@ -3,6 +3,9 @@ package com.example.loader.weights;
 import com.example.core.model.tensor.ArrayFloatTensor;
 import com.example.core.model.tensor.FloatTensor;
 import com.example.inference.engine.impl.Configuration;
+import uk.ac.manchester.tornado.api.types.arrays.FloatArray;
+import uk.ac.manchester.tornado.api.types.tensors.Shape;
+import uk.ac.manchester.tornado.api.types.tensors.TensorQ8;
 
 import java.util.stream.Stream;
 
@@ -23,6 +26,11 @@ public final class State {
     public final FloatTensor[] keyCache;   // (n_layer, seq_len, kv_dim)
     public final FloatTensor[] valueCache; // (n_layer, seq_len, kv_dim)
 
+    // wrapper tensors for TornadoVM
+    public final TensorQ8 wrapX;
+    public final FloatArray wrapLogits;
+    public final FloatArray wrapXFloat;
+
     public int latestToken;
 
     public State(Configuration config) {
@@ -39,5 +47,9 @@ public final class State {
         int kvDim = (config.dim * config.numberOfKeyValueHeads) / config.numberOfHeads;
         this.keyCache = Stream.generate(() -> ArrayFloatTensor.allocate(config.contextLength, kvDim)).limit(config.numberOfLayers).toArray(FloatTensor[]::new);
         this.valueCache = Stream.generate(() -> ArrayFloatTensor.allocate(config.contextLength, kvDim)).limit(config.numberOfLayers).toArray(FloatTensor[]::new);
+
+        this.wrapXFloat = new FloatArray(config.dim);
+        this.wrapX = new TensorQ8(new Shape(config.dim));
+        this.wrapLogits = new FloatArray(config.vocabularySize);
     }
 }
