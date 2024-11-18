@@ -1,19 +1,29 @@
 package com.example.inference.engine.impl;
 
 import com.example.aux.Parallel;
+import com.example.core.model.GGMLType;
 import com.example.core.model.tensor.FloatTensor;
 import com.example.inference.Sampler;
 import com.example.loader.weights.State;
 import com.example.loader.weights.Weights;
 import com.example.tokenizer.impl.Tokenizer;
+import uk.ac.manchester.tornado.api.GridScheduler;
+import uk.ac.manchester.tornado.api.KernelContext;
 import uk.ac.manchester.tornado.api.TaskGraph;
 import uk.ac.manchester.tornado.api.TornadoExecutionPlan;
+import uk.ac.manchester.tornado.api.WorkerGrid;
+import uk.ac.manchester.tornado.api.WorkerGrid1D;
 import uk.ac.manchester.tornado.api.common.TornadoDevice;
 import uk.ac.manchester.tornado.api.enums.DataTransferMode;
+import uk.ac.manchester.tornado.api.types.arrays.ByteArray;
 import uk.ac.manchester.tornado.api.types.arrays.FloatArray;
+import uk.ac.manchester.tornado.api.types.arrays.HalfFloatArray;
+import uk.ac.manchester.tornado.api.types.tensors.Float16;
 import uk.ac.manchester.tornado.api.types.tensors.TensorQ8;
 
+import javax.print.DocFlavor;
 import javax.xml.transform.Transformer;
+import java.lang.foreign.ValueLayout;
 import java.nio.FloatBuffer;
 import java.util.ArrayList;
 import java.util.List;
@@ -162,17 +172,22 @@ public record Llama(Configuration configuration, Tokenizer tokenizer, Weights we
         // Tornado types host code      matmul(weights.wclsTornadoQ8, state.x, state.logits, config.vocabularySize, dim);
 
         // Update state.x
-        state.wrapXFloat.getSegment().copyFrom(state.x.asMemorySegment());
-        matmul(weights.wclsTornadoQ8, state.wrapXFloat, state.wrapLogits, config.vocabularySize, dim);
-        state.logits.asMemorySegment().copyFrom(state.wrapLogits.getSegment());
+//        state.wrapXFloat.getSegment().copyFrom(state.x.asMemorySegment());
+//        matmul(weights.wclsTornadoQ8, state.wrapXFloat, state.wrapLogits, config.vocabularySize, dim);
+//        matmul(weights.wclsByteArray, state.wrapXFloat, state.wrapLogits, config.vocabularySize, dim);
+//        state.logits.asMemorySegment().copyFrom(state.wrapLogits.getSegment());
         // This should be replaced with a Tornado call
 
         // Once fuse or JIT is done we move into the following block
-    //        state.wrapXFloat.getSegment().copyFrom(state.x.asMemorySegment());
-    //        TornadoDevice device = TornadoExecutionPlan.getDevice(0, 0);
-    //        executionPlan.withDevice(device).execute();
-    //        state.logits.asMemorySegment().copyFrom(state.wrapLogits.getSegment());
-    //
+
+        state.wrapXFloat.getSegment().copyFrom(state.x.asMemorySegment());
+
+        WorkerGrid worker = new WorkerGrid1D(model.configuration.vocabularySize);
+        GridScheduler gridScheduler = new GridScheduler("s0.t0", worker);
+        executionPlan.withGridScheduler(gridScheduler).execute();
+
+        state.logits.asMemorySegment().copyFrom(state.wrapLogits.getSegment());
+
 
 
         return state.logits;
@@ -191,6 +206,150 @@ public record Llama(Configuration configuration, Tokenizer tokenizer, Weights we
             }
             out.set(i, result);
         });
+    }
+
+    public static void matmulTornado(KernelContext context, ByteArray thisx, FloatArray that, FloatArray out, int dim1) {
+        final int BLOCK_SIZE = 32; // Assuming this is the block size used in quantization
+        final int BYTES_PER_BLOCK = Float16.BYTES + BLOCK_SIZE; // 2 bytes for scale + block_size bytes for values
+
+        int idx = context.globalIdx;
+
+        float result = 0f;
+        int thisOffset = idx * dim1;
+
+        for (int j = 0; j < dim1; j++) {
+            int index = thisOffset + j;
+            // Calculate block position
+            int blockIndex = index / BLOCK_SIZE;
+            int withinBlockIndex = index % BLOCK_SIZE;
+            int blockOffset = blockIndex * BYTES_PER_BLOCK;
+
+            // Read scale (float16) for this block
+            int scaleByte1 = thisx.get(blockOffset) & 0xFF;
+            int scaleByte2 = thisx.get(blockOffset + 1) & 0xFF;
+            short scaleFloat16 = (short)((scaleByte2 << 8) | scaleByte1);
+            float scale = decodeFloat16(scaleFloat16);
+
+            // Read quantized value
+            byte quantized = thisx.get(blockOffset + 2 + withinBlockIndex);
+
+            // Dequantize and multiply
+            result += (quantized * scale) * that.get(j);
+        }
+
+        out.set(idx, result);
+
+    }
+
+    public static void matmudl(ByteArray thisx, FloatArray that, FloatArray out, int dim0, int dim1) {
+        IntStream.range(0, dim0).parallel().forEach(i -> {
+            float result = 0f;
+            int thisOffset = i * dim1;
+            for (int j = 0; j < dim1; j++) {
+//                result += thisx.get(thisOffset + j) * that.get(j);
+                result += getFloatFromByteArray(thisOffset + j, thisx) * that.get(j);
+            }
+            out.set(i, result);
+        });
+    }
+
+    public static void matmul(ByteArray thisx, FloatArray that, FloatArray out, int dim0, int dim1) {
+        final int BLOCK_SIZE = 32; // Assuming this is the block size used in quantization
+        final int BYTES_PER_BLOCK = Float16.BYTES + BLOCK_SIZE; // 2 bytes for scale + block_size bytes for values
+
+        IntStream.range(0, dim0).parallel().forEach(i -> {
+            float result = 0f;
+            int thisOffset = i * dim1;
+
+            for (int j = 0; j < dim1; j++) {
+                int index = thisOffset + j;
+                // Calculate block position
+                int blockIndex = index / BLOCK_SIZE;
+                int withinBlockIndex = index % BLOCK_SIZE;
+                int blockOffset = blockIndex * BYTES_PER_BLOCK;
+
+                // Read scale (float16) for this block
+                int scaleByte1 = thisx.get(blockOffset) & 0xFF;
+                int scaleByte2 = thisx.get(blockOffset + 1) & 0xFF;
+                short scaleFloat16 = (short)((scaleByte2 << 8) | scaleByte1);
+                float scale = decodeFloat16(scaleFloat16);
+
+                // Read quantized value
+                byte quantized = thisx.get(blockOffset + 2 + withinBlockIndex);
+//                byte quantized = thisx.get(blockOffset + Float16.BYTES + withinBlockIndex);
+
+                // Dequantize and multiply
+                result += (quantized * scale) * that.get(j);
+            }
+
+            out.set(i, result);
+        });
+    }
+
+    private static float decodeFloat16(short value) {
+        int sign = (value & 0x8000) >>> 15;
+        int exp = (value & 0x7C00) >>> 10;
+        int frac = value & 0x03FF;
+
+        // Handle special cases
+        if (exp == 0x1F) return sign == 0 ? Float.POSITIVE_INFINITY : Float.NEGATIVE_INFINITY;
+        if (exp == 0) {
+            if (frac == 0) return sign == 0 ? 0.0f : -0.0f;
+            float result = frac * pow2(-24);
+            return sign == 0 ? result : -result;
+        }
+
+        float result = 1.0f + (frac / 1024.0f);
+        result *= pow2(exp - 15);
+        return sign == 0 ? result : -result;
+    }
+
+
+
+    private static float getFloatFromByteArray(int index, ByteArray data) {
+        // Direct read of two bytes at the index position - no multiplication by BYTES_PER_FLOAT16
+        int byte1 = data.get(index) & 0xFF;
+        int byte2 = data.get(index + 1) & 0xFF;
+        short float16Value = (short)((byte2 << 8) | byte1);
+
+        return decodeFloat16(float16Value);
+    }
+
+    private static float decodeFloat162(short value) {
+        int sign = (value & 0x8000) >>> 15;
+        int exp = (value & 0x7C00) >>> 10;
+        int frac = value & 0x03FF;
+
+        // Optimized special cases handling
+        if (exp == 0x1F) return sign == 0 ? Float.POSITIVE_INFINITY : Float.NEGATIVE_INFINITY;
+        if (exp == 0) {
+            if (frac == 0) return sign == 0 ? 0.0f : -0.0f;
+            // Subnormal numbers
+            float result = frac * pow2(-24);
+            return sign == 0 ? result : -result;
+        }
+
+        // Normal numbers - optimized calculation
+        float result = 1.0f + (frac / 1024.0f);
+        result *= pow2(exp - 15);
+        return sign == 0 ? result : -result;
+    }
+
+
+    /**
+     * Compute 2^n efficiently
+     */
+    private static float pow2(int n) {
+        if (n >= 0) {
+            if (n < 31) {
+                return (float)(1 << n);
+            }
+            return Float.POSITIVE_INFINITY;
+        }
+        if (n > -150) {
+            return 1.0f / (1 << -n);
+        }
+        return 0.0f;
     }
 
     /**
@@ -224,8 +383,8 @@ public record Llama(Configuration configuration, Tokenizer tokenizer, Weights we
         int promptIndex = 0;
 
         // Revert when end-to-end integration is done
-//        TornadoExecutionPlan tornadoExecutionPlan = createTornadoExecutionPlan(state, model);
-        TornadoExecutionPlan tornadoExecutionPlan = null;
+        TornadoExecutionPlan tornadoExecutionPlan = createTornadoExecutionPlan(state, model);
+//        TornadoExecutionPlan tornadoExecutionPlan = null;
 
         for (int position = startPosition; position < maxTokens; ++position) {
             forward(model, state, token, position, tornadoExecutionPlan);
@@ -270,12 +429,15 @@ public record Llama(Configuration configuration, Tokenizer tokenizer, Weights we
 
         TaskGraph taskGraph;
 
+        KernelContext context = new KernelContext();
+
         taskGraph = new TaskGraph("s0") //
                 .transferToDevice(DataTransferMode.EVERY_EXECUTION, state.wrapXFloat) //
-                .transferToDevice(DataTransferMode.FIRST_EXECUTION, model.weights.wclsTornadoQ8) //
+                .transferToDevice(DataTransferMode.FIRST_EXECUTION, model.weights.wclsByteArray) //
                 .transferToDevice(DataTransferMode.FIRST_EXECUTION, model.configuration.dim) //
                 .transferToDevice(DataTransferMode.FIRST_EXECUTION, model.configuration.vocabularySize) //
-                .task("t0", Llama:: matmul, model.weights.wclsTornadoQ8, state.wrapXFloat, state.wrapLogits, model.configuration.vocabularySize, model.configuration.dim) //
+//                .task("t0", Llama:: matmulTornado, context, model.weights.wclsByteArray, state.wrapXFloat, state.wrapLogits, model.configuration.vocabularySize, model.configuration.dim) //
+                .task("t0", Llama:: matmulTornado, context, model.weights.wclsByteArray, state.wrapXFloat, state.wrapLogits,  model.configuration.dim) //
                 .transferToHost(DataTransferMode.EVERY_EXECUTION, state.wrapLogits);
         return new TornadoExecutionPlan(taskGraph.snapshot());
     }

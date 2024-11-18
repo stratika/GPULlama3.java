@@ -80,7 +80,6 @@ public final class Q8_0FloatTensor extends FloatTensor {
         float result = 0f;
         int j = 0;
 
-//        System.out.print("XXXX  Using the q8 vectorized " );
         // Align thisOffset + startIndex to type().getBlockSize().
         assert Integer.bitCount(GGMLType.Q8_0.getBlockSize()) == 1 : "power of 2";
         int alignmentBound = Math.min(size, -thisOffset & (GGMLType.Q8_0.getBlockSize() - 1));
@@ -104,7 +103,8 @@ public final class Q8_0FloatTensor extends FloatTensor {
                 var sum2 = that.getFloatVector(F_SPECIES, thatOffset + j + 2 * F_SPECIES.length()).mul(wBytes.castShape(F_SPECIES, 2));
                 var sum3 = that.getFloatVector(F_SPECIES, thatOffset + j + 3 * F_SPECIES.length()).mul(wBytes.castShape(F_SPECIES, 3));
                 val = sum0.add(sum1).add(sum2).add(sum3).fma(wScale, val);
-            } else if (F_SPECIES.vectorBitSize() == 128) {
+            }
+            else if (F_SPECIES.vectorBitSize() == 128) {
                 VectorSpecies<Byte> B_128 = ByteVector.SPECIES_128;
                 // This loop cannot be unrolled, why?
                 for (int i = 0; i < 2; ++i) {
