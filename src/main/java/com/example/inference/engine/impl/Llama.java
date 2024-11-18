@@ -6,14 +6,20 @@ import com.example.inference.Sampler;
 import com.example.loader.weights.State;
 import com.example.loader.weights.Weights;
 import com.example.tokenizer.impl.Tokenizer;
+import uk.ac.manchester.tornado.api.TaskGraph;
+import uk.ac.manchester.tornado.api.TornadoExecutionPlan;
+import uk.ac.manchester.tornado.api.common.TornadoDevice;
+import uk.ac.manchester.tornado.api.enums.DataTransferMode;
 import uk.ac.manchester.tornado.api.types.arrays.FloatArray;
 import uk.ac.manchester.tornado.api.types.tensors.TensorQ8;
 
+import javax.xml.transform.Transformer;
 import java.nio.FloatBuffer;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Set;
 import java.util.function.IntConsumer;
+import java.util.stream.IntStream;
 
 public record Llama(Configuration configuration, Tokenizer tokenizer, Weights weights) {
     public State createNewState() {
@@ -33,7 +39,7 @@ public record Llama(Configuration configuration, Tokenizer tokenizer, Weights we
         out.mapWithIndexInPlace(0, size, (value, index) -> weight.get(index) * (finalss * x.getFloat(index)));
     }
 
-    static FloatTensor forward(Llama model, State state, int token, int position) {
+    static FloatTensor forward(Llama model, State state, int token, int position, TornadoExecutionPlan executionPlan) {
         // a few convenience variables
         Configuration config = model.configuration();
         Weights weights = model.weights();
@@ -161,45 +167,30 @@ public record Llama(Configuration configuration, Tokenizer tokenizer, Weights we
         state.logits.asMemorySegment().copyFrom(state.wrapLogits.getSegment());
         // This should be replaced with a Tornado call
 
-        //
-        // state.x.size() -> 2048
-        // state.logits.size() -> 2048
-        // config.vocabularySize -> 128256
-        // dim -> 2048
+        // Once fuse or JIT is done we move into the following block
+    //        state.wrapXFloat.getSegment().copyFrom(state.x.asMemorySegment());
+    //        TornadoDevice device = TornadoExecutionPlan.getDevice(0, 0);
+    //        executionPlan.withDevice(device).execute();
+    //        state.logits.asMemorySegment().copyFrom(state.wrapLogits.getSegment());
+    //
+
 
         return state.logits;
     }
 
-    public static float dot(TensorQ8 thisx,int thisOffset, FloatArray that, int thatOffset, int size) {
-        return scalarDot(thisx, thisOffset, that, thatOffset, size);
-    }
-
+    // state.x.size() -> 2048
+    // state.logits.size() -> 2048
+    // config.vocabularySize -> 128256
+    // dim -> 2048
     public static void matmul(TensorQ8 thisx, FloatArray that, FloatArray out, int dim0, int dim1) {
-        Parallel.parallelFor(0, dim0, i -> out.set(i, dot(thisx,i * dim1, that, 0, dim1)));
-    }
-
-   public static float scalarDot(TensorQ8 thiz, int thisOffset, FloatArray that, int thatOffset, int size) {
-        float result = 0f;
-        for (int j = 0; j < size; j++) {
-            result += thiz.getFloat(thisOffset + j) * that.get(thatOffset + j);
-        }
-        return result;
-    }
-
-    public static float dot(TensorQ8 thisx,int thisOffset, FloatTensor that, int thatOffset, int size) {
-        return scalarDot(thisx, thisOffset, that, thatOffset, size);
-    }
-
-    public static void matmul(TensorQ8 thisx, FloatTensor that, FloatTensor out, int dim0, int dim1) {
-        Parallel.parallelFor(0, dim0, i -> out.setFloat(i, dot(thisx,i * dim1, that, 0, dim1)));
-    }
-
-    public static float scalarDot(TensorQ8 thiz, int thisOffset, FloatTensor that, int thatOffset, int size) {
-        float result = 0f;
-        for (int j = 0; j < size; j++) {
-            result += thiz.getFloat(thisOffset + j) * that.getFloat(thatOffset + j);
-        }
-        return result;
+        IntStream.range(0, dim0).parallel().forEach(i -> {
+            float result = 0f;
+            int thisOffset = i * dim1;
+            for (int j = 0; j < dim1; j++) {
+                result += thisx.getFloat(thisOffset + j) * that.get(j);
+            }
+            out.set(i, result);
+        });
     }
 
     /**
@@ -231,8 +222,13 @@ public record Llama(Configuration configuration, Tokenizer tokenizer, Weights we
         int token = state.latestToken; // BOS?
         int nextToken;
         int promptIndex = 0;
+
+        // Revert when end-to-end integration is done
+//        TornadoExecutionPlan tornadoExecutionPlan = createTornadoExecutionPlan(state, model);
+        TornadoExecutionPlan tornadoExecutionPlan = null;
+
         for (int position = startPosition; position < maxTokens; ++position) {
-            forward(model, state, token, position);
+            forward(model, state, token, position, tornadoExecutionPlan);
             if (promptIndex < promptTokens.size()) {
                 // Force-pick token from prompt.
                 nextToken = promptTokens.get(promptIndex++);
@@ -262,6 +258,26 @@ public record Llama(Configuration configuration, Tokenizer tokenizer, Weights we
         System.err.printf("%n%.2f tokens/s (%d)%n", totalTokens / (elapsedNanos / 1_000_000_000.0), totalTokens);
 
         return generatedTokens;
+    }
+
+    /**
+     * Creates the appropriate TornadoVM execution plan based on the selected execution mode
+     *
+     * *            The Transformer model used for sequence generation.
+     * @return The TornadoVM execution plan for the specified execution mode
+     */
+    private static TornadoExecutionPlan createTornadoExecutionPlan(State state, Llama model) {
+
+        TaskGraph taskGraph;
+
+        taskGraph = new TaskGraph("s0") //
+                .transferToDevice(DataTransferMode.EVERY_EXECUTION, state.wrapXFloat) //
+                .transferToDevice(DataTransferMode.FIRST_EXECUTION, model.weights.wclsTornadoQ8) //
+                .transferToDevice(DataTransferMode.FIRST_EXECUTION, model.configuration.dim) //
+                .transferToDevice(DataTransferMode.FIRST_EXECUTION, model.configuration.vocabularySize) //
+                .task("t0", Llama:: matmul, model.weights.wclsTornadoQ8, state.wrapXFloat, state.wrapLogits, model.configuration.vocabularySize, model.configuration.dim) //
+                .transferToHost(DataTransferMode.EVERY_EXECUTION, state.wrapLogits);
+        return new TornadoExecutionPlan(taskGraph.snapshot());
     }
 }
 
