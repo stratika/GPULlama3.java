@@ -56,6 +56,8 @@ public abstract class FloatTensor {
 
     abstract GGMLType type();
 
+    public abstract MemorySegment asMemorySegment();
+
     public static int numberOfElements(int... dimensions) {
         assert Arrays.stream(dimensions).allMatch(i -> i > 0);
         return Arrays.stream(dimensions).reduce(Math::multiplyExact).orElseThrow();

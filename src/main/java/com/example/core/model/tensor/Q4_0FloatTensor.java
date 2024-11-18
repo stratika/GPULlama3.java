@@ -49,6 +49,11 @@ public final class Q4_0FloatTensor extends FloatTensor {
     }
 
     @Override
+    public MemorySegment asMemorySegment() {
+        return null;
+    }
+
+    @Override
     public float getFloat(int index) {
         assert 0 <= index && index < size;
         int blockIndex = index / GGMLType.Q4_0.getBlockSize();

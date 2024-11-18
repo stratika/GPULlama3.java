@@ -1,6 +1,8 @@
 package com.example.loader.weights;
 
 import com.example.core.model.tensor.FloatTensor;
+import com.example.core.model.tensor.Q8_0FloatTensor;
+import uk.ac.manchester.tornado.api.types.tensors.TensorQ8;
 
 import java.nio.FloatBuffer;
 
@@ -27,6 +29,8 @@ public final class Weights {
     // (optional) classifier weights for the logits, on the last layer
     public final FloatTensor wcls; // (vocab_size, dim)
 
+    public final TensorQ8 wclsTornadoQ8;
+
     public Weights(FloatTensor token_embedding_table, FloatBuffer[] rms_att_weight, FloatTensor[] wq, FloatTensor[] wk, FloatTensor[] wv, FloatTensor[] wo, FloatBuffer[] rms_ffn_weight, FloatTensor[] w1, FloatTensor[] w2, FloatTensor[] w3, FloatBuffer rms_final_weight, FloatBuffer freq_cis_real, FloatBuffer freq_cis_imag, FloatTensor wcls) {
         this.token_embedding_table = token_embedding_table;
         this.rms_att_weight = rms_att_weight;
@@ -42,5 +46,6 @@ public final class Weights {
         this.freq_cis_real = freq_cis_real;
         this.freq_cis_imag = freq_cis_imag;
         this.wcls = wcls;
+        this.wclsTornadoQ8 = new TensorQ8(wcls.size(), wcls.asMemorySegment());
     }
 }

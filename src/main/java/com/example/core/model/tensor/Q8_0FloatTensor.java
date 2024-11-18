@@ -29,6 +29,10 @@ public final class Q8_0FloatTensor extends FloatTensor {
         return size;
     }
 
+    public MemorySegment getMemorySegment() {
+        return memorySegment;
+    }
+
     @Override
     public void setFloat(int index, float value) {
         throw new UnsupportedOperationException("setFloat");
@@ -45,6 +49,11 @@ public final class Q8_0FloatTensor extends FloatTensor {
     }
 
     @Override
+   public MemorySegment asMemorySegment() {
+        return memorySegment;
+    }
+
+    @Override
     public float getFloat(int index) {
         assert 0 <= index && index < size;
         int blockIndex = index / GGMLType.Q8_0.getBlockSize();
@@ -54,6 +63,7 @@ public final class Q8_0FloatTensor extends FloatTensor {
         float scale = Float.float16ToFloat(readShort(memorySegment, blockOffset));
         return quant * scale;
     }
+
 
     public static final ValueLayout.OfShort JAVA_SHORT_LE = ValueLayout.JAVA_SHORT.withOrder(ByteOrder.LITTLE_ENDIAN);
 

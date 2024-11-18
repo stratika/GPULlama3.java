@@ -151,7 +151,7 @@ public record Llama(Configuration configuration, Tokenizer tokenizer, Weights we
 
         // classifier into logits
         weights.wcls.matmul(state.x, state.logits, config.vocabularySize, dim);
-
+        // wcls + x = logits
         //        System.out.print("\nSizes " + state.x.size() + " logits " + state.logits.size() + " vocab size : " + config.vocabularySize + " dim: "  +dim + " \n");
 
         return state.logits;

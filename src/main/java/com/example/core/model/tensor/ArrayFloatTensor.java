@@ -4,6 +4,7 @@ import com.example.core.model.GGMLType;
 import jdk.incubator.vector.FloatVector;
 import jdk.incubator.vector.VectorSpecies;
 
+import java.lang.foreign.MemorySegment;
 import java.util.Arrays;
 
 import static com.example.LlamaApp.USE_VECTOR_API;
@@ -39,6 +40,11 @@ public final class ArrayFloatTensor extends FloatTensor {
     @Override
     public GGMLType type() {
         return GGMLType.F32;
+    }
+
+    @Override
+    public MemorySegment asMemorySegment() {
+        return MemorySegment.ofArray(values);
     }
 
     @Override
