@@ -94,6 +94,14 @@ public final class GGUF {
         Arena arena = Arena.ofAuto();
         MemorySegment tensorData = arena.allocate(fileChannel.size(), 1);
         fileChannel.read(tensorData.asByteBuffer(), (int) tensorDataOffset);
+
+        //        MemorySegment tensorData = fileChannel.map(
+        //                FileChannel.MapMode.READ_ONLY,
+        //                tensorDataOffset,
+        //                fileChannel.size() - tensorDataOffset,
+        //                Arena.ofAuto()
+        //        );
+
         Map<String, com.example.core.model.tensor.GGMLTensorEntry> tensorEntries = HashMap.newHashMap(tensorInfos.size());
         for (Map.Entry<String, GGUFTensorInfo> entry : tensorInfos.entrySet()) {
             GGUFTensorInfo ti = entry.getValue();
