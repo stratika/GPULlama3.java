@@ -32,7 +32,7 @@ import java.util.function.IntConsumer;
 import java.util.stream.IntStream;
 
 public record Llama(Configuration configuration, Tokenizer tokenizer, Weights weights) {
-    public static final long WORKGROUP = Long.parseLong(System.getProperty("llama.VectorAPI", "32"));
+    public static final long WORKGROUP = Long.parseLong(System.getProperty("llama.workgroup", "32"));
 
 
     public State createNewState() {
@@ -211,6 +211,156 @@ public record Llama(Configuration configuration, Tokenizer tokenizer, Weights we
             out.set(i, result);
         });
     }
+
+    public static void matmulTornadoOptimized(KernelContext context, ByteArray thisx, FloatArray that, FloatArray out, int dim1) {
+            final int BLOCK_SIZE = 32;
+            final int BYTES_PER_BLOCK = 34; // 2 + BLOCK_SIZE
+            final int TILE_SIZE = 256;
+
+            float[] that_cache = context.allocateFloatLocalArray(TILE_SIZE);
+            int localId = context.localIdx;
+            int globalId = context.globalIdx;
+
+            float[] results = new float[4];
+
+            for (int tile = 0; tile < dim1; tile += TILE_SIZE) {
+                // Load collaborative data into local memory
+                if (tile + localId < dim1) {
+                    that_cache[localId] = that.get(tile + localId);
+                }
+                context.localBarrier();
+
+                // Process 4 elements per thread
+                for (int k = 0; k < 4; k++) {
+                    int row = globalId * 4 + k;
+                    int thisOffset = row * dim1;
+
+                    for (int j = 0; j < Math.min(TILE_SIZE, dim1 - tile); j++) {
+                        int index = thisOffset + tile + j;
+                        int blockIndex = index / BLOCK_SIZE;
+                        int withinBlockIndex = index % BLOCK_SIZE;
+                        int blockOffset = blockIndex * BYTES_PER_BLOCK;
+
+                        // Read and decode scale (float16)
+                        int scaleByte1 = thisx.get(blockOffset) & 0xFF;
+                        int scaleByte2 = thisx.get(blockOffset + 1) & 0xFF;
+                        short scaleFloat16 = (short)((scaleByte2 << 8) | scaleByte1);
+                        float scale = decodeFloat16(scaleFloat16);
+
+                        byte quantized = thisx.get(blockOffset + 2 + withinBlockIndex);
+                        results[k] += (quantized * scale) * that_cache[j];
+                    }
+                }
+                context.localBarrier();
+            }
+
+            // Write results
+            for (int k = 0; k < 4; k++) {
+                int row = globalId * 4 + k;
+                if (row < dim1) {
+                    out.set(row, results[k]);
+                }
+            }
+        }
+
+
+//    public static void matmulTornadoOptimized(KernelContext context, ByteArray thisx, FloatArray that, FloatArray out, int dim1) {
+//        final int BLOCK_SIZE = 32;
+//        final int BYTES_PER_BLOCK = 2 + BLOCK_SIZE;
+//        final int TILE_SIZE = 16; // For shared memory tiling
+//
+//        int idx = context.globalIdx;
+//        float[] thatTile = context.allocateFloatLocalArray(TILE_SIZE);
+//        float[] scaleCache = context.allocateFloatLocalArray(TILE_SIZE / BLOCK_SIZE + 1);
+//        byte[] quantCache = context.allocateCharLocalArray(TILE_SIZE);
+//
+//        float result = 0f;
+//        int thisOffset = idx * dim1;
+//
+//        // Process in tiles
+//        for (int tile = 0; tile < dim1; tile += TILE_SIZE) {
+//            // Collaborative loading of that array into shared memory
+//            if (context.localIdx < TILE_SIZE && (tile + context.localIdx) < dim1) {
+//                thatTile[context.localIdx] = that.get(tile + context.localIdx);
+//            }
+//
+//            // Pre-fetch scales and quantized values for this tile
+//            int localIdx = context.localIdx;
+//            if (localIdx < (TILE_SIZE / BLOCK_SIZE + 1)) {
+//                int blockIndex = (thisOffset + tile + localIdx * BLOCK_SIZE) / BLOCK_SIZE;
+//                int blockOffset = blockIndex * BYTES_PER_BLOCK;
+//
+//                // Decode scale
+//                int scaleByte1 = thisx.get(blockOffset) & 0xFF;
+//                int scaleByte2 = thisx.get(blockOffset + 1) & 0xFF;
+//                scaleCache[localIdx] = decodeFloat16((short)((scaleByte2 << 8) | scaleByte1));
+//
+//                // Cache quantized values
+//                for (int i = 0; i < BLOCK_SIZE && (i + localIdx * BLOCK_SIZE) < TILE_SIZE; i++) {
+//                    quantCache[localIdx * BLOCK_SIZE + i] = thisx.get(blockOffset + 2 + i);
+//                }
+//            }
+//
+//            context.localBarrier();
+//
+//            // Process the tile
+//            for (int j = 0; j < TILE_SIZE && (tile + j) < dim1; j++) {
+//                int index = thisOffset + tile + j;
+//                int blockIndex = index / BLOCK_SIZE;
+//                int withinBlockIndex = index % BLOCK_SIZE;
+//
+//                float scale = scaleCache[blockIndex % (TILE_SIZE / BLOCK_SIZE + 1)];
+//                byte quantized = quantCache[blockIndex * BLOCK_SIZE + withinBlockIndex];
+//
+//                result += (quantized * scale) * thatTile[j];
+//            }
+//
+//            context.localBarrier();
+//        }
+//
+//        out.set(idx, result);
+//    }
+
+//    public static void matmulTornadoOptimized(KernelContext context, ByteArray thisx, FloatArray that, FloatArray out, int dim1) {
+//        final int BLOCK_SIZE = 32;
+//        final int BYTES_PER_BLOCK = 2 + BLOCK_SIZE;
+//        int idx = context.globalIdx;
+//
+//        // Allocate shared memory for tiles (if the API supports it)
+//        float[] thatTile = context.allocateFloatLocalArray(BLOCK_SIZE);
+//        float result = 0f;
+//        int thisOffset = idx * dim1;
+//
+//        // Iterate over blocks
+//        for (int j = 0; j < dim1; j += BLOCK_SIZE) {
+//            // Load a tile of `that` into shared memory
+//            int tileEnd = Math.min(j + BLOCK_SIZE, dim1);
+//            for (int tj = 0; tj < tileEnd - j; tj++) {
+//                thatTile[tj] = that.get(j + tj);
+//            }
+//            context.localBarrier(); // Ensure all threads have loaded the tile
+//
+//            // Process each block within the tile
+//            for (int k = 0; k < tileEnd - j; k++) {
+//                int index = thisOffset + j + k;
+//                int blockIndex = index / BLOCK_SIZE;
+//                int withinBlockIndex = index % BLOCK_SIZE;
+//                int blockOffset = blockIndex * BYTES_PER_BLOCK;
+//
+//                // Decode the scale (float16) for this block
+//                float scale = decodeFloat16(
+//                        (short)((thisx.get(blockOffset + 1) & 0xFF) << 8 | (thisx.get(blockOffset) & 0xFF))
+//                );
+//
+//                // Read quantized value and dequantize
+//                byte quantized = thisx.get(blockOffset + 2 + withinBlockIndex);
+//                result += (quantized * scale) * thatTile[k];
+//            }
+//            context.localBarrier(); // Synchronize before loading the next tile
+//        }
+//
+//        out.set(idx, result);
+//    }
 
     public static void matmulTornado(KernelContext context, ByteArray thisx, FloatArray that, FloatArray out, int dim1) {
         final int BLOCK_SIZE = 32; // Assuming this is the block size used in quantization
@@ -441,7 +591,7 @@ public record Llama(Configuration configuration, Tokenizer tokenizer, Weights we
                 .transferToDevice(DataTransferMode.FIRST_EXECUTION, model.configuration.dim) //
                 .transferToDevice(DataTransferMode.FIRST_EXECUTION, model.configuration.vocabularySize) //
 //                .task("t0", Llama:: matmulTornado, context, model.weights.wclsByteArray, state.wrapXFloat, state.wrapLogits, model.configuration.vocabularySize, model.configuration.dim) //
-                .task("t0", Llama:: matmulTornado, context, model.weights.wclsByteArray, state.wrapXFloat, state.wrapLogits,  model.configuration.dim) //
+                .task("t0", Llama:: matmulTornadoOptimized, context, model.weights.wclsByteArray, state.wrapXFloat, state.wrapLogits,  model.configuration.dim) //
                 .transferToHost(DataTransferMode.EVERY_EXECUTION, state.wrapLogits);
         return new TornadoExecutionPlan(taskGraph.snapshot());
     }
