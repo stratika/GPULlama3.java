@@ -1,0 +1,78 @@
+#!/bin/bash
+
+source set_paths
+
+# Default values
+MODEL_PATH=""
+PROMPT=""
+SYSTEM_PROMPT=""
+TEMPERATURE=0.1
+TOP_P=0.95
+SEED=$(date +%s)
+MAX_TOKENS=512
+STREAM=true
+ECHO=false
+INSTRUCT=true
+INTERACTIVE=false
+
+# Parse arguments
+while [[ $# -gt 0 ]]; do
+    case "$1" in
+        -m|--model) MODEL_PATH="$2"; shift 2 ;;
+        -p|--prompt) PROMPT="$2"; shift 2 ;;
+        -sp|--system-prompt) SYSTEM_PROMPT="$2"; shift 2 ;;
+        --temperature) TEMPERATURE="$2"; shift 2 ;;
+        --top-p) TOP_P="$2"; shift 2 ;;
+        --seed) SEED="$2"; shift 2 ;;
+        -n|--max-tokens) MAX_TOKENS="$2"; shift 2 ;;
+        --stream) STREAM="$2"; shift 2 ;;
+        --echo) ECHO="$2"; shift 2 ;;
+        -i|--interactive|--chat) INTERACTIVE=true; INSTRUCT=false; shift ;;
+        --instruct) INSTRUCT=true; INTERACTIVE=false; shift ;;
+        --help|-h) print_usage; exit 0 ;;
+        *) echo "Unknown option: $1"; print_usage; exit 1 ;;
+    esac
+done
+
+# Validate model path
+if [ -z "$MODEL_PATH" ]; then
+    echo "Error: -m/--model <path> is required"
+    exit 1
+fi
+
+CMD=()
+CMD+=("$JAVA_HOME/bin/java")
+CMD+=("-server")
+CMD+=("-XX:-UseCompressedOops")
+CMD+=("-XX:+UnlockExperimentalVMOptions")
+CMD+=("-XX:+EnableJVMCI")
+CMD+=("-XX:-UseCompressedClassPointers")
+CMD+=("--enable-preview")
+CMD+=("-Djava.library.path=/Users/michalis/repos/TornadoVM/bin/sdk/lib")
+CMD+=("--module-path" ".:/Users/michalis/repos/TornadoVM/bin/sdk/share/java/tornado")
+CMD+=("-Dtornado.load.api.implementation=uk.ac.manchester.tornado.runtime.tasks.TornadoTaskGraph")
+CMD+=("-Dtornado.load.runtime.implementation=uk.ac.manchester.tornado.runtime.TornadoCoreRuntime")
+CMD+=("-Dtornado.load.tornado.implementation=uk.ac.manchester.tornado.runtime.common.Tornado")
+CMD+=("-Dtornado.load.annotation.implementation=uk.ac.manchester.tornado.annotation.ASMClassVisitor")
+CMD+=("-Dtornado.load.annotation.parallel=uk.ac.manchester.tornado.api.annotations.Parallel")
+CMD+=("--upgrade-module-path" "/Users/michalis/repos/TornadoVM/bin/sdk/share/java/graalJars")
+CMD+=("-XX:+UseParallelGC")
+CMD+=("@/Users/michalis/repos/TornadoVM/bin/sdk/etc/exportLists/common-exports")
+CMD+=("@/Users/michalis/repos/TornadoVM/bin/sdk/etc/exportLists/opencl-exports")
+CMD+=("--add-modules" "ALL-SYSTEM,tornado.runtime,tornado.annotation,tornado.drivers.common,tornado.drivers.opencl")
+CMD+=("-cp" "target/gpu-llama3-1.0-SNAPSHOT.jar")
+CMD+=("com.example.LlamaApp")
+CMD+=("-m" "$MODEL_PATH")
+[ ! -z "$PROMPT" ] && CMD+=("-p" "$PROMPT")
+[ ! -z "$SYSTEM_PROMPT" ] && CMD+=("-sp" "$SYSTEM_PROMPT")
+CMD+=("--temperature" "$TEMPERATURE")
+CMD+=("--top-p" "$TOP_P")
+CMD+=("--seed" "$SEED")
+CMD+=("--max-tokens" "$MAX_TOKENS")
+CMD+=("--stream" "$STREAM")
+CMD+=("--echo" "$ECHO")
+[ "$INTERACTIVE" = true ] && CMD+=("--interactive")
+[ "$INSTRUCT" = true ] && CMD+=("--instruct")
+
+# Execute command
+"${CMD[@]}"
