@@ -32,6 +32,9 @@ import java.util.function.IntConsumer;
 import java.util.stream.IntStream;
 
 public record Llama(Configuration configuration, Tokenizer tokenizer, Weights weights) {
+    public static final long WORKGROUP = Long.parseLong(System.getProperty("llama.VectorAPI", "32"));
+
+
     public State createNewState() {
         State state = new State(configuration());
         state.latestToken = tokenizer.getSpecialTokens().get("<|begin_of_text|>");
@@ -183,7 +186,7 @@ public record Llama(Configuration configuration, Tokenizer tokenizer, Weights we
         state.wrapXFloat.getSegment().copyFrom(state.x.asMemorySegment());
 
         WorkerGrid worker = new WorkerGrid1D(model.configuration.vocabularySize);
-        worker.setLocalWork(256,1,1);
+        worker.setLocalWork(WORKGROUP,1,1);
         GridScheduler gridScheduler = new GridScheduler("s0.t0", worker);
         executionPlan.withGridScheduler(gridScheduler).execute();
 
