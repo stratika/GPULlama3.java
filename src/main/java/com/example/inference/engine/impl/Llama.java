@@ -183,6 +183,7 @@ public record Llama(Configuration configuration, Tokenizer tokenizer, Weights we
         state.wrapXFloat.getSegment().copyFrom(state.x.asMemorySegment());
 
         WorkerGrid worker = new WorkerGrid1D(model.configuration.vocabularySize);
+        worker.setLocalWork(256,1,1);
         GridScheduler gridScheduler = new GridScheduler("s0.t0", worker);
         executionPlan.withGridScheduler(gridScheduler).execute();
 
@@ -291,7 +292,7 @@ public record Llama(Configuration configuration, Tokenizer tokenizer, Weights we
         int exp = (value & 0x7C00) >>> 10;
         int frac = value & 0x03FF;
 
-        // Handle special cases
+       // Handle special cases
         if (exp == 0x1F) return sign == 0 ? Float.POSITIVE_INFINITY : Float.NEGATIVE_INFINITY;
         if (exp == 0) {
             if (frac == 0) return sign == 0 ? 0.0f : -0.0f;
@@ -336,21 +337,21 @@ public record Llama(Configuration configuration, Tokenizer tokenizer, Weights we
     }
 
 
-    /**
-     * Compute 2^n efficiently
-     */
-    private static float pow2(int n) {
-        if (n >= 0) {
-            if (n < 31) {
-                return (float)(1 << n);
+        /**
+         * Compute 2^n efficiently
+         */
+        private static float pow2(int n) {
+            if (n >= 0) {
+                if (n < 31) {
+                    return (float)(1 << n);
+                }
+                return Float.POSITIVE_INFINITY;
             }
-            return Float.POSITIVE_INFINITY;
+            if (n > -150) {
+                return 1.0f / (1 << -n);
+            }
+            return 0.0f;
         }
-        if (n > -150) {
-            return 1.0f / (1 << -n);
-        }
-        return 0.0f;
-    }
 
     /**
      * LLM generation entry point, ingest prompt tokens and generates new tokens.

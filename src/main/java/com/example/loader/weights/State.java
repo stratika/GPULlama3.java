@@ -49,6 +49,9 @@ public final class State {
         this.valueCache = Stream.generate(() -> ArrayFloatTensor.allocate(config.contextLength, kvDim)).limit(config.numberOfLayers).toArray(FloatTensor[]::new);
 
         this.wrapXFloat = new FloatArray(config.dim);
+        System.out.println("FloaArray size:" +config.dim);
+        System.out.println("Vocablary size:" + config.vocabularySize);
+
         this.wrapX = new TensorQ8(new Shape(config.dim));
         this.wrapLogits = new FloatArray(config.vocabularySize);
     }
