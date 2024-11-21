@@ -31,7 +31,7 @@ public final class Weights {
     // (optional) classifier weights for the logits, on the last layer
     public final FloatTensor wcls; // (vocab_size, dim)
 
-    public final TensorQ8 wclsTornadoQ8;
+//    public final TensorQ8 wclsTornadoQ8;
     public final ByteArray wclsByteArray;
 //    public final HalfFloatArray wclTornadoHalfFloatArray;
 
@@ -50,9 +50,9 @@ public final class Weights {
         this.freq_cis_real = freq_cis_real;
         this.freq_cis_imag = freq_cis_imag;
         this.wcls = wcls;
-        this.wclsTornadoQ8 = new TensorQ8(wcls.size(), wcls.asMemorySegment());
-        this.wclsByteArray = ByteArray.fromSegment(wcls.asMemorySegment());
+//        this.wclsTornadoQ8 = new TensorQ8(wcls.size(), wcls.asMemorySegment());
         System.out.print("Size " + wcls.size() + " bytes " + wcls.asMemorySegment().byteSize() +"\n");
+        this.wclsByteArray = ByteArray.fromSegment(wcls.asMemorySegment());
 //        this.wclTornadoHalfFloatArray = HalfFloatArray.fromSegment(wcls.asMemorySegment());
     }
 }
