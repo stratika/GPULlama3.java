@@ -12,3 +12,12 @@ todo:
 4) remove hardcoded paths from tornado-llama script
 5) Fix performance 
 6) Offload also the 3 group matmuls
+	Number of layers 16
+	Sizes 2048 2048 dims 2048 2048
+	Sizes 2048 2048 dims 2048 2048
+	Sizes 2048 2048 dims 2048 2048
+	Sizes 2048 2048 dims 2048 2048
+	Sizes 2048 2048 dims 2048 2048
+	Sizes 2048 2048 dims 2048 2048
+	Sizes 2048 2048 dims 2048 2048
+	Sizes 2048 2048 dims 2048 2048
