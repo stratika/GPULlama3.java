@@ -33,6 +33,7 @@ import java.util.stream.IntStream;
 
 public record Llama(Configuration configuration, Tokenizer tokenizer, Weights weights) {
     public static final long WORKGROUP = Long.parseLong(System.getProperty("llama.workgroup", "32"));
+    public static final boolean TORNADOVM = Boolean.parseBoolean(System.getProperty("use.tornadovm", "true"));
 
 
     public State createNewState() {
@@ -65,12 +66,15 @@ public record Llama(Configuration configuration, Tokenizer tokenizer, Weights we
         // copy the token embedding into x
         weights.token_embedding_table.copyTo(token * dim, state.x, 0, dim);
 
+        System.out.println("Number of layers " + config.numberOfLayers);
         // forward all the layers
         for (int l = 0; l < config.numberOfLayers; l++) {
             // attention rmsnorm
             rmsnorm(state.xb, state.x, weights.rms_att_weight[l], dim, config.rmsNormEps);
 
             // qkv matmuls for this position
+
+            System.out.println("Sizes " + state.xb.size() + " " + state.q.size() + " dims " +  dim + " " + dim);
             weights.wq[l].matmul(state.xb, state.q, dim, dim);
             weights.wk[l].matmul(state.xb, state.k, kvDim, dim);
             weights.wv[l].matmul(state.xb, state.v, kvDim, dim);
@@ -170,29 +174,17 @@ public record Llama(Configuration configuration, Tokenizer tokenizer, Weights we
         // final rmsnorm
         rmsnorm(state.x, state.x, weights.rms_final_weight, dim, config.rmsNormEps);
 
-        // classifier into logits
-//        weights.wcls.matmul(state.x, state.logits, config.vocabularySize, dim);
-        // Tornado types host code      matmul(weights.wclsTornadoQ8, state.x, state.logits, config.vocabularySize, dim);
+        if(TORNADOVM) {
+            state.wrapXFloat.getSegment().copyFrom(state.x.asMemorySegment());
+            WorkerGrid worker = new WorkerGrid1D(model.configuration.vocabularySize);
+            worker.setLocalWork(WORKGROUP,1,1);
+            GridScheduler gridScheduler = new GridScheduler("s0.t0", worker);
+            executionPlan.withGridScheduler(gridScheduler).execute();
 
-        // Update state.x
-//        state.wrapXFloat.getSegment().copyFrom(state.x.asMemorySegment());
-//        matmul(weights.wclsTornadoQ8, state.wrapXFloat, state.wrapLogits, config.vocabularySize, dim);
-//        matmul(weights.wclsByteArray, state.wrapXFloat, state.wrapLogits, config.vocabularySize, dim);
-//        state.logits.asMemorySegment().copyFrom(state.wrapLogits.getSegment());
-        // This should be replaced with a Tornado call
-
-        // Once fuse or JIT is done we move into the following block
-
-        state.wrapXFloat.getSegment().copyFrom(state.x.asMemorySegment());
-
-        WorkerGrid worker = new WorkerGrid1D(model.configuration.vocabularySize);
-        worker.setLocalWork(WORKGROUP,1,1);
-        GridScheduler gridScheduler = new GridScheduler("s0.t0", worker);
-        executionPlan.withGridScheduler(gridScheduler).execute();
-
-        state.logits.asMemorySegment().copyFrom(state.wrapLogits.getSegment());
-
-
+            state.logits.asMemorySegment().copyFrom(state.wrapLogits.getSegment());
+        } else {
+            weights.wcls.matmul(state.x, state.logits, config.vocabularySize, dim);
+        }
 
         return state.logits;
     }
