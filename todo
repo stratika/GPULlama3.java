@@ -1,0 +1,12 @@
+todo:
+1) fix 
+	//        MemorySegment tensorData = fileChannel.map(
+	//                FileChannel.MapMode.READ_ONLY,
+	//                tensorDataOffset,
+	//                fileChannel.size() - tensorDataOffset,
+	//                Arena.ofAuto()
+	//        );
+
+2) add flag to switch between pure tornado and pure java
+3) add support to switch between Q4 and Q8 for TornadoVM
+4) remove hardcoded paths from tornado-llama script

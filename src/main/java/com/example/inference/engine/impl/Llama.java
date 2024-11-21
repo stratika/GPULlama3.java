@@ -215,7 +215,7 @@ public record Llama(Configuration configuration, Tokenizer tokenizer, Weights we
     public static void matmulTornadoOptimized(KernelContext context, ByteArray thisx, FloatArray that, FloatArray out, int dim1) {
             final int BLOCK_SIZE = 32;
             final int BYTES_PER_BLOCK = 34; // 2 + BLOCK_SIZE
-            final int TILE_SIZE = 256;
+            final int TILE_SIZE = (int) WORKGROUP;
 
             float[] that_cache = context.allocateFloatLocalArray(TILE_SIZE);
             int localId = context.localIdx;
