@@ -21,9 +21,6 @@ import uk.ac.manchester.tornado.api.types.arrays.HalfFloatArray;
 import uk.ac.manchester.tornado.api.types.tensors.Float16;
 import uk.ac.manchester.tornado.api.types.tensors.TensorQ8;
 
-import javax.print.DocFlavor;
-import javax.xml.transform.Transformer;
-import java.lang.foreign.ValueLayout;
 import java.nio.FloatBuffer;
 import java.util.ArrayList;
 import java.util.List;
@@ -66,7 +63,6 @@ public record Llama(Configuration configuration, Tokenizer tokenizer, Weights we
         // copy the token embedding into x
         weights.token_embedding_table.copyTo(token * dim, state.x, 0, dim);
 
-        System.out.println("Number of layers " + config.numberOfLayers);
         // forward all the layers
         for (int l = 0; l < config.numberOfLayers; l++) {
             // attention rmsnorm
@@ -258,6 +254,7 @@ public record Llama(Configuration configuration, Tokenizer tokenizer, Weights we
         // Return the dequantized value
         return quant * scale;
     }
+
 
     public static void matmulTornadoQ4(KernelContext context, ByteArray thisx, FloatArray that, FloatArray out, int dim1) {
         final int BLOCK_SIZE = GGMLType.Q4_0.getBlockSize(); // Q4 block size
