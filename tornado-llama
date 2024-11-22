@@ -1,8 +1,7 @@
 #!/bin/bash
-
 source set_paths
 
-# Default values
+# Default values 
 MODEL_PATH=""
 PROMPT=""
 SYSTEM_PROMPT=""
@@ -14,6 +13,7 @@ STREAM=true
 ECHO=false
 INSTRUCT=true
 INTERACTIVE=false
+USE_GPU=false
 
 # Parse arguments
 while [[ $# -gt 0 ]]; do
@@ -29,6 +29,7 @@ while [[ $# -gt 0 ]]; do
         --echo) ECHO="$2"; shift 2 ;;
         -i|--interactive|--chat) INTERACTIVE=true; INSTRUCT=false; shift ;;
         --instruct) INSTRUCT=true; INTERACTIVE=false; shift ;;
+        --gpu) USE_GPU=true; shift ;;
         --help|-h) print_usage; exit 0 ;;
         *) echo "Unknown option: $1"; print_usage; exit 1 ;;
     esac
@@ -48,19 +49,20 @@ CMD+=("-XX:+UnlockExperimentalVMOptions")
 CMD+=("-XX:+EnableJVMCI")
 CMD+=("-XX:-UseCompressedClassPointers")
 CMD+=("--enable-preview")
-CMD+=("-Djava.library.path=/Users/michalis/repos/TornadoVM/bin/sdk/lib")
-CMD+=("--module-path" ".:/Users/michalis/repos/TornadoVM/bin/sdk/share/java/tornado")
+CMD+=("-Djava.library.path=$TORNADO_SDK/lib")
+CMD+=("--module-path" ".:$TORNADO_SDK/share/java/tornado")
 CMD+=("-Dtornado.load.api.implementation=uk.ac.manchester.tornado.runtime.tasks.TornadoTaskGraph")
 CMD+=("-Dtornado.load.runtime.implementation=uk.ac.manchester.tornado.runtime.TornadoCoreRuntime")
 CMD+=("-Dtornado.load.tornado.implementation=uk.ac.manchester.tornado.runtime.common.Tornado")
 CMD+=("-Dtornado.load.annotation.implementation=uk.ac.manchester.tornado.annotation.ASMClassVisitor")
 CMD+=("-Dtornado.load.annotation.parallel=uk.ac.manchester.tornado.api.annotations.Parallel")
-CMD+=("--upgrade-module-path" "/Users/michalis/repos/TornadoVM/bin/sdk/share/java/graalJars")
+[ "$USE_GPU" = true ] && CMD+=("-Duse.tornadovm=true")
+CMD+=("--upgrade-module-path" "$TORNADO_SDK/share/java/graalJars")
 CMD+=("-XX:+UseParallelGC")
-CMD+=("@/Users/michalis/repos/TornadoVM/bin/sdk/etc/exportLists/common-exports")
-CMD+=("@/Users/michalis/repos/TornadoVM/bin/sdk/etc/exportLists/opencl-exports")
+CMD+=("@$TORNADO_SDK/etc/exportLists/common-exports")
+CMD+=("@$TORNADO_SDK/etc/exportLists/opencl-exports")
 CMD+=("--add-modules" "ALL-SYSTEM,tornado.runtime,tornado.annotation,tornado.drivers.common,tornado.drivers.opencl")
-CMD+=("-cp" "target/gpu-llama3-1.0-SNAPSHOT.jar")
+CMD+=("-cp" "$LLAMA_ROOT/target/gpu-llama3-1.0-SNAPSHOT.jar")
 CMD+=("com.example.LlamaApp")
 CMD+=("-m" "$MODEL_PATH")
 [ ! -z "$PROMPT" ] && CMD+=("-p" "$PROMPT")
