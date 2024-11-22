@@ -1,6 +1,6 @@
 #!/bin/bash
 
-export TORNADO_ROOT=/home/mikepapadim/manchester/TornadoVM
+export TORNADO_ROOT=/Users/michalis/repos/TornadoVM
 export TORNADO_SDK=${TORNADO_ROOT}/bin/sdk
-export LLAMA_ROOT=/home/mikepapadim/repos/gpu-llama3.java
+export LLAMA_ROOT=/Users/michalis/repos/llama3.java-tornadovm
 export PATH="${PATH}:${LLAMA_ROOT=}/bin"
