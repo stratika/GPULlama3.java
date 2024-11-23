@@ -50,7 +50,7 @@ public final class Q4_0FloatTensor extends FloatTensor {
 
     @Override
     public MemorySegment asMemorySegment() {
-        return null;
+        return memorySegment;
     }
 
     @Override

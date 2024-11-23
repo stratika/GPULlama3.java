@@ -104,13 +104,6 @@ public final class ModelLoader {
                 loadQuantized(tensorEntries.getOrDefault("output.weight", tokenEmbeddings))
         );
 
-//        System.out.print("Compare: " + qw.wclsTornadoQ8.getSegment().byteSize()  + " " + qw.wcls.asMemorySegment().byteSize());
-//
-//        for (int i = 0; i < 15;  i++) {
-//            System.out.print("\nmcomp " + qw.wcls.getFloat(i) + " vs " + qw.wclsTornadoQ8.getFloat(i));
-//        }
-
-//        System.exit(0);
         return qw;
     }
 
@@ -144,6 +137,7 @@ public final class ModelLoader {
 
     public static FloatTensor loadQuantized(GGMLTensorEntry entry) {
         GGMLType ggmlType = entry.ggmlType();
+//        System.out.println("GGML Type " + ggmlType);
         return switch (ggmlType) {
 //            case F32 -> new F32FloatTensor(FloatTensor.numberOfElements(entry.shape()), entry.memorySegment());
             case Q8_0 -> new Q8_0FloatTensor(FloatTensor.numberOfElements(entry.shape()), entry.memorySegment());
@@ -151,10 +145,6 @@ public final class ModelLoader {
             default -> throw new UnsupportedOperationException("Quantization format " + ggmlType);
         };
     }
-
-//    public static TensorFP32[] loadArrayOfQuantizedAsTensor(int size, IntFunction<GGMLTensorEntry> getTensorEntry) {
-//
-//    }
 
     public static FloatTensor[] loadArrayOfQuantized(int size, IntFunction<GGMLTensorEntry> getTensorEntry) {
         FloatTensor[] array = new FloatTensor[size];

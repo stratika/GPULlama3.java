@@ -13,11 +13,9 @@ import uk.ac.manchester.tornado.api.TaskGraph;
 import uk.ac.manchester.tornado.api.TornadoExecutionPlan;
 import uk.ac.manchester.tornado.api.WorkerGrid;
 import uk.ac.manchester.tornado.api.WorkerGrid1D;
-import uk.ac.manchester.tornado.api.common.TornadoDevice;
 import uk.ac.manchester.tornado.api.enums.DataTransferMode;
 import uk.ac.manchester.tornado.api.types.arrays.ByteArray;
 import uk.ac.manchester.tornado.api.types.arrays.FloatArray;
-import uk.ac.manchester.tornado.api.types.arrays.HalfFloatArray;
 import uk.ac.manchester.tornado.api.types.tensors.Float16;
 import uk.ac.manchester.tornado.api.types.tensors.TensorQ8;
 
@@ -29,8 +27,8 @@ import java.util.function.IntConsumer;
 import java.util.stream.IntStream;
 
 public record Llama(Configuration configuration, Tokenizer tokenizer, Weights weights) {
-    public static final long WORKGROUP = Long.parseLong(System.getProperty("llama.workgroup", "32"));
-    public static final boolean TORNADOVM = Boolean.parseBoolean(System.getProperty("use.tornadovm", "true"));
+    public static final long WORKGROUP = Long.parseLong(System.getProperty("llama.workgroup", "64"));
+    public static final boolean TORNADOVM = Boolean.parseBoolean(System.getProperty("use.tornadovm", "false"));
 
 
     public State createNewState() {
@@ -70,7 +68,7 @@ public record Llama(Configuration configuration, Tokenizer tokenizer, Weights we
 
             // qkv matmuls for this position
 
-            System.out.println("Sizes " + state.xb.size() + " " + state.q.size() + " dims " +  dim + " " + dim);
+//            System.out.println("Sizes " + state.xb.size() + " " + state.q.size() + " dims " +  dim + " " + dim);
             weights.wq[l].matmul(state.xb, state.q, dim, dim);
             weights.wk[l].matmul(state.xb, state.k, kvDim, dim);
             weights.wv[l].matmul(state.xb, state.v, kvDim, dim);
@@ -284,7 +282,7 @@ public record Llama(Configuration configuration, Tokenizer tokenizer, Weights we
         out.set(idx, result);
     }
 
-    public static void matmulTornado(KernelContext context, ByteArray thisx, FloatArray that, FloatArray out, int dim1) {
+    public static void matmulTornadoQ8(KernelContext context, ByteArray thisx, FloatArray that, FloatArray out, int dim1) {
         final int BLOCK_SIZE = 32; // Assuming this is the block size used in quantization
         final int BYTES_PER_BLOCK = Float16.BYTES + BLOCK_SIZE; // 2 bytes for scale + block_size bytes for values
 
@@ -430,6 +428,89 @@ public record Llama(Configuration configuration, Tokenizer tokenizer, Weights we
     }
 
 
+    //
+    public static void matmulTornadoo(KernelContext context, ByteArray thisx, FloatArray that, FloatArray out, int dim1) {
+        final int BLOCK_SIZE = 32;         // Number of values per block in 'thisx'
+        final int BYTES_PER_BLOCK = BLOCK_SIZE + 2; // 3 bytes per entry + 2 bytes overhead
+        final int TILE_SIZE = 16;          // Number of elements per tile
+
+        int idx = context.globalIdx;
+        int localIdx = context.localIdx;
+
+        // Shared memory for each tile
+        float[] localThat = context.allocateFloatLocalArray(TILE_SIZE);
+        int[] localThisx = context.allocateIntLocalArray(TILE_SIZE);    // Store packed 3-byte values
+
+        float result = 0.0f;
+        int thisOffset = idx * dim1;
+
+        for (int t = 0; t < dim1; t += TILE_SIZE) {
+            if (localIdx < TILE_SIZE && (t + localIdx) < dim1) {
+                // Calculate the index for loading data into the tile
+                int index = t + localIdx;
+
+                // Load 'that' data into shared memory tile
+                localThat[localIdx] = that.get(index);
+
+                // Calculate block index and offset within the block for 'thisx'
+                int blockIndex = (thisOffset + index) / BLOCK_SIZE;
+                int blockOffset = blockIndex * BYTES_PER_BLOCK;
+                int bytePos = (thisOffset + index) % BLOCK_SIZE;
+
+                // Extract 3 bytes and pack into an integer
+                int byte1 = thisx.get(blockOffset) & 0xFF;
+                int byte2 = thisx.get(blockOffset + 1) & 0xFF;
+                int byte3 = thisx.get(blockOffset + 2 + bytePos) & 0xFF;
+                localThisx[localIdx] = (byte1) | (byte2 << 8) | (byte3 << 16);
+            }
+
+            // Synchronize threads to ensure all data is loaded in shared memory
+            context.localBarrier();
+
+            // Compute the matrix multiplication for the tile
+            for (int j = 0; j < TILE_SIZE && (t + j) < dim1; j++) {
+                int packed = localThisx[j];
+                short scaleFloat16 = (short)(packed & 0xFFFF);     // Extract 16-bit float portion
+                byte quantized = (byte)((packed >> 16) & 0xFF);    // Extract 8-bit quantized portion
+
+                // Decode the float16 scale to a full-precision float
+                float scale = decodeFloat16Opt(scaleFloat16);
+                result += (quantized * scale) * localThat[j];
+            }
+
+            // Synchronize threads after computation
+            context.localBarrier();
+        }
+
+        // Store the result back to the output array
+        out.set(idx, result);
+    }
+
+    private static float decodeFloat16Opt(short value) {
+        int sign = (value & 0x8000) >>> 15;
+        int exp = (value & 0x7C00) >>> 10;
+        int frac = value & 0x03FF;
+
+        if (exp == 0x1F) {
+            return sign == 0 ? Float.POSITIVE_INFINITY : Float.NEGATIVE_INFINITY;
+        }
+        if (exp == 0) {
+            if (frac == 0) return sign == 0 ? 0.0f : -0.0f;
+            float result = frac * 5.9604645E-8f; // Precomputed 2^-24 for subnormal values
+            return sign == 0 ? result : -result;
+        }
+
+        // Normalized number
+        float result = (1.0f + (frac / 1024.0f));
+        if (exp < 15) {
+            result /= (1 << (15 - exp));
+        } else {
+            result *= (1 << (exp - 15));
+        }
+        return sign == 0 ? result : -result;
+    }
+
+
 
 
     /**
@@ -454,6 +535,7 @@ public record Llama(Configuration configuration, Tokenizer tokenizer, Weights we
     public static List<Integer> generateTokens(Llama model, State state, int startPosition, List<Integer> promptTokens, Set<Integer> stopTokens, int maxTokens, Sampler sampler, boolean echo,
             IntConsumer onTokenGenerated) {
         long startNanos = System.nanoTime();
+        long startGen = 0;
         if (maxTokens < 0 || model.configuration().contextLength < maxTokens) {
             maxTokens = model.configuration().contextLength;
         }
@@ -468,6 +550,7 @@ public record Llama(Configuration configuration, Tokenizer tokenizer, Weights we
 
         for (int position = startPosition; position < maxTokens; ++position) {
             forward(model, state, token, position, tornadoExecutionPlan);
+            startGen = System.nanoTime();
             if (promptIndex < promptTokens.size()) {
                 // Force-pick token from prompt.
                 nextToken = promptTokens.get(promptIndex++);
@@ -493,11 +576,18 @@ public record Llama(Configuration configuration, Tokenizer tokenizer, Weights we
         }
 
         long elapsedNanos = System.nanoTime() - startNanos;
+        long promptNanos = startGen - startNanos;
+        long genNanos = elapsedNanos - startGen + startNanos;
         int totalTokens = promptIndex + generatedTokens.size();
-        System.err.printf("%n%.2f tokens/s (%d)%n", totalTokens / (elapsedNanos / 1_000_000_000.0), totalTokens);
 
+        System.err.printf("%n%.2f tokens/s (%d) [PrEval %.2f tokens/s (%d), TokGen %.2f tokens/s (%d)]%n",
+                totalTokens / (elapsedNanos / 1_000_000_000.0), totalTokens,
+                promptTokens.size() / (promptNanos / 1_000_000_000.0), promptTokens.size(),
+                generatedTokens.size() / (genNanos / 1_000_000_000.0), generatedTokens.size());
         return generatedTokens;
     }
+
+
 
     /**
      * Creates the appropriate TornadoVM execution plan based on the selected execution mode
@@ -508,17 +598,22 @@ public record Llama(Configuration configuration, Tokenizer tokenizer, Weights we
     private static TornadoExecutionPlan createTornadoExecutionPlan(State state, Llama model) {
 
         TaskGraph taskGraph;
-
         KernelContext context = new KernelContext();
+        boolean isQ4Type = model.weights.wcls.toString().contains("Q4");
 
-        taskGraph = new TaskGraph("s0") //
-                .transferToDevice(DataTransferMode.EVERY_EXECUTION, state.wrapXFloat) //
-                .transferToDevice(DataTransferMode.FIRST_EXECUTION, model.weights.wclsByteArray) //
-                .transferToDevice(DataTransferMode.FIRST_EXECUTION, model.configuration.dim) //
-                .transferToDevice(DataTransferMode.FIRST_EXECUTION, model.configuration.vocabularySize) //
-//                .task("t0", Llama:: matmulTornado, context, model.weights.wclsByteArray, state.wrapXFloat, state.wrapLogits, model.configuration.vocabularySize, model.configuration.dim) //
-                .task("t0", Llama:: matmulTornado, context, model.weights.wclsByteArray, state.wrapXFloat, state.wrapLogits,  model.configuration.dim) //
-                .transferToHost(DataTransferMode.EVERY_EXECUTION, state.wrapLogits);
+        taskGraph = new TaskGraph("s0")
+        .transferToDevice(DataTransferMode.EVERY_EXECUTION, state.wrapXFloat)
+        .transferToDevice(DataTransferMode.FIRST_EXECUTION, model.weights.wclsByteArray)
+        .transferToDevice(DataTransferMode.FIRST_EXECUTION, model.configuration.dim)
+        .transferToDevice(DataTransferMode.FIRST_EXECUTION, model.configuration.vocabularySize)
+        .transferToHost(DataTransferMode.EVERY_EXECUTION, state.wrapLogits);
+
+        if (isQ4Type) {
+            taskGraph.task("t0", Llama::matmulTornadoQ4, context, model.weights.wclsByteArray, state.wrapXFloat, state.wrapLogits, model.configuration.dim);
+        } else {
+            taskGraph.task("t0", Llama::matmulTornadoQ8, context, model.weights.wclsByteArray, state.wrapXFloat, state.wrapLogits, model.configuration.dim);
+        }
+
         return new TornadoExecutionPlan(taskGraph.snapshot());
     }
 }

@@ -92,22 +92,25 @@ public final class GGUF {
 
     public static Map<String, GGMLTensorEntry> loadTensors(FileChannel fileChannel, long tensorDataOffset, Map<String, GGUFTensorInfo> tensorInfos) throws IOException {
         Arena arena = Arena.ofAuto();
-        long fileSize = fileChannel.size() - tensorDataOffset;
-        long chunkSize = 1024 * 1024 * 1024; // 1GB per chunk
-        long remainingBytes = fileSize;
-        long position = tensorDataOffset;
         MemorySegment tensorData = arena.allocate(fileChannel.size(), 1);
-        while (remainingBytes > 0) {
-            int bufferSize = (remainingBytes < chunkSize) ? (int) remainingBytes : (int) chunkSize;
-            ByteBuffer buffer = ByteBuffer.allocateDirect(bufferSize);
-            int bytesRead = fileChannel.read(buffer, position);
-            if (bytesRead == -1) break; // EOF
-            buffer.flip();
-            tensorData.asSlice(position, bytesRead).copyFrom(MemorySegment.ofBuffer(buffer));
-            buffer.clear();
-            position += bytesRead;
-            remainingBytes -= bytesRead;
-        }
+        fileChannel.read(tensorData.asByteBuffer(), (int) tensorDataOffset);
+        //        Arena arena = Arena.ofAuto();
+//        long fileSize = fileChannel.size() - tensorDataOffset;
+//        long chunkSize = 1024 * 1024 * 1024; // 1GB per chunk
+//        long remainingBytes = fileSize;
+//        long position = tensorDataOffset;
+//        MemorySegment tensorData = arena.allocate(fileChannel.size(), 1);
+//        while (remainingBytes > 0) {
+//            int bufferSize = (remainingBytes < chunkSize) ? (int) remainingBytes : (int) chunkSize;
+//            ByteBuffer buffer = ByteBuffer.allocateDirect(bufferSize);
+//            int bytesRead = fileChannel.read(buffer, position);
+//            if (bytesRead == -1) break; // EOF
+//            buffer.flip();
+//            tensorData.asSlice(position, bytesRead).copyFrom(MemorySegment.ofBuffer(buffer));
+//            buffer.clear();
+//            position += bytesRead;
+//            remainingBytes -= bytesRead;
+//        }
         Map<String, com.example.core.model.tensor.GGMLTensorEntry> tensorEntries = HashMap.newHashMap(tensorInfos.size());
         for (Map.Entry<String, GGUFTensorInfo> entry : tensorInfos.entrySet()) {
             GGUFTensorInfo ti = entry.getValue();

@@ -7,6 +7,7 @@ import uk.ac.manchester.tornado.api.types.arrays.FloatArray;
 import uk.ac.manchester.tornado.api.types.tensors.Shape;
 import uk.ac.manchester.tornado.api.types.tensors.TensorQ8;
 
+import java.util.stream.IntStream;
 import java.util.stream.Stream;
 
 public final class State {
@@ -33,6 +34,9 @@ public final class State {
 
     public int latestToken;
 
+    /** last index in previous block */
+    int idxPrevBlock;
+
     public State(Configuration config) {
         this.x = ArrayFloatTensor.allocate(config.dim);
         this.xb = ArrayFloatTensor.allocate(config.dim);
@@ -49,7 +53,7 @@ public final class State {
         this.valueCache = Stream.generate(() -> ArrayFloatTensor.allocate(config.contextLength, kvDim)).limit(config.numberOfLayers).toArray(FloatTensor[]::new);
 
         this.wrapXFloat = new FloatArray(config.dim);
-        
+
         this.wrapX = new TensorQ8(new Shape(config.dim));
         this.wrapLogits = new FloatArray(config.vocabularySize);
     }
