@@ -49,7 +49,7 @@ public final class Weights {
         this.freq_cis_real = freq_cis_real;
         this.freq_cis_imag = freq_cis_imag;
         this.wcls = wcls;
-        System.out.println("XXX " + wcls.toString() );
+        // Store read-only weight as a ByteArray in TornadoVM
         this.wclsByteArray = ByteArray.fromSegment(wcls.asMemorySegment());
     }
 }

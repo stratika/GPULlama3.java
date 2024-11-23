@@ -84,7 +84,6 @@ public final class Q8_0FloatTensor extends FloatTensor {
         assert Integer.bitCount(GGMLType.Q8_0.getBlockSize()) == 1 : "power of 2";
         int alignmentBound = Math.min(size, -thisOffset & (GGMLType.Q8_0.getBlockSize() - 1));
         if (alignmentBound > 0) {
-            System.out.print("\nXXX allignemtn"  );
             result += FloatTensor.scalarDot(thiz, thisOffset, that, thatOffset, alignmentBound);
             j += alignmentBound;
         }
