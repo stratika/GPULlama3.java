@@ -9,9 +9,12 @@ import uk.ac.manchester.tornado.api.types.tensors.Float16;
 import java.util.stream.IntStream;
 
 public class TornadoVMCompute {
-    public TornadoVMCompute() {
+    public static final boolean TORNADOVM = Boolean.parseBoolean(System.getProperty("use.tornadovm", "false"));
+    public static final long WORKGROUP = Long.parseLong(System.getProperty("llama.workgroup", "32"));
 
+    public TornadoVMCompute() {
     }
+
     public static void matmulTornadoQ4(KernelContext context, ByteArray thisx, FloatArray that, FloatArray out, int dim1) {
         final int BLOCK_SIZE = GGMLType.Q4_0.getBlockSize(); // Q4 block size
         final int BYTES_PER_BLOCK = GGMLType.Q4_0.getTypeSize(); // The block size in bytes for Q4

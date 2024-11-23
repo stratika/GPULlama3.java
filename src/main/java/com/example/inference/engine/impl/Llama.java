@@ -21,10 +21,8 @@ import java.util.List;
 import java.util.Set;
 import java.util.function.IntConsumer;
 
-public record Llama(Configuration configuration, Tokenizer tokenizer, Weights weights) {
-    public static final long WORKGROUP = Long.parseLong(System.getProperty("llama.workgroup", "64"));
-    public static final boolean TORNADOVM = Boolean.parseBoolean(System.getProperty("use.tornadovm", "false"));
 
+public record Llama(Configuration configuration, Tokenizer tokenizer, Weights weights) {
 
     public State createNewState() {
         State state = new State(configuration());
@@ -167,7 +165,7 @@ public record Llama(Configuration configuration, Tokenizer tokenizer, Weights we
         // final rmsnorm
         rmsnorm(state.x, state.x, weights.rms_final_weight, dim, config.rmsNormEps);
 
-        if(TORNADOVM) {
+        if(TornadoVMCompute.TORNADOVM) {
             state.wrapXFloat.getSegment().copyFrom(state.x.asMemorySegment());
             executionPlan.withGridScheduler(scheduler).execute();
             state.logits.asMemorySegment().copyFrom(state.wrapLogits.getSegment());
@@ -212,7 +210,7 @@ public record Llama(Configuration configuration, Tokenizer tokenizer, Weights we
         // Revert when end-to-end integration is done
         TornadoExecutionPlan tornadoExecutionPlan = createTornadoExecutionPlan(state, model);
         WorkerGrid worker = new WorkerGrid1D(model.configuration.vocabularySize);
-        worker.setLocalWork(WORKGROUP,1,1);
+        worker.setLocalWork(TornadoVMCompute.WORKGROUP,1,1);
         GridScheduler gridScheduler = new GridScheduler("s0.t0", worker);
 
         for (int position = startPosition; position < maxTokens; ++position) {
