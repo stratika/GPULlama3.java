@@ -3,6 +3,7 @@ package com.example.loader.weights;
 import com.example.core.model.tensor.FloatTensor;
 import com.example.core.model.tensor.Q8_0FloatTensor;
 import uk.ac.manchester.tornado.api.types.arrays.ByteArray;
+import uk.ac.manchester.tornado.api.types.arrays.FloatArray;
 import uk.ac.manchester.tornado.api.types.arrays.HalfFloatArray;
 import uk.ac.manchester.tornado.api.types.tensors.TensorQ8;
 
@@ -33,6 +34,7 @@ public final class Weights {
 
 //    public final TensorQ8 wclsTornadoQ8;
     public final ByteArray wclsByteArray;
+    public final FloatArray rms_final_weight_as_floatArray;
 
     public Weights(FloatTensor token_embedding_table, FloatBuffer[] rms_att_weight, FloatTensor[] wq, FloatTensor[] wk, FloatTensor[] wv, FloatTensor[] wo, FloatBuffer[] rms_ffn_weight, FloatTensor[] w1, FloatTensor[] w2, FloatTensor[] w3, FloatBuffer rms_final_weight, FloatBuffer freq_cis_real, FloatBuffer freq_cis_imag, FloatTensor wcls) {
         this.token_embedding_table = token_embedding_table;
@@ -51,5 +53,6 @@ public final class Weights {
         this.wcls = wcls;
         // Store read-only weight as a ByteArray in TornadoVM
         this.wclsByteArray = ByteArray.fromSegment(wcls.asMemorySegment());
+        this.rms_final_weight_as_floatArray = FloatArray.fromFloatBuffer(rms_final_weight);
     }
 }
