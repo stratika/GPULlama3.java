@@ -7,11 +7,8 @@ todo:
 	//                Arena.ofAuto()
 	//        );
 
-2) add flag to switch between pure tornado and pure java
-3) add support to switch between Q4 and Q8 for TornadoVM
-4) remove hardcoded paths from tornado-llama script
-5) Fix performance 
-6) Offload also the 3 group matmuls
+2) Fix performance 
+3) Offload also the 3 group matmuls
 	Number of layers 16
 	Sizes 2048 2048 dims 2048 2048
 	Sizes 2048 2048 dims 2048 2048
