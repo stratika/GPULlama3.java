@@ -1,11 +1,14 @@
 package com.example.tornadovm;
 
 import com.example.core.model.GGMLType;
+import com.example.core.model.tensor.FloatTensor;
 import uk.ac.manchester.tornado.api.KernelContext;
+import uk.ac.manchester.tornado.api.math.TornadoMath;
 import uk.ac.manchester.tornado.api.types.arrays.ByteArray;
 import uk.ac.manchester.tornado.api.types.arrays.FloatArray;
 import uk.ac.manchester.tornado.api.types.tensors.Float16;
 
+import java.nio.FloatBuffer;
 import java.util.stream.IntStream;
 
 public class TornadoVMCompute {
@@ -187,6 +190,54 @@ public class TornadoVMCompute {
             }
             out.set(i, result);
         });
+    }
+
+
+    public static void reduceSquareSums(KernelContext context, FloatArray x, FloatArray reduce) {
+        int globalIdx = context.globalIdx;
+        int localIdx = context.localIdx;
+        int localGroupSize = context.localGroupSizeX;
+        int groupID = context.groupIdx; // Expose Group ID
+
+        float[] localA = context.allocateFloatLocalArray(256);
+        localA[localIdx] = x.get(globalIdx) * x.get(globalIdx);
+        for (int stride = (localGroupSize / 2); stride > 0; stride /= 2) {
+            context.localBarrier();
+            if (localIdx < stride) {
+                localA[localIdx] += localA[localIdx + stride];
+            }
+        }
+        if (localIdx == 0) {
+            reduce.set(groupID, localA[0]);
+        }
+    }
+
+    public static void finalSum(KernelContext context, FloatArray reduce, int size, float eps) {
+        int globalIdx = context.globalIdx;
+
+        float sum = 0.0f;
+        if (globalIdx == 0) {
+            for (int i = 0; i < size; i++) {
+                sum += reduce.get(i);
+            }
+        }
+
+        float ss = sum / (float) size;
+        ss += eps;
+        ss = 1.0f / TornadoMath.sqrt(ss);
+        reduce.set(0,ss);
+    }
+
+    public static void normalizeAndScale(KernelContext context,
+            FloatArray x, FloatArray weight, FloatArray scalingFactorBuffer,
+            int size) {
+
+        int globalIdx = context.globalIdx;
+
+        if (globalIdx < size) {
+            float scaledValue = weight.get(globalIdx) * (scalingFactorBuffer.get(0) * x.get(globalIdx));
+            x.set(globalIdx, scaledValue);
+        }
     }
 
 }
