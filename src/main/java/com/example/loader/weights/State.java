@@ -28,7 +28,7 @@ public final class State {
     public final FloatTensor[] valueCache; // (n_layer, seq_len, kv_dim)
 
     // wrapper tensors for TornadoVM
-    public final TensorQ8 wrapX;
+//    public final TensorQ8 wrapX;
     public final FloatArray wrapLogits;
     public final FloatArray wrapXFloat;
 
@@ -54,7 +54,7 @@ public final class State {
 
         this.wrapXFloat = new FloatArray(config.dim);
 
-        this.wrapX = new TensorQ8(new Shape(config.dim));
+//        this.wrapX = new TensorQ8(new Shape(config.dim));
         this.wrapLogits = new FloatArray(config.vocabularySize);
     }
 }
