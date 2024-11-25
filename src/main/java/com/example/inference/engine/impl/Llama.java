@@ -205,7 +205,6 @@ public record Llama(Configuration configuration, Tokenizer tokenizer, Weights we
 
 
         Tuple2<TornadoExecutionPlan, GridScheduler> tornadoExecutionPlanGridSchedulerTuple2 = createTornadoExecutionPlanFused(state, model);
-//        Tuple2<TornadoExecutionPlan, GridScheduler> tornadoExecutionPlanGridSchedulerTuple2 = createTornadoExecutionPlan(state, model);
 
         for (int position = startPosition; position < maxTokens; ++position) {
             forward(model, state, token, position, tornadoExecutionPlanGridSchedulerTuple2);
