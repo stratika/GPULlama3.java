@@ -197,7 +197,7 @@ public class TornadoVMCompute {
         int localGroupSize = context.localGroupSizeX;
         int groupID = context.groupIdx; // Expose Group ID
 
-        float[] localA = context.allocateFloatLocalArray((int) WORKGROUP);
+        float[] localA = context.allocateFloatLocalArray((int) 256);
         localA[localIdx] = x.get(globalIdx) * x.get(globalIdx);
         for (int stride = (localGroupSize / 2); stride > 0; stride /= 2) {
             context.localBarrier();
