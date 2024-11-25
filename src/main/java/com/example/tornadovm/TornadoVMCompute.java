@@ -1,19 +1,17 @@
 package com.example.tornadovm;
 
 import com.example.core.model.GGMLType;
-import com.example.core.model.tensor.FloatTensor;
 import uk.ac.manchester.tornado.api.KernelContext;
 import uk.ac.manchester.tornado.api.math.TornadoMath;
 import uk.ac.manchester.tornado.api.types.arrays.ByteArray;
 import uk.ac.manchester.tornado.api.types.arrays.FloatArray;
 import uk.ac.manchester.tornado.api.types.tensors.Float16;
 
-import java.nio.FloatBuffer;
 import java.util.stream.IntStream;
 
 public class TornadoVMCompute {
     public static final boolean TORNADOVM = Boolean.parseBoolean(System.getProperty("use.tornadovm", "false"));
-    public static final long WORKGROUP = Long.parseLong(System.getProperty("llama.workgroup", "32"));
+    public static final long WORKGROUP = Long.parseLong(System.getProperty("llama.workgroup", "256"));
 
     public TornadoVMCompute() {
     }
@@ -199,7 +197,7 @@ public class TornadoVMCompute {
         int localGroupSize = context.localGroupSizeX;
         int groupID = context.groupIdx; // Expose Group ID
 
-        float[] localA = context.allocateFloatLocalArray(256);
+        float[] localA = context.allocateFloatLocalArray((int) WORKGROUP);
         localA[localIdx] = x.get(globalIdx) * x.get(globalIdx);
         for (int stride = (localGroupSize / 2); stride > 0; stride /= 2) {
             context.localBarrier();
@@ -228,8 +226,9 @@ public class TornadoVMCompute {
         reduce.set(0,ss);
     }
 
-    public static void normalizeAndScale(KernelContext context,
-            FloatArray x, FloatArray weight, FloatArray scalingFactorBuffer,
+    public static void normalizeAndScale(
+            KernelContext context, FloatArray x,
+            FloatArray weight, FloatArray scalingFactorBuffer,
             int size) {
 
         int globalIdx = context.globalIdx;
