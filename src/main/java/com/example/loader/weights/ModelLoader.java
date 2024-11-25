@@ -15,8 +15,7 @@ import com.example.inference.engine.impl.Llama;
 import com.example.inference.operation.RoPE;
 import com.example.tokenizer.impl.Tokenizer;
 import com.example.tokenizer.vocabulary.Vocabulary;
-import uk.ac.manchester.tornado.api.types.arrays.FloatArray;
-import uk.ac.manchester.tornado.api.types.tensors.TensorFP32;
+
 
 import java.io.IOException;
 import java.nio.ByteOrder;
@@ -104,6 +103,10 @@ public final class ModelLoader {
                 loadQuantized(tensorEntries.getOrDefault("output.weight", tokenEmbeddings))
         );
 
+        if (!qw.validateRmsFinalWeights()) {
+            throw new IllegalStateException("Mismatch found between rms_final_weight and rms_final_weight_as_floatArray.");
+        }
+
         return qw;
     }
 
@@ -137,7 +140,6 @@ public final class ModelLoader {
 
     public static FloatTensor loadQuantized(GGMLTensorEntry entry) {
         GGMLType ggmlType = entry.ggmlType();
-//        System.out.println("GGML Type " + ggmlType);
         return switch (ggmlType) {
 //            case F32 -> new F32FloatTensor(FloatTensor.numberOfElements(entry.shape()), entry.memorySegment());
             case Q8_0 -> new Q8_0FloatTensor(FloatTensor.numberOfElements(entry.shape()), entry.memorySegment());
