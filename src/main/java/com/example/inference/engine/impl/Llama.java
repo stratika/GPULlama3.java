@@ -9,24 +9,19 @@ import com.example.loader.weights.Weights;
 import com.example.tokenizer.impl.Tokenizer;
 import com.example.tornadovm.TornadoVMCompute;
 import uk.ac.manchester.tornado.api.GridScheduler;
-import uk.ac.manchester.tornado.api.ImmutableTaskGraph;
 import uk.ac.manchester.tornado.api.KernelContext;
 import uk.ac.manchester.tornado.api.TaskGraph;
 import uk.ac.manchester.tornado.api.TornadoExecutionPlan;
 import uk.ac.manchester.tornado.api.WorkerGrid;
 import uk.ac.manchester.tornado.api.WorkerGrid1D;
-import uk.ac.manchester.tornado.api.annotations.Reduce;
 import uk.ac.manchester.tornado.api.enums.DataTransferMode;
-import uk.ac.manchester.tornado.api.exceptions.TornadoExecutionPlanException;
 import uk.ac.manchester.tornado.api.types.arrays.FloatArray;
 
 import java.nio.FloatBuffer;
 import java.util.ArrayList;
 import java.util.List;
-import java.util.Random;
 import java.util.Set;
 import java.util.function.IntConsumer;
-import java.util.stream.IntStream;
 
 public record Llama(Configuration configuration, Tokenizer tokenizer, Weights weights) {
 
@@ -163,16 +158,14 @@ public record Llama(Configuration configuration, Tokenizer tokenizer, Weights we
             state.x.addInPlace(state.xb);
         }
 
-        rmsnorm(state.x, state.x, weights.rms_final_weight, dim, config.rmsNormEps);
-
 
         if(TornadoVMCompute.TORNADOVM) {
             state.wrapXFloat.getSegment().copyFrom(state.x.asMemorySegment());
             executionPlanTuple2.getFirst().withGridScheduler(executionPlanTuple2.getSecond()).execute();
             state.logits.asMemorySegment().copyFrom(state.wrapLogits.getSegment());
-//            state.x.asMemorySegment().copyFrom(state.wrapXFloat.getSegment());
+            state.x.asMemorySegment().copyFrom(state.wrapXFloat.getSegment());
         } else {
-//            rmsnorm(state.x, state.x, weights.rms_final_weight, dim, config.rmsNormEps);
+            //            rmsnorm(state.x, state.x, weights.rms_final_weight, dim, config.rmsNormEps);
             weights.wcls.matmul(state.x, state.logits, config.vocabularySize, dim);
         }
 
@@ -211,8 +204,8 @@ public record Llama(Configuration configuration, Tokenizer tokenizer, Weights we
         int promptIndex = 0;
 
 
-//        Tuple2<TornadoExecutionPlan, GridScheduler> tornadoExecutionPlanGridSchedulerTuple2 = createTornadoExecutionPlanFused(state, model);
-        Tuple2<TornadoExecutionPlan, GridScheduler> tornadoExecutionPlanGridSchedulerTuple2 = createTornadoExecutionPlan(state, model);
+        Tuple2<TornadoExecutionPlan, GridScheduler> tornadoExecutionPlanGridSchedulerTuple2 = createTornadoExecutionPlanFused(state, model);
+//        Tuple2<TornadoExecutionPlan, GridScheduler> tornadoExecutionPlanGridSchedulerTuple2 = createTornadoExecutionPlan(state, model);
 
         for (int position = startPosition; position < maxTokens; ++position) {
             forward(model, state, token, position, tornadoExecutionPlanGridSchedulerTuple2);
@@ -268,11 +261,11 @@ public record Llama(Configuration configuration, Tokenizer tokenizer, Weights we
         boolean isQ4Type = model.weights.wcls.toString().contains("Q4");
 
         taskGraph = new TaskGraph("s0")
-        .transferToDevice(DataTransferMode.EVERY_EXECUTION, state.wrapXFloat)
-        .transferToDevice(DataTransferMode.FIRST_EXECUTION, model.weights.wclsByteArray)
-        .transferToDevice(DataTransferMode.FIRST_EXECUTION, model.configuration.dim)
-        .transferToDevice(DataTransferMode.FIRST_EXECUTION, model.configuration.vocabularySize)
-        .transferToHost(DataTransferMode.EVERY_EXECUTION, state.wrapLogits);
+            .transferToDevice(DataTransferMode.EVERY_EXECUTION, state.wrapXFloat)
+            .transferToDevice(DataTransferMode.FIRST_EXECUTION, model.weights.wclsByteArray)
+            .transferToDevice(DataTransferMode.FIRST_EXECUTION, model.configuration.dim)
+            .transferToDevice(DataTransferMode.FIRST_EXECUTION, model.configuration.vocabularySize)
+            .transferToHost(DataTransferMode.EVERY_EXECUTION, state.wrapLogits);
 
         if (isQ4Type) {
             taskGraph.task("t0", TornadoVMCompute::matmulTornadoQ4, context, model.weights.wclsByteArray, state.wrapXFloat, state.wrapLogits, model.configuration.dim);
@@ -289,7 +282,7 @@ public record Llama(Configuration configuration, Tokenizer tokenizer, Weights we
     }
 
     /**
-     * Creates a TornadoVM-based fused execution plan for processing using a series of compute tasks
+     * Creates a TornadoVM-based fused execution plan for processixng using a series of compute tasks
      * on the `TaskGraph`, optimizing tensor calculations, normalization, and matrix multiplication.
      * The generated execution plan leverages TornadoVM for GPU-accelerated tasks and adjusts based
      * on the data type of the model's weights.
@@ -315,6 +308,7 @@ public record Llama(Configuration configuration, Tokenizer tokenizer, Weights we
         boolean isQ4Type = model.weights.wcls.toString().contains("Q4");
 
 
+        System.out.println("Model.configuration.dim " + model.configuration.dim);
         final int size = model.configuration.dim;
         final int localSize = 256;
 
@@ -348,7 +342,6 @@ public record Llama(Configuration configuration, Tokenizer tokenizer, Weights we
         gridScheduler.setWorkerGrid("fused.sum", new WorkerGrid1D(1));
         gridScheduler.setWorkerGrid("fused.ns", worker);
         gridScheduler.setWorkerGrid("fused.mv", finalTokenWorker);
-
 
         return new Tuple2<>(new TornadoExecutionPlan(taskGraph.snapshot()), gridScheduler);
     }
