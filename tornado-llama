@@ -14,6 +14,7 @@ ECHO=false
 INSTRUCT=true
 INTERACTIVE=false
 USE_GPU=false
+DEBUG_GPU=false
 
 # Parse arguments
 while [[ $# -gt 0 ]]; do
@@ -30,6 +31,7 @@ while [[ $# -gt 0 ]]; do
         -i|--interactive|--chat) INTERACTIVE=true; INSTRUCT=false; shift ;;
         --instruct) INSTRUCT=true; INTERACTIVE=false; shift ;;
         --gpu) USE_GPU=true; shift ;;
+        --debug) DEBUG_GPU=true; shift ;;
         --help|-h) print_usage; exit 0 ;;
         *) echo "Unknown option: $1"; print_usage; exit 1 ;;
     esac
@@ -57,6 +59,7 @@ CMD+=("-Dtornado.load.tornado.implementation=uk.ac.manchester.tornado.runtime.co
 CMD+=("-Dtornado.load.annotation.implementation=uk.ac.manchester.tornado.annotation.ASMClassVisitor")
 CMD+=("-Dtornado.load.annotation.parallel=uk.ac.manchester.tornado.api.annotations.Parallel")
 [ "$USE_GPU" = true ] && CMD+=("-Duse.tornadovm=true")
+[ "$DEBUG_GPU" = true ] && CMD+=("-Dtonado.debug=true")
 CMD+=("--upgrade-module-path" "$TORNADO_SDK/share/java/graalJars")
 CMD+=("-XX:+UseParallelGC")
 CMD+=("@$TORNADO_SDK/etc/exportLists/common-exports")
