@@ -22,7 +22,8 @@ This project builds on [Llama3.java](https://github.com/mukel/llama3.java), base
 Ensure you have the following installed and configured:
 
 - **Java 21+**: Required for Vector API support.
-- **TornadoVM**: TornadoVM installation with environment variables `TORNADO_ROOT` and `TORNADO_SDK`.
+- **TornadoVM**: To install **TornadoVM**, you'll need to set up the environment variables `TORNADO_ROOT` and `TORNADO_SDK` as part of the configuration process.
+  For detailed installation instructions, visit the [TornadoVM GitHub repository](https://github.com/beehive-lab/TornadoVM).
 - **Maven**: For building the Java project.
 
 ### Download Model Files
@@ -30,19 +31,27 @@ Ensure you have the following installed and configured:
 Download quantized `.gguf` files for Llama3 models from [Hugging Face](https://huggingface.co/mukel/), or using the following `curl` commands:
 
 ```bash
-# Llama 3.2 (3B)
-curl -L -O https://huggingface.co/mukel/Llama-3.2-3B-Instruct-GGUF/resolve/main/Llama-3.2-3B-Instruct-Q4_0.gguf
+# Llama 3.2 (1B) -> Q4_0
+curl -L -O https://huggingface.co/mukel/Llama-3.2-1B-Instruct-GGUF/resolve/main/Llama-3.2-1B-Instruct-Q4_0.gguf
 
-# Llama 3.2 (1B)
+# Llama 3.2 (1B) -> Q8_0
 curl -L -O https://huggingface.co/mukel/Llama-3.2-1B-Instruct-GGUF/resolve/main/Llama-3.2-1B-Instruct-Q8_0.gguf
 
-# Llama 3.1 (8B)
+# Llama 3.2 (3B) -> Q4_0
+curl -L -O https://huggingface.co/mukel/Llama-3.2-3B-Instruct-GGUF/resolve/main/Llama-3.2-3B-Instruct-Q4_0.gguf
+
+# Llama 3.1 (8B) -> Q8_0
 curl -L -O https://huggingface.co/mukel/Meta-Llama-3.1-8B-Instruct-GGUF/resolve/main/Meta-Llama-3.1-8B-Instruct-Q4_0.gguf
+```
+
+### Download the Tokenizer.bin
+```bash
+wget https://github.com/karpathy/llama2.c/raw/master/tokenizer.bin
 ```
 
 ### Configuration
 
-Set up environment variables by editing and sourcing the set_paths script:
+Set up environment variables by editing and sourcing the `set_paths` script:
 
 ```bash
 export TORNADO_ROOT=/path/to/TornadoVM
@@ -104,4 +113,8 @@ Supported command-line options include:
 - `--max-tokens <int>` - Limits the number of generated tokens
 - `--stream <true/false>` - Streams output tokens
 - `--interactive` - Enables continuous input mode
-- `--instruct` - Instruction-following mode
+- `--instruct` - Instruction-following model
+
+## License
+
+MIT
