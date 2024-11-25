@@ -5,6 +5,8 @@ Integration of **Llama3 models** with **TornadoVM** to enable accelerated infere
 
 This project builds on [Llama3.java](https://github.com/mukel/llama3.java), based on the original [Llama 3](https://github.com/meta-llama/llama3), [3.1](https://llama.meta.com/docs/model-cards-and-prompt-formats/llama3_1), and [3.2](https://ai.meta.com/blog/llama-3-2-connect-2024-vision-edge-mobile-devices/) models, with TornadoVM support for parallelism and hardware acceleration.
 
+Previous intergration of TornadoVM and Llama2 it can be found in [llama2.tornadovm](https://github.com/mikepapadim/llama2.tornadovm.java).
+
 ---
 
 ## Features
