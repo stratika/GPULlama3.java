@@ -165,7 +165,7 @@ public record Llama(Configuration configuration, Tokenizer tokenizer, Weights we
             state.logits.asMemorySegment().copyFrom(state.wrapLogits.getSegment());
             state.x.asMemorySegment().copyFrom(state.wrapXFloat.getSegment());
         } else {
-            //            rmsnorm(state.x, state.x, weights.rms_final_weight, dim, config.rmsNormEps);
+            rmsnorm(state.x, state.x, weights.rms_final_weight, dim, config.rmsNormEps);
             weights.wcls.matmul(state.x, state.logits, config.vocabularySize, dim);
         }
 
