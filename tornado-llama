@@ -59,7 +59,7 @@ CMD+=("-Dtornado.load.tornado.implementation=uk.ac.manchester.tornado.runtime.co
 CMD+=("-Dtornado.load.annotation.implementation=uk.ac.manchester.tornado.annotation.ASMClassVisitor")
 CMD+=("-Dtornado.load.annotation.parallel=uk.ac.manchester.tornado.api.annotations.Parallel")
 [ "$USE_GPU" = true ] && CMD+=("-Duse.tornadovm=true")
-[ "$DEBUG_GPU" = true ] && CMD+=("-Dtonado.debug=true")
+[ "$DEBUG_GPU" = true ] && CMD+=("-Dtonado.debug=true") && CMD+=("-Dtonado.threadInfo=true")
 CMD+=("--upgrade-module-path" "$TORNADO_SDK/share/java/graalJars")
 CMD+=("-XX:+UseParallelGC")
 CMD+=("@$TORNADO_SDK/etc/exportLists/common-exports")
