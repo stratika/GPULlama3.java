@@ -4,8 +4,6 @@ import com.example.core.model.tensor.FloatTensor;
 import uk.ac.manchester.tornado.api.types.arrays.ByteArray;
 import uk.ac.manchester.tornado.api.types.arrays.FloatArray;
 
-
-import java.nio.ByteOrder;
 import java.nio.FloatBuffer;
 import java.util.Arrays;
 
@@ -36,6 +34,16 @@ public final class Weights {
     public final ByteArray wclsByteArray;
     public final FloatArray rms_final_weight_as_floatArray;
 
+    // wo -> FloatArray
+    // w1 -> FloatArray
+    // rms_ffn_weights[l] -> FloatBuffer
+
+    public final FloatArray[] woAsFloatArray;
+    public final FloatArray[] rms_ffn_weight_as_floatArray;
+    public final FloatArray[] w1AsFloatArray;
+    public final FloatArray[] w2AFloatArray;
+    public final FloatArray[] w3AFloatArray;
+
     public Weights(FloatTensor token_embedding_table, FloatBuffer[] rms_att_weight, FloatTensor[] wq, FloatTensor[] wk, FloatTensor[] wv, FloatTensor[] wo, FloatBuffer[] rms_ffn_weight, FloatTensor[] w1, FloatTensor[] w2, FloatTensor[] w3, FloatBuffer rms_final_weight, FloatBuffer freq_cis_real, FloatBuffer freq_cis_imag, FloatTensor wcls) {
         this.token_embedding_table = token_embedding_table;
         this.rms_att_weight = rms_att_weight;
@@ -54,8 +62,30 @@ public final class Weights {
 
         // Store read-only weight as a ByteArray in TornadoVM
         this.wclsByteArray = ByteArray.fromSegment(wcls.asMemorySegment());
-
         this.rms_final_weight_as_floatArray = FloatArray.fromFloatBuffer(rms_final_weight);
+
+        this.woAsFloatArray = loadToFloatArray(wo);
+        this.w1AsFloatArray = loadToFloatArray(w1);
+        this.w2AFloatArray = loadToFloatArray(w2);
+        this.w3AFloatArray = loadToFloatArray(w3);
+
+        this.rms_ffn_weight_as_floatArray= loadToFloatArray(rms_ffn_weight);
+    }
+
+    private static FloatArray[] loadToFloatArray(FloatTensor[] array) {
+        FloatArray[] floatArrays = new FloatArray[array.length];
+        for (int i = 0; i < array.length; i++) {
+            floatArrays[i] = FloatArray.fromSegment(array[i].asMemorySegment());
+        }
+        return floatArrays;
+    }
+
+    private static FloatArray[] loadToFloatArray(FloatBuffer[] array) {
+        FloatArray[] floatArrays = new FloatArray[array.length];
+        for (int i = 0; i < array.length; i++) {
+            floatArrays[i] = FloatArray.fromFloatBuffer(array[i]);
+        }
+        return floatArrays;
     }
 
     public boolean validateRmsFinalWeights() {

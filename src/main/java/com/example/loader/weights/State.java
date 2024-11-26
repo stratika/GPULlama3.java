@@ -28,10 +28,13 @@ public final class State {
     public final FloatTensor[] valueCache; // (n_layer, seq_len, kv_dim)
 
     // wrapper tensors for TornadoVM
-//    public final TensorQ8 wrapX;
+    //    public final TensorQ8 wrapX;
     public final FloatArray wrapLogits;
     public final FloatArray wrapXFloat;
-
+    public final FloatArray wrapXb;
+    public final FloatArray wrapXb2;
+    public final FloatArray wrapHb;
+    public final FloatArray wrapHb2;
     public int latestToken;
 
     /** last index in previous block */
@@ -53,6 +56,12 @@ public final class State {
         this.valueCache = Stream.generate(() -> ArrayFloatTensor.allocate(config.contextLength, kvDim)).limit(config.numberOfLayers).toArray(FloatTensor[]::new);
 
         this.wrapXFloat = new FloatArray(config.dim);
+        this.wrapXb = new FloatArray(config.dim);
+        this.wrapXb2 = new FloatArray(config.dim);
+
+        this.wrapHb = new FloatArray(config.hiddenDim);
+        this.wrapHb2 = new FloatArray(config.hiddenDim);
+
         this.wrapLogits = new FloatArray(config.vocabularySize);
     }
 }

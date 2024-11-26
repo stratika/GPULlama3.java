@@ -2,6 +2,7 @@ package com.example.tornadovm;
 
 import com.example.core.model.GGMLType;
 import uk.ac.manchester.tornado.api.KernelContext;
+import uk.ac.manchester.tornado.api.annotations.Parallel;
 import uk.ac.manchester.tornado.api.math.TornadoMath;
 import uk.ac.manchester.tornado.api.types.arrays.ByteArray;
 import uk.ac.manchester.tornado.api.types.arrays.FloatArray;
@@ -238,5 +239,43 @@ public class TornadoVMCompute {
             x.set(globalIdx, scaledValue);
         }
     }
+
+    public static void addInPlace(FloatArray input, FloatArray output) {
+        for (@Parallel int i = 0; i < input.getSize(); i++) {
+            // Perform element-wise addition
+            float result = output.get(i) + input.get(i);
+            output.set(i, result);
+        }
+    }
+
+
+    public static void multiplyInPlace(FloatArray input, FloatArray output) {
+        for (@Parallel int i = 0; i < input.getSize(); i++) {
+            // Perform element-wise multiplication
+            float result = output.get(i) * input.get(i);
+            output.set(i, result);
+        }
+    }
+
+
+    public static void mapInPlace(FloatArray input) {
+        for (@Parallel int i = 0; i < input.getSize(); i++) {
+            // Apply the transformation: value -> value / (1.0 + exp(-value))
+            float value = input.get(i);
+            float result = value / (1.0f + TornadoMath.exp(-value));
+            input.set(i, result);
+        }
+    }
+
+    public static void matrixVectorSimple(FloatArray xout, FloatArray x, FloatArray w, int n, int d) {
+        for (@Parallel int i = 0; i < d; i++) {
+            float val = 0f;
+            for (int j = 0; j < n; j++) {
+                val += w.get(i * n + j) * x.get(j);
+            }
+            xout.set(i, val);
+        }
+    }
+
 
 }
