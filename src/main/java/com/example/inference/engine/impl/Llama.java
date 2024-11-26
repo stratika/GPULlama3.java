@@ -8,14 +8,9 @@ import com.example.loader.weights.State;
 import com.example.loader.weights.Weights;
 import com.example.tokenizer.impl.Tokenizer;
 import com.example.tornadovm.TornadoVMCompute;
+import com.example.tornadovm.TornadoVMLayerPlanner;
 import uk.ac.manchester.tornado.api.GridScheduler;
-import uk.ac.manchester.tornado.api.KernelContext;
-import uk.ac.manchester.tornado.api.TaskGraph;
 import uk.ac.manchester.tornado.api.TornadoExecutionPlan;
-import uk.ac.manchester.tornado.api.WorkerGrid;
-import uk.ac.manchester.tornado.api.WorkerGrid1D;
-import uk.ac.manchester.tornado.api.enums.DataTransferMode;
-import uk.ac.manchester.tornado.api.types.arrays.FloatArray;
 
 import java.nio.FloatBuffer;
 import java.util.ArrayList;
@@ -131,48 +126,9 @@ public record Llama(Configuration configuration, Tokenizer tokenizer, Weights we
             });
 
             if (!TornadoVMCompute.TORNADOVM) {
-                // final matmul to get the output of the attention
-                weights.wo[l].matmul(state.xb, state.xb2, dim, dim);
-
-                // residual connection back into x
-                state.x.addInPlace(state.xb2);
-
-                // ffn rmsnorm
-                rmsnorm(state.xb, state.x, weights.rms_ffn_weight[l], dim, config.rmsNormEps);
-
-                //            System.out.println("x " + weights.w1.toString() + " " + weights.w2.toString() + " " + weights.w3.toString());
-                // Now for FFN in PyTorch we have: self.w2(F.silu(self.w1(x)) * self.w3(x))
-                // first calculate self.w1(x) and self.w3(x)
-                weights.w1[l].matmul(state.xb, state.hb, config.hiddenDim, dim);
-                weights.w3[l].matmul(state.xb, state.hb2, config.hiddenDim, dim);
-
-                // SwiGLU non-linearity
-                // silu(x)=x*σ(x), where σ(x) is the logistic sigmoid
-                state.hb.mapInPlace(value -> value / (float) (1.0 + Math.exp(-value)));
-
-                // elementwise multiply with w3(x)
-                state.hb.multiplyInPlace(state.hb2);
-
-                // final matmul to get the output of the ffn
-                weights.w2[l].matmul(state.hb, state.xb, dim, config.hiddenDim);
-
-                // residual connection
-                state.x.addInPlace(state.xb);
+                ffnLayerJava(l, state, dim, config, weights);
             } else {
-
-                state.wrapXFloat.getSegment().copyFrom(state.x.asMemorySegment());
-                state.wrapHb.getSegment().copyFrom(state.hb.asMemorySegment());
-                state.wrapHb2.getSegment().copyFrom(state.hb2.asMemorySegment());
-                state.wrapXb.getSegment().copyFrom(state.xb.asMemorySegment());
-                state.wrapXb2.getSegment().copyFrom(state.xb2.asMemorySegment());
-
-                tornadoVMListOfPlans.get(l).getFirst().withGridScheduler(tornadoVMListOfPlans.get(l).getSecond()).execute();
-
-                state.xb2.asMemorySegment().copyFrom(state.wrapXb2.getSegment());
-                state.xb.asMemorySegment().copyFrom(state.wrapXb.getSegment());
-                state.hb2.asMemorySegment().copyFrom(state.wrapHb2.getSegment());
-                state.hb.asMemorySegment().copyFrom(state.wrapHb.getSegment());
-                state.x.asMemorySegment().copyFrom(state.wrapXFloat.getSegment());
+                ffnLayerTornadoVM(state, tornadoVMListOfPlans.get(l));
             }
         }
 
@@ -188,6 +144,52 @@ public record Llama(Configuration configuration, Tokenizer tokenizer, Weights we
         }
 
         return state.logits;
+    }
+
+    static void ffnLayerJava(int l, State state, int dim, Configuration config, Weights weights) {
+        // final matmul to get the output of the attention
+        weights.wo[l].matmul(state.xb, state.xb2, dim, dim);
+
+        // residual connection back into x
+        state.x.addInPlace(state.xb2);
+
+        // ffn rmsnorm
+        rmsnorm(state.xb, state.x, weights.rms_ffn_weight[l], dim, config.rmsNormEps);
+
+        //            System.out.println("x " + weights.w1.toString() + " " + weights.w2.toString() + " " + weights.w3.toString());
+        // Now for FFN in PyTorch we have: self.w2(F.silu(self.w1(x)) * self.w3(x))
+        // first calculate self.w1(x) and self.w3(x)
+        weights.w1[l].matmul(state.xb, state.hb, config.hiddenDim, dim);
+        weights.w3[l].matmul(state.xb, state.hb2, config.hiddenDim, dim);
+
+        // SwiGLU non-linearity
+        // silu(x)=x*σ(x), where σ(x) is the logistic sigmoid
+        state.hb.mapInPlace(value -> value / (float) (1.0 + Math.exp(-value)));
+
+        // elementwise multiply with w3(x)
+        state.hb.multiplyInPlace(state.hb2);
+
+        // final matmul to get the output of the ffn
+        weights.w2[l].matmul(state.hb, state.xb, dim, config.hiddenDim);
+
+        // residual connection
+        state.x.addInPlace(state.xb);
+    }
+
+    static void ffnLayerTornadoVM(State state, Tuple2<TornadoExecutionPlan, GridScheduler> tornadoVMFFNLayer) {
+        state.wrapXFloat.getSegment().copyFrom(state.x.asMemorySegment());
+        state.wrapHb.getSegment().copyFrom(state.hb.asMemorySegment());
+        state.wrapHb2.getSegment().copyFrom(state.hb2.asMemorySegment());
+        state.wrapXb.getSegment().copyFrom(state.xb.asMemorySegment());
+        state.wrapXb2.getSegment().copyFrom(state.xb2.asMemorySegment());
+
+        tornadoVMFFNLayer.getFirst().withGridScheduler(tornadoVMFFNLayer.getSecond()).execute();
+
+        state.xb2.asMemorySegment().copyFrom(state.wrapXb2.getSegment());
+        state.xb.asMemorySegment().copyFrom(state.wrapXb.getSegment());
+        state.hb2.asMemorySegment().copyFrom(state.wrapHb2.getSegment());
+        state.hb.asMemorySegment().copyFrom(state.wrapHb.getSegment());
+        state.x.asMemorySegment().copyFrom(state.wrapXFloat.getSegment());
     }
 
     /**
@@ -222,9 +224,8 @@ public record Llama(Configuration configuration, Tokenizer tokenizer, Weights we
         int promptIndex = 0;
 
 
-//        Tuple2<TornadoExecutionPlan, GridScheduler> tornadoExecutionPlanGridSchedulerTuple2 = createTornadoExecutionPlanFused(state, model);
-
-        ArrayList< Tuple2<TornadoExecutionPlan, GridScheduler>>  tornadoVMPlans = setupTornadoVMExecutionPlans(state, model);
+        TornadoVMLayerPlanner tornadoVMLayerPlanner = new TornadoVMLayerPlanner(state, model);
+        ArrayList< Tuple2<TornadoExecutionPlan, GridScheduler>>  tornadoVMPlans = tornadoVMLayerPlanner.setupAndGetTornadoVMExecutionPlans();
 
         for (int position = startPosition; position < maxTokens; ++position) {
             forward(model, state, token, position,tornadoVMPlans);
@@ -265,167 +266,5 @@ public record Llama(Configuration configuration, Tokenizer tokenizer, Weights we
         return generatedTokens;
     }
 
-
-
-    /**
-     * Creates the appropriate TornadoVM execution plan based on the selected execution mode
-     *
-     * *            The Transformer model used for sequence generation.
-     * @return The TornadoVM execution plan for the specified execution mode
-     */
-    public static Tuple2<TornadoExecutionPlan, GridScheduler> createTornadoExecutionPlan(State state, Llama model) {
-
-        TaskGraph taskGraph;
-        KernelContext context = new KernelContext();
-        boolean isQ4Type = model.weights.wcls.toString().contains("Q4");
-
-        taskGraph = new TaskGraph("s0")
-            .transferToDevice(DataTransferMode.EVERY_EXECUTION, state.wrapXFloat)
-            .transferToDevice(DataTransferMode.FIRST_EXECUTION, model.weights.wclsByteArray)
-            .transferToDevice(DataTransferMode.FIRST_EXECUTION, model.configuration.dim)
-            .transferToDevice(DataTransferMode.FIRST_EXECUTION, model.configuration.vocabularySize)
-            .transferToHost(DataTransferMode.EVERY_EXECUTION, state.wrapLogits);
-
-        if (isQ4Type) {
-            taskGraph.task("t0", TornadoVMCompute::matmulTornadoQ4, context, model.weights.wclsByteArray, state.wrapXFloat, state.wrapLogits, model.configuration.dim);
-        } else {
-            taskGraph.task("t0", TornadoVMCompute::matmulTornadoQ8, context, model.weights.wclsByteArray, state.wrapXFloat, state.wrapLogits, model.configuration.dim);
-        }
-
-
-        WorkerGrid worker = new WorkerGrid1D(model.configuration.vocabularySize);
-        worker.setLocalWork(TornadoVMCompute.WORKGROUP,1,1);
-        GridScheduler gridScheduler = new GridScheduler("s0.t0", worker);
-
-        return new Tuple2<>(new TornadoExecutionPlan(taskGraph.snapshot()), gridScheduler);
-    }
-
-    /**
-     * Creates a TornadoVM-based fused execution plan for processixng using a series of compute tasks
-     * on the `TaskGraph`, optimizing tensor calculations, normalization, and matrix multiplication.
-     * The generated execution plan leverages TornadoVM for GPU-accelerated tasks and adjusts based
-     * on the data type of the model's weights.
-     *
-     * <p>This method configures a `TaskGraph` with data transfers and tasks for reduction,
-     * summation, normalization, and matrix multiplication, preparing data transfer
-     * from and to the host at each execution step. It dynamically adjusts tasks depending
-     * on whether the model uses Q4 or Q8 quantized weights.</p>
-     *
-     * <p>Finally, this method sets up worker grids for each task to optimize performance
-     * on the selected hardware, and associates them with the appropriate tasks in a `GridScheduler`.</p>
-     *
-     * @param state A `State` object representing the current tensor data and model outputs.
-     * @param model A `Llama` model object holding model configurations, weights, and quantization information.
-     * @return A tuple containing a `TornadoExecutionPlan` and a `GridScheduler`:
-     *         - `TornadoExecutionPlan`: Defines the fused task graph with all tasks and transfers set up.
-     *         - `GridScheduler`: Manages grid workers for each task, optimizing parallel processing.
-     */
-    public static Tuple2<TornadoExecutionPlan, GridScheduler> createTornadoExecutionPlanFused(State state, Llama model) {
-
-        TaskGraph taskGraph;
-        KernelContext context = new KernelContext();
-        boolean isQ4Type = model.weights.wcls.toString().contains("Q4");
-
-        final int size = model.configuration.dim;
-        final int localSize = 256;
-
-        FloatArray reduce = new FloatArray(size / localSize);
-
-        taskGraph = new TaskGraph("fused")
-                .transferToDevice(DataTransferMode.EVERY_EXECUTION, state.wrapXFloat)
-                .transferToDevice(DataTransferMode.FIRST_EXECUTION, //
-                        model.weights.wclsByteArray, model.weights.rms_final_weight_as_floatArray,
-                        model.configuration.vocabularySize, model.configuration.dim, model.configuration.rmsNormEps)
-                .task("reduce", TornadoVMCompute::reduceSquareSums, context, state.wrapXFloat, reduce) //
-                .task("sum", TornadoVMCompute::finalSum, context, reduce, model.configuration.dim, model.configuration.rmsNormEps) //
-                .task("ns", TornadoVMCompute::normalizeAndScale, context, state.wrapXFloat, model.weights.rms_final_weight_as_floatArray, reduce, model.configuration.dim) //
-                .transferToHost(DataTransferMode.EVERY_EXECUTION, state.wrapLogits, state.wrapXFloat);
-
-        if (isQ4Type) {
-            taskGraph.task("mv", TornadoVMCompute::matmulTornadoQ4, context, model.weights.wclsByteArray, state.wrapXFloat, state.wrapLogits, model.configuration.dim);
-        } else {
-            taskGraph.task("mv", TornadoVMCompute::matmulTornadoQ8, context, model.weights.wclsByteArray, state.wrapXFloat, state.wrapLogits, model.configuration.dim);
-        }
-
-        WorkerGrid worker = new WorkerGrid1D(size);
-        worker.setGlobalWork(size, 1, 1);
-        worker.setLocalWork(localSize, 1, 1);
-
-        WorkerGrid finalTokenWorker = new WorkerGrid1D(model.configuration.vocabularySize);
-        finalTokenWorker.setGlobalWork(model.configuration.vocabularySize, 1, 1);
-        finalTokenWorker.setLocalWork(TornadoVMCompute.WORKGROUP,1,1);
-
-        GridScheduler gridScheduler = new GridScheduler("fused.reduce", worker);
-        gridScheduler.setWorkerGrid("fused.sum", new WorkerGrid1D(1));
-        gridScheduler.setWorkerGrid("fused.ns", worker);
-        gridScheduler.setWorkerGrid("fused.mv", finalTokenWorker);
-
-        return new Tuple2<>(new TornadoExecutionPlan(taskGraph.snapshot()), gridScheduler);
-    }
-
-
-    public static Tuple2<TornadoExecutionPlan, GridScheduler> createTornadoExecutionPlanPerLayer(State state, Llama model, int l) {
-        TaskGraph taskGraph;
-        KernelContext context = new KernelContext();
-        final int localSize = 256;
-        FloatArray reduce = new FloatArray(state.wrapXFloat.getSize() / localSize);
-
-
-        taskGraph = new TaskGraph("per-layer")
-                .transferToDevice(DataTransferMode.EVERY_EXECUTION, //
-                        state.wrapXFloat, //
-                        state.wrapHb, state.wrapHb2, //
-                        state.wrapXb, state.wrapXb2 //
-                ) //
-                .transferToDevice(DataTransferMode.FIRST_EXECUTION, //
-                        model.weights.wclsByteArray, model.weights.rms_final_weight_as_floatArray, //
-                        model.weights.woAsFloatArray[l], model.weights.w1AsFloatArray[l], //
-                        model.weights.w2AFloatArray[l], model.weights.w3AFloatArray[l], //
-                        model.configuration.vocabularySize, model.configuration.dim, //
-                        model.configuration.rmsNormEps, model.configuration.hiddenDim, //
-                        reduce
-                ) //
-                .task("matmul0", TornadoVMCompute::matrixVectorSimple, model.weights.woAsFloatArray[l], state.wrapXb, state.wrapXb2, model.configuration.dim, model.configuration.dim) //
-                .task("addInPlace", TornadoVMCompute::addInPlace, state.wrapXb2, state.wrapXFloat) //
-                .task("reduce", TornadoVMCompute::reduceSquareSums, context, state.wrapXb, reduce) //
-                .task("sum", TornadoVMCompute::finalSum, context, reduce, model.configuration.dim, model.configuration.rmsNormEps) //
-                .task("ns", TornadoVMCompute::normalizeAndScale, context, state.wrapXFloat, model.weights.rms_ffn_weight_as_floatArray[l], reduce, model.configuration.dim) //
-                .task("matmul1", TornadoVMCompute::matrixVectorSimple, model.weights.w1AsFloatArray[l], state.wrapXb, state.wrapHb, model.configuration.hiddenDim, model.configuration.dim) //
-                .task("matmul3", TornadoVMCompute::matrixVectorSimple, model.weights.w3AFloatArray[l], state.wrapXb, state.wrapXb2, model.configuration.hiddenDim, model.configuration.dim) //
-                .task("mapInPlace", TornadoVMCompute::mapInPlace, state.wrapHb) //
-                .task("multInPlace", TornadoVMCompute::multiplyInPlace, state.wrapHb, state.wrapHb2) //
-                .task("matmul2", TornadoVMCompute::matrixVectorSimple, model.weights.w2AFloatArray[l], state.wrapXb, state.wrapXb, model.configuration.dim, model.configuration.hiddenDim) //
-                .task("addInPlace2", TornadoVMCompute::addInPlace, state.wrapXb, state.wrapXFloat) //
-                .transferToHost(DataTransferMode.EVERY_EXECUTION,
-                        state.wrapXFloat, //
-                        state.wrapHb, state.wrapHb2, //
-                        state.wrapXb, state.wrapXb2 //
-                );
-
-        WorkerGrid worker = new WorkerGrid1D(model.configuration.dim);
-        worker.setGlobalWork(model.configuration.dim, 1, 1);
-        worker.setLocalWork(localSize, 1, 1);
-
-
-        GridScheduler gridScheduler = new GridScheduler("per-layer.addInPlace", worker);
-        gridScheduler.setWorkerGrid("per-layer.reduce", worker);
-        gridScheduler.setWorkerGrid("per-layer.sum", new WorkerGrid1D(1));
-        gridScheduler.setWorkerGrid("per-layer.ns", worker);
-
-        return new Tuple2<>(new TornadoExecutionPlan(taskGraph.snapshot()), gridScheduler);
-    }
-
-    public static ArrayList<Tuple2<TornadoExecutionPlan,GridScheduler>> setupTornadoVMExecutionPlans(State state, Llama model) {
-        ArrayList<Tuple2<TornadoExecutionPlan,GridScheduler>> tornadoVMPlans = new ArrayList<>();
-
-        int numLayers = model.configuration.numberOfLayers;
-        for (int i = 0; i < numLayers; i++) {
-            tornadoVMPlans.add(createTornadoExecutionPlanPerLayer(state, model, i));
-        }
-
-        // plans.get(plans.size() - 1) -> size = numOfLayers +1;
-        tornadoVMPlans.add(createTornadoExecutionPlanFused(state, model));
-        return tornadoVMPlans;
-    }
 }
 
