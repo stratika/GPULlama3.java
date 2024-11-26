@@ -131,6 +131,8 @@ public record Llama(Configuration configuration, Tokenizer tokenizer, Weights we
             });
 
             // final matmul to get the output of the attention
+            System.out.println("Sizes " + weights.wo[l].size() + " " + state.xb.size() + " " + state.xb2.size());
+            System.out.println("Sizes " + weights.wo[l].toString() + " " + state.xb.toString() + " " + state.xb2.toString());
             weights.wo[l].matmul(state.xb, state.xb2, dim, dim);
 
             // residual connection back into x
