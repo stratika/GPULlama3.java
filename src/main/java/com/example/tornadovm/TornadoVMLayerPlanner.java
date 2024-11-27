@@ -1,6 +1,7 @@
 package com.example.tornadovm;
 
 import com.example.aux.Tuple2;
+import com.example.core.model.tensor.FloatTensor;
 import com.example.inference.engine.impl.Configuration;
 import com.example.inference.engine.impl.Llama;
 import com.example.loader.weights.State;
@@ -14,6 +15,7 @@ import uk.ac.manchester.tornado.api.WorkerGrid1D;
 import uk.ac.manchester.tornado.api.enums.DataTransferMode;
 import uk.ac.manchester.tornado.api.types.arrays.FloatArray;
 
+import java.nio.FloatBuffer;
 import java.util.ArrayList;
 
 public class TornadoVMLayerPlanner {
@@ -127,7 +129,6 @@ public class TornadoVMLayerPlanner {
         final int localSize = 256;
         FloatArray reduce = new FloatArray(state.wrapXFloat.getSize() / localSize);
 
-
         taskGraph = new TaskGraph("ffn-layer")
                 .transferToDevice(DataTransferMode.EVERY_EXECUTION, //
                         state.wrapXFloat, //
@@ -135,24 +136,35 @@ public class TornadoVMLayerPlanner {
                         state.wrapXb, state.wrapXb2 //
                 ) //
                 .transferToDevice(DataTransferMode.FIRST_EXECUTION, //
-                        weights.wclsByteArray, weights.rms_final_weight_as_floatArray, //
                         weights.woAsFloatArray[l], weights.w1AsFloatArray[l], //
                         weights.w2AFloatArray[l], weights.w3AFloatArray[l], //
                         configuration.vocabularySize, configuration.dim, //
                         configuration.rmsNormEps, configuration.hiddenDim, //
                         reduce
                 ) //
-                .task("matmul0", TornadoVMCompute::matrixVectorSimple, weights.woAsFloatArray[l], state.wrapXb, state.wrapXb2, configuration.dim, configuration.dim) //
+
+                // First matmul and residual
+                .task("matmul0", TornadoVMCompute::matrixVectorSimple, state.wrapXb, state.wrapXb2, weights.woAsFloatArray[l], configuration.dim, configuration.dim) //
                 .task("addInPlace", TornadoVMCompute::addInPlace, state.wrapXb2, state.wrapXFloat) //
-                .task("reduce", TornadoVMCompute::reduceSquareSums, context, state.wrapXb, reduce) //
+
+                // RMSNorm sequence
+                .task("reduce", TornadoVMCompute::reduceSquareSums, context, state.wrapXFloat, reduce) //
                 .task("sum", TornadoVMCompute::finalSum, context, reduce, configuration.dim, configuration.rmsNormEps) //
-                .task("ns", TornadoVMCompute::normalizeAndScale, context, state.wrapXFloat, weights.rms_ffn_weight_as_floatArray[l], reduce, configuration.dim) //
-                .task("matmul1", TornadoVMCompute::matrixVectorSimple, weights.w1AsFloatArray[l], state.wrapXb, state.wrapHb, configuration.hiddenDim, configuration.dim) //
-                .task("matmul3", TornadoVMCompute::matrixVectorSimple, weights.w3AFloatArray[l], state.wrapXb, state.wrapXb2, configuration.hiddenDim, configuration.dim) //
+                .task("ns", TornadoVMCompute::normalizeAndScale2, context, state.wrapXb, state.wrapXFloat, weights.rms_ffn_weight_as_floatArray[l], reduce, configuration.dim) //
+
+                // Parallel matmuls with separate output buffers
+                .task("matmul1", TornadoVMCompute::matrixVectorSimple,  state.wrapXb, state.wrapHb,weights.w1AsFloatArray[l], configuration.hiddenDim, configuration.dim) //
+                .task("matmul3", TornadoVMCompute::matrixVectorSimple, state.wrapXb, state.wrapHb2, weights.w3AFloatArray[l], configuration.hiddenDim, configuration.dim) //
+
+                // SiLU and multiplication
                 .task("mapInPlace", TornadoVMCompute::mapInPlace, state.wrapHb) //
                 .task("multInPlace", TornadoVMCompute::multiplyInPlace, state.wrapHb, state.wrapHb2) //
-                .task("matmul2", TornadoVMCompute::matrixVectorSimple, weights.w2AFloatArray[l], state.wrapXb, state.wrapXb, configuration.dim, configuration.hiddenDim) //
+
+                // Final matmul and residual
+                .task("matmul2", TornadoVMCompute::matrixVectorSimple, state.wrapHb, state.wrapXb, weights.w2AFloatArray[l], configuration.dim, configuration.hiddenDim) //
                 .task("addInPlace2", TornadoVMCompute::addInPlace, state.wrapXb, state.wrapXFloat) //
+
+                // Buffer need to copy back
                 .transferToHost(DataTransferMode.EVERY_EXECUTION,
                         state.wrapXFloat, //
                         state.wrapHb, state.wrapHb2, //

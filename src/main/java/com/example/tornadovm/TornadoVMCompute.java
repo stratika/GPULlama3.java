@@ -240,6 +240,20 @@ public class TornadoVMCompute {
         }
     }
 
+    public static void normalizeAndScale2(
+            KernelContext context, FloatArray out,
+            FloatArray x,
+            FloatArray weight, FloatArray scalingFactorBuffer,
+            int size) {
+
+        int globalIdx = context.globalIdx;
+
+        if (globalIdx < size) {
+            float scaledValue = weight.get(globalIdx) * (scalingFactorBuffer.get(0) * x.get(globalIdx));
+            out.set(globalIdx, scaledValue);
+        }
+    }
+
     public static void addInPlace(FloatArray input, FloatArray output) {
         for (@Parallel int i = 0; i < input.getSize(); i++) {
             // Perform element-wise addition
@@ -267,10 +281,10 @@ public class TornadoVMCompute {
         }
     }
 
-    public static void matrixVectorSimple(FloatArray xout, FloatArray x, FloatArray w, int n, int d) {
-        for (@Parallel int i = 0; i < d; i++) {
+    public static void matrixVectorSimple(FloatArray x, FloatArray xout, FloatArray w, int n, int d) {
+        for (@Parallel int i = 0; i < x.getSize(); i++) {
             float val = 0f;
-            for (int j = 0; j < n; j++) {
+            for (int j = 0; j < xout.getSize(); j++) {
                 val += w.get(i * n + j) * x.get(j);
             }
             xout.set(i, val);
