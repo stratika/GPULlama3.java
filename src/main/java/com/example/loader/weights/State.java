@@ -27,15 +27,17 @@ public final class State {
     public final FloatTensor[] keyCache;   // (n_layer, seq_len, kv_dim)
     public final FloatTensor[] valueCache; // (n_layer, seq_len, kv_dim)
 
-    // wrapper tensors for TornadoVM
-    //    public final TensorQ8 wrapX;
-    public final FloatArray wrapLogits;
-    public final FloatArray wrapXFloat;
-    public final FloatArray wrapXb;
-    public final FloatArray wrapXb2;
-    public final FloatArray wrapHb;
-    public final FloatArray wrapHb2;
-    public int latestToken;
+
+    // Wrappers for TornadoVM compatibility (FloatArray data structure for TornadoVM acceleration)
+    // TornadoVM uses FloatArray for more efficient handling of data, particularly when running on GPU or other accelerators.
+    public final FloatArray wrapLogits; // FloatArray wrapper for the logits tensor, compatible with TornadoVM for GPU execution.
+    public final FloatArray wrapXFloat; // FloatArray wrapper for the x activation tensor, enabling faster processing in TornadoVM.
+    public final FloatArray wrapXb;     // FloatArray wrapper for xb (residual branch activation), optimized for TornadoVM usage.
+    public final FloatArray wrapXb2;    // FloatArray wrapper for xb2, another residual buffer to aid in computations with TornadoVM.
+    public final FloatArray wrapHb;     // FloatArray wrapper for hb (hidden dimension buffer for FFN), optimized for TornadoVM.
+    public final FloatArray wrapHb2;    // FloatArray wrapper for hb2, additional hidden buffer for FFN, for compatibility with TornadoVM.
+
+    public int latestToken;             // Keeps track of the most recent token processed by the model. Useful for stateful or autoregressive models.
 
     /** last index in previous block */
     int idxPrevBlock;
@@ -54,14 +56,14 @@ public final class State {
         int kvDim = (config.dim * config.numberOfKeyValueHeads) / config.numberOfHeads;
         this.keyCache = Stream.generate(() -> ArrayFloatTensor.allocate(config.contextLength, kvDim)).limit(config.numberOfLayers).toArray(FloatTensor[]::new);
         this.valueCache = Stream.generate(() -> ArrayFloatTensor.allocate(config.contextLength, kvDim)).limit(config.numberOfLayers).toArray(FloatTensor[]::new);
-
         this.wrapXFloat = new FloatArray(config.dim);
         this.wrapXb = new FloatArray(config.dim);
         this.wrapXb2 = new FloatArray(config.dim);
-
         this.wrapHb = new FloatArray(config.hiddenDim);
         this.wrapHb2 = new FloatArray(config.hiddenDim);
-
         this.wrapLogits = new FloatArray(config.vocabularySize);
+
+        // hb -> hidden dim
+        // hb2 -> hidden dim
     }
 }
