@@ -4,8 +4,6 @@ import com.example.core.model.tensor.ArrayFloatTensor;
 import com.example.core.model.tensor.FloatTensor;
 import com.example.inference.engine.impl.Configuration;
 import uk.ac.manchester.tornado.api.types.arrays.FloatArray;
-import uk.ac.manchester.tornado.api.types.tensors.Shape;
-import uk.ac.manchester.tornado.api.types.tensors.TensorQ8;
 
 import java.util.stream.IntStream;
 import java.util.stream.Stream;
