@@ -21,6 +21,20 @@ public final class Weights {
     public final FloatTensor[] wv; // (layer, n_kv_heads * head_size)
     public final FloatTensor[] wo; // (layer, n_heads * head_size, dim)
     public final FloatBuffer[] rms_ffn_weight; // (layer, dim)
+
+    // Flatten Structure
+    public final FloatArray rms_att_weightFlat; // (layer, dim) rmsnorm weights
+    public final FloatArray wqFlat; // (layer, n_heads * head_size)
+    public final FloatArray wkFlat; // (layer, n_kv_heads, head_size)
+    public final FloatArray wvFlat; // (layer, n_kv_heads * head_size)
+    public final FloatArray woFlat; // (layer, n_heads * head_size, dim)
+    public final FloatArray rms_ffn_weightFlat; // (layer, dim)
+
+
+    public final FloatArray w1Flat; // (layer, hidden_dim, dim)
+    public final FloatArray w2Flat; // (layer, dim, hidden_dim)
+    public final FloatArray w3Flat; // (layer, hidden_dim, dim)
+
     // weights for ffn
     public final FloatTensor[] w1; // (layer, hidden_dim, dim)
     public final FloatTensor[] w2; // (layer, dim, hidden_dim)
@@ -64,6 +78,17 @@ public final class Weights {
         this.freq_cis_imag = freq_cis_imag;
         this.wcls = wcls;
 
+        this.rms_att_weightFlat = loadToSingleFloatArray(rms_att_weight); // (layer, dim) rmsnorm weights
+        this.wqFlat = loadToContinuesFloatArray(wq); // (layer, n_heads * head_size)
+        this.wkFlat = loadToContinuesFloatArray(wk); // (layer, n_kv_heads, head_size)
+        this.wvFlat = loadToContinuesFloatArray(wv);; // (layer, n_kv_heads * head_size)
+        this.woFlat = loadToContinuesFloatArray(wo);; // (layer, n_heads * head_size, dim)
+        this.rms_ffn_weightFlat = loadToSingleFloatArray(rms_ffn_weight); // (layer, dim)
+
+        this.w1Flat = loadToContinuesFloatArray(w1); // (layer, hidden_dim, dim)
+        this.w2Flat = loadToContinuesFloatArray(w2); // (layer, dim, hidden_dim)
+        this.w3Flat = loadToContinuesFloatArray(w3);; // (layer, hidden_dim, dim)
+
         // Store read-only weight as a ByteArray in TornadoVM
         this.wclsByteArray = ByteArray.fromSegment(wcls.asMemorySegment());
         this.rms_final_weight_as_floatArray = FloatArray.fromFloatBuffer(rms_final_weight);
@@ -76,6 +101,19 @@ public final class Weights {
         this.halfFloat = loadToHalfFloatArray(wcls);
 
         this.rms_ffn_weight_as_floatArray= loadToFloatArray(rms_ffn_weight);
+    }
+
+    private static FloatArray loadToContinuesFloatArray(FloatTensor[] input) {
+        FloatArray all = new FloatArray(input.length * input[0].size());
+
+        int index = 0;
+        for (FloatTensor tensor : input) {
+            for (int i = 0; i < tensor.size(); i++) {
+                all.set(index++, tensor.getFloat(i));
+            }
+        }
+
+        return all;
     }
 
     private static FloatArray[] loadToFloatArray(FloatTensor[] array) {
@@ -92,6 +130,24 @@ public final class Weights {
             floatArrays[i] = FloatArray.fromFloatBuffer(array[i]);
         }
         return floatArrays;
+    }
+
+
+    private static FloatArray loadToSingleFloatArray(FloatBuffer[] array) {
+        int totalSize = 0;
+        for (FloatBuffer buffer : array) {
+            totalSize += buffer.remaining();
+        }
+
+        FloatArray result = new FloatArray(totalSize);
+        int index = 0;
+        for (FloatBuffer buffer : array) {
+            while (buffer.hasRemaining()) {
+                result.set(index++, buffer.get());
+            }
+        }
+
+        return result;
     }
 
     public HalfFloatArray loadToHalfFloatArray(FloatTensor input) {
