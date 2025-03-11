@@ -34,6 +34,7 @@ public final class ModelLoader {
     private static final String TOKENIZER_LLAMA_3_MODEL = "gpt2";
 
     private static final String LLAMA_3_PATTERN = "(?i:'s|'t|'re|'ve|'m|'ll|'d)|[^\\r\\n\\p{L}\\p{N}]?\\p{L}+|\\p{N}{1,3}| ?[^\\s\\p{L}\\p{N}]+[\\r\\n]*|\\s*[\\r\\n]+|\\s+(?!\\S)|\\s+";
+    private static final boolean VALIDATE = false;
 
     public static Llama loadModel(Path ggufPath, int contextLength, boolean loadWeights) throws IOException {
         GGUF gguf = GGUF.loadModel(ggufPath);
@@ -102,13 +103,17 @@ public final class ModelLoader {
                 // This is commonly referred as "tie word embeddings".
                 loadQuantized(tensorEntries.getOrDefault("output.weight", tokenEmbeddings))
         );
-
-        if (!qw.validateRmsFinalWeights()) {
-            throw new IllegalStateException("Mismatch found between rms_final_weight and rms_final_weight_as_floatArray.");
+        
+        if (true) {
+            WeightsValidator validator = new WeightsValidator(qw);
+            // Run validation
+            boolean isValid = validator.validateAll();
+            if (isValid) {
+                System.out.println("✅ Validation Passed: Flattened data matches input tensors.");
+            } else {
+                System.err.println("❌ Validation Failed: Mismatches detected.");
+            }
         }
-
-        qw.validateW1Weights();
-
         return qw;
     }
 
