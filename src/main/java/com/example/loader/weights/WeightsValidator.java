@@ -1,10 +1,10 @@
 package com.example.loader.weights;
 
-
 import com.example.core.model.tensor.FloatTensor;
 import org.apache.logging.log4j.LogManager;
 import org.apache.logging.log4j.Logger;
 import uk.ac.manchester.tornado.api.types.arrays.FloatArray;
+
 import java.nio.FloatBuffer;
 import java.util.Arrays;
 
@@ -21,7 +21,8 @@ public final class WeightsValidator {
                 && validateRmsAttWeights()
                 && validateMatmulWeights()
                 && validateFfnWeights()
-                && validateFinalWeights();
+                && validateFinalWeights()
+                && validateFreqCisWeights();
     }
 
     public boolean validateTokenEmbeddingTable() {
@@ -49,6 +50,11 @@ public final class WeightsValidator {
         return validateFloatBuffer(weights.rms_final_weight, weights.rms_final_weight_as_floatArray);
     }
 
+    public boolean validateFreqCisWeights() {
+        return validateFloatBuffer(weights.freq_cis_real, weights.freq_cis_realFlat)
+                && validateFloatBuffer(weights.freq_cis_imag, weights.freq_cis_imagFlat);
+    }
+
     private boolean validateFloatTensorArray(FloatTensor[] tensors, FloatArray flatArray) {
         int index = 0;
         for (FloatTensor tensor : tensors) {
@@ -72,27 +78,36 @@ public final class WeightsValidator {
         return true;
     }
 
+    private boolean validateFloatBuffer(FloatBuffer buffer, FloatArray flatArray) {
+        if (buffer.remaining() != flatArray.getSize()) {
+            logger.error("Buffer size mismatch. Expected: {}, Actual: {}", flatArray.getSize(), buffer.remaining());
+            return false;
+        }
+
+        float[] bufferData = new float[buffer.remaining()];
+        buffer.get(bufferData);
+        if (!Arrays.equals(bufferData, flatArray.toHeapArray())) {
+            logger.error("Mismatch found in FloatBuffer validation.");
+            return false;
+        }
+        return true;
+    }
+
     private boolean validateFloatBufferArray(FloatBuffer[] buffers, FloatArray flatArray) {
         int index = 0;
         for (FloatBuffer buffer : buffers) {
-            float[] bufferData = new float[buffer.capacity()];
-            buffer.get(bufferData);
+            // Duplicate buffer to avoid modifying original position
+            FloatBuffer copy = buffer.duplicate();
+
+            float[] bufferData = new float[copy.remaining()];
+            copy.get(bufferData); // Read without modifying the original buffer
+
             for (float value : bufferData) {
                 if (value != flatArray.get(index++)) {
                     logger.error("Mismatch found in FloatBufferArray at index {}", index - 1);
                     return false;
                 }
             }
-        }
-        return true;
-    }
-
-    private boolean validateFloatBuffer(FloatBuffer buffer, FloatArray flatArray) {
-        float[] bufferData = new float[buffer.capacity()];
-        buffer.get(bufferData);
-        if (!Arrays.equals(bufferData, flatArray.toHeapArray())) {
-            logger.error("Mismatch found in FloatBuffer validation.");
-            return false;
         }
         return true;
     }

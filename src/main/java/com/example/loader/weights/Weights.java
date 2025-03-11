@@ -9,6 +9,7 @@ import uk.ac.manchester.tornado.api.types.arrays.HalfFloatArray;
 
 import java.nio.FloatBuffer;
 import java.util.Arrays;
+import java.util.IllformedLocaleException;
 
 public final class Weights {
     // token embedding table
@@ -34,6 +35,10 @@ public final class Weights {
     public final FloatArray w1Flat; // (layer, hidden_dim, dim)
     public final FloatArray w2Flat; // (layer, dim, hidden_dim)
     public final FloatArray w3Flat; // (layer, hidden_dim, dim)
+
+    public final FloatArray freq_cis_realFlat; // (seq_len, head_size/2)
+    public final FloatArray freq_cis_imagFlat; // (seq_len, head_size/2)
+
 
     // weights for ffn
     public final FloatTensor[] w1; // (layer, hidden_dim, dim)
@@ -88,6 +93,10 @@ public final class Weights {
         this.w1Flat = loadToContinuesFloatArray(w1); // (layer, hidden_dim, dim)
         this.w2Flat = loadToContinuesFloatArray(w2); // (layer, dim, hidden_dim)
         this.w3Flat = loadToContinuesFloatArray(w3);; // (layer, hidden_dim, dim)
+
+        this.freq_cis_imagFlat = loadToSingleFloatArray(freq_cis_imag);
+        this.freq_cis_realFlat = loadToSingleFloatArray(freq_cis_real);
+
 
         // Store read-only weight as a ByteArray in TornadoVM
         this.wclsByteArray = ByteArray.fromSegment(wcls.asMemorySegment());
@@ -160,22 +169,19 @@ public final class Weights {
         return halfFloatArray;
     }
 
-    public boolean validateRmsFinalWeights() {
-        float[] rmsFinalWeightArray = new float[rms_final_weight.capacity()];
-        rms_final_weight.get(rmsFinalWeightArray);
-        return Arrays.equals(rmsFinalWeightArray, rms_final_weight_as_floatArray.toHeapArray());
-    }
+    private static FloatArray loadToSingleFloatArray(FloatBuffer input) {
+        FloatBuffer copy = input.duplicate(); // Prevent modifying the original buffer
+        int totalSize = copy.remaining();
 
-    public boolean validateW1Weights() {
+        FloatArray result = new FloatArray(totalSize);
 
-        for (int i = 0; i < wcls.size(); i++) {
-            if (wcls.getFloat(i) != halfFloat.get(i).getFloat32()) {
-                System.out.print("vals " + wcls.getFloat(i) + " " + halfFloat.get(i).getFloat32());
-                return false;
-
-            }
+        int index = 0;
+        while (copy.hasRemaining()) {
+            result.set(index++, copy.get());
         }
-        return true;
+
+        return result;
     }
+
 
 }
