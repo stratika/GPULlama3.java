@@ -123,6 +123,46 @@ public class TornadoVMLayerPlanner {
         return new Tuple2<>(new TornadoExecutionPlan(taskGraph.snapshot()), gridScheduler);
     }
 
+    private Tuple2<TaskGraph, GridScheduler> firstFusedLayer() {
+        TaskGraph taskGraph;
+        KernelContext context = new KernelContext();
+        boolean isQ4Type = weights.wcls.toString().contains("Q4");
+
+        final int size = configuration.dim;
+        final int localSize = 256;
+
+        FloatArray reduce = new FloatArray(size / localSize);
+
+        taskGraph = new TaskGraph("fused")
+                .transferToDevice(DataTransferMode.EVERY_EXECUTION, state.wrapXFloat)
+                .transferToDevice(DataTransferMode.FIRST_EXECUTION, //
+                        weights.wclsByteArray, weights.rms_final_weight_as_floatArray,
+                        configuration.vocabularySize, configuration.dim, configuration.rmsNormEps)
+                .task("reduce", TornadoVMCompute::reduceSquareSums, context, state.wrapXFloat, reduce) //
+                .task("sum", TornadoVMCompute::finalSum, context, reduce,configuration.dim, configuration.rmsNormEps) //
+                .task("ns", TornadoVMCompute::normalizeAndScale, context, state.wrapXFloat, weights.rms_final_weight_as_floatArray, reduce, configuration.dim)
+                .task("matmul-1", TornadoVMCompute::matmulTornadoQ8, context, weights.wclsByteArray, state.wrapXFloat, state.wrapLogits, configuration.dim)
+                .task("matmul-2", TornadoVMCompute::matmulTornadoQ8, context, weights.wclsByteArray, state.wrapXFloat, state.wrapLogits, configuration.dim)
+                .task("matmul-3", TornadoVMCompute::matmulTornadoQ8, context, weights.wclsByteArray, state.wrapXFloat, state.wrapLogits, configuration.dim)
+                .transferToHost(DataTransferMode.EVERY_EXECUTION, state.wrapLogits, state.wrapXFloat);
+
+
+
+        WorkerGrid worker = new WorkerGrid1D(size);
+        worker.setGlobalWork(size, 1, 1);
+        worker.setLocalWork(localSize, 1, 1);
+
+        WorkerGrid finalTokenWorker = new WorkerGrid1D(configuration.vocabularySize);
+        finalTokenWorker.setGlobalWork(configuration.vocabularySize, 1, 1);
+        finalTokenWorker.setLocalWork(TornadoVMCompute.WORKGROUP,1,1);
+
+        GridScheduler gridScheduler = new GridScheduler("fused.reduce", worker);
+        gridScheduler.setWorkerGrid("fused.sum", new WorkerGrid1D(1));
+        gridScheduler.setWorkerGrid("fused.ns", worker);
+        gridScheduler.setWorkerGrid("fused.mv", finalTokenWorker);
+
+        return new Tuple2<>(taskGraph, gridScheduler);
+    }
 
     private Tuple2<TornadoExecutionPlan, GridScheduler> createTornadoExecutionPlanPerLayer(int l) {
         TaskGraph taskGraph;
