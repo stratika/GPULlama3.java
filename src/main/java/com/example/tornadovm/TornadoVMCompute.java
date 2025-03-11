@@ -48,6 +48,33 @@ public class TornadoVMCompute {
         }
     }
 
+
+    public static void ropeRotation(KernelContext context, int pos, FloatArray sq, FloatArray sk, int kv_dim, int head_size) {
+        int i = context.globalIdx * 2;
+        if (i >= kv_dim) return;
+
+        int head_dim = i % head_size;
+        float freq = 1.0f / TornadoMath.pow(10000.0f, head_dim / (float) head_size);
+        float val = pos * freq;
+        float fcr = TornadoMath.cos(val);
+        float fci = TornadoMath.sin(val);
+
+        int rotn = i < kv_dim ? 2 : 1; // how many vectors? 2 = q & k, 1 = q only
+        for (int v = 0; v < rotn; v++) {
+            if (v == 0) {
+                float v0 = sq.get(i);
+                float v1 = sq.get(i + 1);
+                sq.set(i, v0 * fcr - v1 * fci);
+                sq.set(i + 1, v0 * fci + v1 * fcr);
+            } else {
+                float v0 = sk.get(i);
+                float v1 = sk.get(i + 1);
+                sk.set(i, v0 * fcr - v1 * fci);
+                sk.set(i + 1, v0 * fci + v1 * fcr);
+            }
+        }
+    }
+
     public static void matmulTornadoQ4(KernelContext context, ByteArray thisx, FloatArray that, FloatArray out, int dim1) {
         final int BLOCK_SIZE = GGMLType.Q4_0.getBlockSize(); // Q4 block size
         final int BYTES_PER_BLOCK = GGMLType.Q4_0.getTypeSize(); // Bytes per block for Q4
