@@ -1,8 +1,11 @@
 package com.example.loader.weights;
 
 import com.example.core.model.tensor.FloatTensor;
+import org.apache.logging.log4j.core.util.Assert;
+import uk.ac.manchester.tornado.api.types.HalfFloat;
 import uk.ac.manchester.tornado.api.types.arrays.ByteArray;
 import uk.ac.manchester.tornado.api.types.arrays.FloatArray;
+import uk.ac.manchester.tornado.api.types.arrays.HalfFloatArray;
 
 import java.nio.FloatBuffer;
 import java.util.Arrays;
@@ -43,6 +46,7 @@ public final class Weights {
     public final FloatArray[] w1AsFloatArray;
     public final FloatArray[] w2AFloatArray;
     public final FloatArray[] w3AFloatArray;
+    public final HalfFloatArray halfFloat;
 
     public Weights(FloatTensor token_embedding_table, FloatBuffer[] rms_att_weight, FloatTensor[] wq, FloatTensor[] wk, FloatTensor[] wv, FloatTensor[] wo, FloatBuffer[] rms_ffn_weight, FloatTensor[] w1, FloatTensor[] w2, FloatTensor[] w3, FloatBuffer rms_final_weight, FloatBuffer freq_cis_real, FloatBuffer freq_cis_imag, FloatTensor wcls) {
         this.token_embedding_table = token_embedding_table;
@@ -69,6 +73,8 @@ public final class Weights {
         this.w2AFloatArray = loadToFloatArray(w2);
         this.w3AFloatArray = loadToFloatArray(w3);
 
+        this.halfFloat = loadToHalfFloatArray(wcls);
+
         this.rms_ffn_weight_as_floatArray= loadToFloatArray(rms_ffn_weight);
     }
 
@@ -88,10 +94,32 @@ public final class Weights {
         return floatArrays;
     }
 
+    public HalfFloatArray loadToHalfFloatArray(FloatTensor input) {
+        HalfFloatArray halfFloatArray = new HalfFloatArray(input.size());
+
+        for (int i = 0; i < input.size(); i++) {
+            halfFloatArray.set(i, new HalfFloat(input.getFloat(i)));
+        }
+
+        return halfFloatArray;
+    }
+
     public boolean validateRmsFinalWeights() {
         float[] rmsFinalWeightArray = new float[rms_final_weight.capacity()];
         rms_final_weight.get(rmsFinalWeightArray);
         return Arrays.equals(rmsFinalWeightArray, rms_final_weight_as_floatArray.toHeapArray());
+    }
+
+    public boolean validateW1Weights() {
+
+        for (int i = 0; i < wcls.size(); i++) {
+            if (wcls.getFloat(i) != halfFloat.get(i).getFloat32()) {
+                System.out.print("vals " + wcls.getFloat(i) + " " + halfFloat.get(i).getFloat32());
+                return false;
+
+            }
+        }
+        return true;
     }
 
 }

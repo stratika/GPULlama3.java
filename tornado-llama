@@ -14,7 +14,7 @@ ECHO=false
 INSTRUCT=true
 INTERACTIVE=false
 USE_GPU=false
-DEBUG_GPU=false
+DEBUG_GPU=true
 
 # Parse arguments
 while [[ $# -gt 0 ]]; do
@@ -60,6 +60,8 @@ CMD+=("-Dtornado.load.annotation.implementation=uk.ac.manchester.tornado.annotat
 CMD+=("-Dtornado.load.annotation.parallel=uk.ac.manchester.tornado.api.annotations.Parallel")
 [ "$USE_GPU" = true ] && CMD+=("-Duse.tornadovm=true")
 [ "$DEBUG_GPU" = true ] && CMD+=("-Dtonado.debug=true") && CMD+=("-Dtonado.threadInfo=true")
+CMD+=("-Dtornado.threadInfo=false")
+CMD+=("-Dtornado.print.kernel=false")
 CMD+=("--upgrade-module-path" "$TORNADO_SDK/share/java/graalJars")
 CMD+=("-XX:+UseParallelGC")
 CMD+=("@$TORNADO_SDK/etc/exportLists/common-exports")

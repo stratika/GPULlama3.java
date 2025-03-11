@@ -1,23 +1,113 @@
 package com.example.tornadovm;
 
 import com.example.core.model.GGMLType;
+import com.example.core.types.Float16;
 import uk.ac.manchester.tornado.api.KernelContext;
 import uk.ac.manchester.tornado.api.annotations.Parallel;
 import uk.ac.manchester.tornado.api.math.TornadoMath;
 import uk.ac.manchester.tornado.api.types.arrays.ByteArray;
 import uk.ac.manchester.tornado.api.types.arrays.FloatArray;
-import uk.ac.manchester.tornado.api.types.tensors.Float16;
+import uk.ac.manchester.tornado.api.types.arrays.HalfFloatArray;
 
 import java.util.stream.IntStream;
 
 public class TornadoVMCompute {
     public static final boolean TORNADOVM = Boolean.parseBoolean(System.getProperty("use.tornadovm", "false"));
-    public static final long WORKGROUP = Long.parseLong(System.getProperty("llama.workgroup", "256"));
+    public static final long WORKGROUP = Long.parseLong(System.getProperty("llama.workgroup", "16"));
 
     public TornadoVMCompute() {
     }
 
+    public static void matmulTornadoQ4Pure(ByteArray thisx, FloatArray that, FloatArray out, int dim1, int vocabSize) {
+        final int BLOCK_SIZE = GGMLType.Q4_0.getBlockSize(); // Q4 block size
+        final int BYTES_PER_BLOCK = GGMLType.Q4_0.getTypeSize(); // The block size in bytes for Q4
+
+//        int idx = context.globalIdx;
+
+        for (@Parallel int idx = 0; idx < vocabSize; idx++) {
+            float result = 0f;
+            int thisOffset = idx * dim1;
+
+            for (int j = 0; j < dim1; j++) {
+                int index = thisOffset + j;
+
+                // Calculate block position and within-block index
+                int blockIndex = index / BLOCK_SIZE;
+                int withinBlockIndex = index % BLOCK_SIZE;
+                int blockOffset = blockIndex * BYTES_PER_BLOCK;
+
+                // Decode quantized value and scale
+                float dequantizedValue = decodeQ4(thisx, blockOffset, withinBlockIndex);
+
+                // Multiply the dequantized value by the corresponding element in 'that'
+                result += dequantizedValue * that.get(j);
+            }
+
+            // Store the result in the output array
+                out.set(idx, result);
+        }
+    }
+
     public static void matmulTornadoQ4(KernelContext context, ByteArray thisx, FloatArray that, FloatArray out, int dim1) {
+        final int BLOCK_SIZE = GGMLType.Q4_0.getBlockSize(); // Q4 block size
+        final int BYTES_PER_BLOCK = GGMLType.Q4_0.getTypeSize(); // Bytes per block for Q4
+        final  int TS = 16;
+
+        // Thread-local identifiers
+        int localRow = context.localIdx;
+        int localCol = context.localIdy;
+
+        int globalRow = TS * context.groupIdx + localRow;
+        int globalCol = TS * context.groupIdy + localCol;
+
+        // Allocate shared memory (local arrays) for tiles
+        float[] sharedThat = context.allocateFloatLocalArray(TS); // Local copy of 'that' for reuse
+        float[] sharedThisx = context.allocateFloatLocalArray(TS); // Local copy of quantized 'thisx'
+
+        float sum = 0.0f; // Accumulate the results
+
+        // Loop over all tiles
+        int numTiles = dim1 / TS;
+        for (int tileIndex = 0; tileIndex < numTiles; tileIndex++) {
+            int tiledRow = TS * tileIndex + localRow;
+            int tiledCol = TS * tileIndex + localCol;
+
+            // Load one tile of A (thisx) and B (that) into shared memory
+            if (tiledRow < dim1 && globalRow < dim1) {
+                sharedThisx[localCol] = decodeQ4(
+                        thisx,
+                        tiledRow / BLOCK_SIZE * BYTES_PER_BLOCK,
+                        tiledRow % BLOCK_SIZE
+                );
+            } else {
+                sharedThisx[localCol] = 0.0f; // Out-of-bound guard
+            }
+
+            if (tiledCol < dim1 && globalCol < dim1) {
+                sharedThat[localRow] = that.get(tiledCol);
+            } else {
+                sharedThat[localRow] = 0.0f; // Out-of-bound guard
+            }
+
+            // Synchronise to ensure all threads have loaded the tile
+            context.localBarrier();
+
+            // Perform computation for the tile
+            for (int k = 0; k < TS; k++) {
+                sum += sharedThisx[k] * sharedThat[k];
+            }
+
+            // Synchronise before loading the next tile
+            context.localBarrier();
+        }
+
+        // Store the result
+        if (globalRow < dim1 && globalCol < dim1) {
+            out.set(globalCol * dim1 + globalRow, sum);
+        }
+    }
+
+    public static void matmulTornadoQ42(KernelContext context, ByteArray thisx, FloatArray that, FloatArray out, int dim1) {
         final int BLOCK_SIZE = GGMLType.Q4_0.getBlockSize(); // Q4 block size
         final int BYTES_PER_BLOCK = GGMLType.Q4_0.getTypeSize(); // The block size in bytes for Q4
 
@@ -43,6 +133,43 @@ public class TornadoVMCompute {
 
         // Store the result in the output array
         out.set(idx, result);
+    }
+
+    private static float pow2(int n) {
+        if (n >= 0) {
+            if (n < 31) {
+                return (float)(1 << n);
+            }
+            return Float.POSITIVE_INFINITY;
+        }
+        if (n > -150) {
+            return 1.0f / (1 << -n);
+        }
+        return 0.0f;
+    }
+
+    private static float decodeQ4(ByteArray thisx, int blockOffset, int withinBlockIndex) {
+        // Read the scale (Float16 format)
+        int scaleByte1 = thisx.get(blockOffset) & 0xFF;
+        int scaleByte2 = thisx.get(blockOffset + 1) & 0xFF;
+        short scaleFloat16 = (short) ((scaleByte2 << 8) | scaleByte1);
+        float scale = decodeFloat16(scaleFloat16);
+
+        // Determine the byte in which the quantized value is stored
+        byte quant;
+        if (withinBlockIndex < GGMLType.Q4_0.getBlockSize() / 2) {
+            // The lower 4 bits of the byte
+            quant = (byte) (thisx.get(blockOffset + Float16.BYTES + withinBlockIndex) & 0x0F);
+        } else {
+            // The higher 4 bits of the byte
+            quant = (byte) ((thisx.get(blockOffset + Float16.BYTES + withinBlockIndex - GGMLType.Q4_0.getBlockSize() / 2) >>> 4) & 0x0F);
+        }
+
+        // Dequantize by shifting the value to the range [-8, 7]
+        quant -= 8;
+
+        // Return the dequantized value
+        return quant * scale;
     }
 
     public static void matmulTornadoQ8(KernelContext context, ByteArray thisx, FloatArray that, FloatArray out, int dim1) {
@@ -99,42 +226,7 @@ public class TornadoVMCompute {
     /**
      * Compute 2^n efficiently
      */
-    private static float pow2(int n) {
-        if (n >= 0) {
-            if (n < 31) {
-                return (float)(1 << n);
-            }
-            return Float.POSITIVE_INFINITY;
-        }
-        if (n > -150) {
-            return 1.0f / (1 << -n);
-        }
-        return 0.0f;
-    }
 
-    private static float decodeQ4(ByteArray thisx, int blockOffset, int withinBlockIndex) {
-        // Read the scale (Float16 format)
-        int scaleByte1 = thisx.get(blockOffset) & 0xFF;
-        int scaleByte2 = thisx.get(blockOffset + 1) & 0xFF;
-        short scaleFloat16 = (short) ((scaleByte2 << 8) | scaleByte1);
-        float scale = decodeFloat16(scaleFloat16);
-
-        // Determine the byte in which the quantized value is stored
-        byte quant;
-        if (withinBlockIndex < GGMLType.Q4_0.getBlockSize() / 2) {
-            // The lower 4 bits of the byte
-            quant = (byte) (thisx.get(blockOffset + Float16.BYTES + withinBlockIndex) & 0x0F);
-        } else {
-            // The higher 4 bits of the byte
-            quant = (byte) ((thisx.get(blockOffset + Float16.BYTES + withinBlockIndex - GGMLType.Q4_0.getBlockSize() / 2) >>> 4) & 0x0F);
-        }
-
-        // Dequantize by shifting the value to the range [-8, 7]
-        quant -= 8;
-
-        // Return the dequantized value
-        return quant * scale;
-    }
 
 
     public static void matmul(ByteArray thisx, FloatArray that, FloatArray out, int dim0, int dim1) {
@@ -286,6 +378,16 @@ public class TornadoVMCompute {
             float val = 0f;
             for (int j = 0; j < xout.getSize(); j++) {
                 val += w.get(i * n + j) * x.get(j);
+            }
+            xout.set(i, val);
+        }
+    }
+
+    public static void matrixVectorSimpleF15(FloatArray x, FloatArray xout, HalfFloatArray w, int n, int d) {
+        for (@Parallel int i = 0; i < x.getSize(); i++) {
+            float val = 0f;
+            for (int j = 0; j < xout.getSize(); j++) {
+                val += w.get(i * n + j).getFloat32() * x.get(j);
             }
             xout.set(i, val);
         }

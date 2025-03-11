@@ -107,6 +107,8 @@ public final class ModelLoader {
             throw new IllegalStateException("Mismatch found between rms_final_weight and rms_final_weight_as_floatArray.");
         }
 
+        qw.validateW1Weights();
+
         return qw;
     }
 

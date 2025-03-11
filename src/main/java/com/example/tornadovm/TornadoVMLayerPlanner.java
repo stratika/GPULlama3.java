@@ -34,7 +34,7 @@ public class TornadoVMLayerPlanner {
     }
 
 
-    private Tuple2<TornadoExecutionPlan, GridScheduler> createTornadoExecutionPlan() {
+    public Tuple2<TornadoExecutionPlan, GridScheduler> createTornadoExecutionPlan() {
 
         TaskGraph taskGraph;
         KernelContext context = new KernelContext();
@@ -47,8 +47,9 @@ public class TornadoVMLayerPlanner {
                 .transferToDevice(DataTransferMode.FIRST_EXECUTION, configuration.vocabularySize)
                 .transferToHost(DataTransferMode.EVERY_EXECUTION, state.wrapLogits);
 
-        if (isQ4Type) {
-            taskGraph.task("t0", TornadoVMCompute::matmulTornadoQ4, context, weights.wclsByteArray, state.wrapXFloat, state.wrapLogits, configuration.dim);
+        if (false) {
+                taskGraph.task("t0", TornadoVMCompute::matmulTornadoQ4, context, weights.wclsByteArray, state.wrapXFloat, state.wrapLogits, configuration.dim);
+//            taskGraph.task("t0", TornadoVMCompute::matrixVectorSimpleF15, state.wrapXFloat, state.wrapLogits, weights.halfFloat, configuration.dim, configuration.vocabularySize);
         } else {
             taskGraph.task("t0", TornadoVMCompute::matmulTornadoQ8, context, weights.wclsByteArray, state.wrapXFloat, state.wrapLogits, configuration.dim);
         }
