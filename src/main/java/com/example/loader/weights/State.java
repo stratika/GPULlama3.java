@@ -34,7 +34,14 @@ public final class State {
     public final FloatArray wrapXb2;    // FloatArray wrapper for xb2, another residual buffer to aid in computations with TornadoVM.
     public final FloatArray wrapHb;     // FloatArray wrapper for hb (hidden dimension buffer for FFN), optimized for TornadoVM.
     public final FloatArray wrapHb2;    // FloatArray wrapper for hb2, additional hidden buffer for FFN, for compatibility with TornadoVM.
+    public final FloatArray wrapX;
 
+    public final FloatArray wrapQ; // FloatArray wrapper for the query tensor, optimized for TornadoVM.
+    public final FloatArray wrapK; // FloatArray wrapper for the key tensor, optimized for TornadoVM.
+    public final FloatArray wrapV; // FloatArray wrapper for the value tensor, optimized for TornadoVM.
+    public final FloatArray wrapAtt; // FloatArray wrapper for the attention scores, optimized for TornadoVM.
+    public final FloatArray wrapKeyCache;// FloatArray wrapper for the key cache, optimized for TornadoVM.
+    public final FloatArray wrapValueCache; // FloatArray wrapper for the value cache, optimized for TornadoVM.
     public int latestToken;             // Keeps track of the most recent token processed by the model. Useful for stateful or autoregressive models.
 
     /** last index in previous block */
@@ -60,7 +67,13 @@ public final class State {
         this.wrapHb = new FloatArray(config.hiddenDim);
         this.wrapHb2 = new FloatArray(config.hiddenDim);
         this.wrapLogits = new FloatArray(config.vocabularySize);
-
+        this.wrapX = new FloatArray(config.dim);
+        this.wrapQ = new FloatArray(config.dim);
+        this.wrapK = new FloatArray(config.dim);
+        this.wrapV = new FloatArray(config.dim);
+        this.wrapAtt = new FloatArray(config.numberOfHeads * config.contextLength);
+        this.wrapKeyCache = new FloatArray(config.contextLength * kvDim * config.numberOfLayers);
+        this.wrapValueCache = new FloatArray(config.contextLength * kvDim * config.numberOfLayers);
         // hb -> hidden dim
         // hb2 -> hidden dim
     }
