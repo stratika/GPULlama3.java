@@ -18,6 +18,7 @@ import java.util.ArrayList;
 import java.util.List;
 import java.util.Set;
 import java.util.function.IntConsumer;
+import java.util.stream.IntStream;
 
 public record Llama(Configuration configuration, Tokenizer tokenizer, Weights weights) {
 
@@ -50,8 +51,6 @@ public record Llama(Configuration configuration, Tokenizer tokenizer, Weights we
 
         // copy the token embedding into x
         weights.token_embedding_table.copyTo(token * dim, state.x, 0, dim);
-
-
 
 
         // forward all the layers
@@ -152,6 +151,149 @@ public record Llama(Configuration configuration, Tokenizer tokenizer, Weights we
 
         return state.logits;
     }
+
+//    static FloatTensor forward2(Llama model, State state, int token, int position,  Tuple2<TornadoExecutionPlan, GridScheduler> tornadoVMListOfPlan) {
+//        // a few convenience variables
+//        Configuration config = model.configuration();
+//        Weights weights = model.weights();
+//        int dim = config.dim;
+//        int headSize = config.headSize;
+//        int kvDim = (config.dim * config.numberOfKeyValueHeads) / config.numberOfHeads;
+//        int kvMul = config.numberOfHeads / config.numberOfKeyValueHeads; // integer multiplier of the kv sharing in multiquery
+//        float sqrtHeadSize = (float) Math.sqrt(headSize);
+//
+//        // copy the token embedding into x
+//        weights.token_embedding_table.copyTo(token * dim, state.x, 0, dim);
+//
+//
+//
+//        try (TornadoExecutionPlan executionPlan = new TornadoExecutionPlan(taskGraph1.snapshot(), taskGraph2.snapshot())) {
+//
+//            // Copy #0         weights.token_embedding_table.copyTo(token * dim, state.x, 0, dim);
+//
+//            // run for a few iterations the first task-graph within the execution plan
+//            for (int l = 0; l < config.numberOfLayers; l++) {
+//                executionPlan.withGraph(0).execute(); //rmsnorm
+//                executionPlan.withGraph(0).execute(); // 3x Matmul
+//                executionPlan.withGraph(0).execute(); // RoPE
+//
+//                // Copy #1
+//                //                final int offset = 0;  final int fromGraphIndex = 0;  final int toGraphIndex = 1;
+//                //                executionPlan.mapOnDeviceMemoryRegion(destArray, srcArray, offset, fromGraphIndex, toGraphIndex);
+//
+//                // Copy #2
+//
+//                executionPlan.withGraph(0).execute(); // Multiheaded Attention
+//
+//                executionPlan.withGraph(0).execute(); // ffnLayer
+//
+//            }
+//
+//            executionPlan.withGraph(0).execute(); // rnsnorm
+//
+//            executionPlan.withGraph(0).execute(); // matmul
+//
+//            // Copy out logits
+//        }
+//
+//        // forward all the layers
+//        for (int l = 0; l < config.numberOfLayers; l++) {
+//            // attention rmsnorm
+//            rmsnorm(state.xb, state.x, weights.rms_att_weight[l], dim, config.rmsNormEps);
+//
+//            // qkv matmuls for this position
+//
+//            weights.wq[l].matmul(state.xb, state.q, dim, dim);
+//            weights.wk[l].matmul(state.xb, state.k, kvDim, dim);
+//            weights.wv[l].matmul(state.xb, state.v, kvDim, dim);
+//
+//            // RoPE relative positional encoding: complex-valued rotate q and k in each head
+//            for (int i = 0; i < dim; i += 2) {
+//                int head_dim = i % headSize;
+//                float fcr = weights.freq_cis_real.get(position * (headSize / 2) + (head_dim / 2));
+//                float fci = weights.freq_cis_imag.get(position * (headSize / 2) + (head_dim / 2));
+//                int rotn = i < kvDim ? 2 : 1; // how many vectors? 2 = q & k, 1 = q only
+//                for (int v = 0; v < rotn; v++) {
+//                    FloatTensor vec = v == 0 ? state.q : state.k; // the vector to rotate (query or key)
+//                    float v0 = vec.getFloat(i);
+//                    float v1 = vec.getFloat(i + 1);
+//                    vec.setFloat(i, v0 * fcr - v1 * fci);
+//                    vec.setFloat(i + 1, v0 * fci + v1 * fcr);
+//                }
+//            }
+//
+//
+//
+//            // save key,value at this time step (position) to our kv cache
+//            //int loff = l * config.seq_len * kvDim; // kv cache layer offset for convenience
+//            state.k.copyTo(0, state.keyCache[l], position * kvDim, kvDim);
+//            state.v.copyTo(0, state.valueCache[l], position * kvDim, kvDim);
+//
+//            int curLayer = l;
+//
+//            // multihead attention. iterate over all heads
+//            Parallel.parallelFor(0, config.numberOfHeads, h -> {
+//                // get the query vector for this head
+//                // float* q = s.q + h * headSize;
+//                int qOffset = h * headSize;
+//
+//                // attention scores for this head
+//                // float* att = s.att + h * config.seq_len;
+//                int attOffset = h * config.contextLength;
+//
+//                // iterate over all timesteps, including the current one
+//                for (int t = 0; t <= position; t++) {
+//                    // get the key vector for this head and at this timestep
+//                    // float* k = s.key_cache + loff + t * dim + h * headSize;
+//                    int keyCacheOffset = /* loff + */ t * kvDim + (h / kvMul) * headSize;
+//                    // calculate the attention score as the dot product of q and k
+//                    float score = state.q.dot(qOffset, state.keyCache[curLayer], keyCacheOffset, headSize);
+//                    score /= sqrtHeadSize;
+//                    // save the score to the attention buffer
+//                    state.att.setFloat(attOffset + t, score);
+//                }
+//
+//                // softmax the scores to get attention weights, from 0..position inclusively
+//                state.att.softmaxInPlace(attOffset, position + 1);
+//
+//                // weighted sum of the values, store back into xb
+//                // float* xb = s.xb + h * headSize;
+//                int xbOffset = h * headSize;
+//                // memset(xb, 0, headSize * sizeof(float));
+//                state.xb.fillInPlace(xbOffset, headSize, 0f);
+//
+//                for (int t = 0; t <= position; t++) {
+//                    // get the value vector for this head and at this timestep
+//                    // float* v = s.value_cache + loff + t * dim + h * headSize;
+//                    int vOffset = /* loff + */ t * kvDim + (h / kvMul) * headSize;
+//                    // get the attention weight for this timestep
+//                    float a = state.att.getFloat(attOffset + t);
+//                    // accumulate the weighted value into xb
+//                    state.xb.saxpyInPlace(xbOffset, state.valueCache[curLayer], vOffset, headSize, a);
+//                }
+//            });
+//
+//            if (true) {
+//                ffnLayerJava(l, state, dim, config, weights);
+//            } else {
+////                ffnLayerTornadoVM(state, tornadoVMListOfPlans.get(l));
+//            }
+//        }
+//
+//        rmsnorm(state.x, state.x, weights.rms_final_weight, dim, config.rmsNormEps);
+//
+//
+//        //        if(TornadoVMCompute.TORNADOVM) {
+//        if(true) {
+//            state.wrapXFloat.getSegment().copyFrom(state.x.asMemorySegment());
+//            tornadoVMListOfPlan.getFirst().withGridScheduler(tornadoVMListOfPlan.getSecond()).execute();
+//            state.logits.asMemorySegment().copyFrom(state.wrapLogits.getSegment());
+//        } else {
+//            weights.wcls.matmul(state.x, state.logits, config.vocabularySize, dim);
+//        }
+//
+//        return state.logits;
+//    }
 
     static void ffnLayerJava(int l, State state, int dim, Configuration config, Weights weights) {
         // final matmul to get the output of the attention
