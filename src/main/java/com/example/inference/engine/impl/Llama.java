@@ -236,9 +236,7 @@ public record Llama(Configuration configuration, Tokenizer tokenizer, Weights we
         return state.logits;
     }
 
-    static void ffnLayerJava(int l, State state, int dim, Configuration config, Weights weights) {
 
-    }
 
     static void ffnLayerTornadoVM(State state, Tuple2<TornadoExecutionPlan, GridScheduler> tornadoVMFFNLayer) {
         state.wrapXFloat.getSegment().copyFrom(state.x.asMemorySegment());
@@ -285,7 +283,7 @@ public record Llama(Configuration configuration, Tokenizer tokenizer, Weights we
     public static List<Integer> generateTokens(Llama model, State state, int startPosition, List<Integer> promptTokens, Set<Integer> stopTokens, int maxTokens, Sampler sampler, boolean echo,
             IntConsumer onTokenGenerated) {
         TornadoVMLayerPlanner tornadoVMLayerPlanner = new TornadoVMLayerPlanner(state, model);
-        Tuple2<List<ImmutableTaskGraph>, GridScheduler> tornadoVMPlan = tornadoVMLayerPlanner.setupTornadoExecutionPlans();
+        Tuple2<List<ImmutableTaskGraph>, GridScheduler> tornadoVMPlan = tornadoVMLayerPlanner.setupTornadoForwardPlan();
 
         long startNanos = System.nanoTime();
         long startGen = 0;

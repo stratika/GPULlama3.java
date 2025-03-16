@@ -78,7 +78,6 @@
             this.wrapAtt = new FloatArray(config.numberOfHeads * config.contextLength);
             this.wrapKeyCache = new FloatArray(config.contextLength * kvDim * config.numberOfLayers);
             this.wrapValueCache = new FloatArray(config.contextLength * kvDim * config.numberOfLayers);
-
             this.positionAndLayer = new IntArray(2);
             this.latestToken = -1;
             this.position = 0;

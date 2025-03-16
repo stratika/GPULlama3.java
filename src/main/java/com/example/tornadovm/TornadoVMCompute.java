@@ -49,7 +49,8 @@ public class TornadoVMCompute {
         }
     }
 
-    public static void ropeRotation(KernelContext context, int pos, FloatArray sq, FloatArray sk, int kv_dim, int head_size) {
+    public static void ropeRotation(KernelContext context, IntArray positionNlayer,
+            FloatArray sq, FloatArray sk, int kv_dim, int head_size) {
         int i = context.globalIdx * 2;
         if (i >= kv_dim) {
             return;
@@ -57,7 +58,7 @@ public class TornadoVMCompute {
 
         int head_dim = i % head_size;
         float freq = 1.0f / TornadoMath.pow(10000.0f, head_dim / (float) head_size);
-        float val = pos * freq;
+        float val = positionNlayer.get(0) * freq;
         float fcr = TornadoMath.cos(val);
         float fci = TornadoMath.sin(val);
 
@@ -456,7 +457,8 @@ public class TornadoVMCompute {
         reduce.set(0, ss);
     }
 
-    public static void normalizeAndScale(KernelContext context, FloatArray out, FloatArray input, FloatArray weight, FloatArray scalingFactorBuffer, int size, float eps) {
+    public static void normalizeAndScale(KernelContext context, FloatArray out, FloatArray
+            input, FloatArray weight, FloatArray scalingFactorBuffer, int size, float eps) {
 
         int globalIdx = context.globalIdx;
 
@@ -496,7 +498,7 @@ public class TornadoVMCompute {
     /**
      * Calculate attention scores between query and key vectors
      */
-    public static void calculateAttentionScores(KernelContext context, int pos, int seqLen, FloatArray query, FloatArray keyCache, FloatArray attScores, int kvDim, int kvMul, int headSize, int loff) {
+    public static void calculateAttentionScores(KernelContext context, IntArray positionNlayer, int seqLen, FloatArray query, FloatArray keyCache, FloatArray attScores, int kvDim, int kvMul, int headSize, int loff) {
         int h = context.groupIdx;         // Head index
         int threadId = context.localIdx;  // Thread ID within work group
         int blockDim = context.localGroupSizeX;  // Work group size
@@ -508,7 +510,7 @@ public class TornadoVMCompute {
         int attOffset = h * seqLen;
 
         // Iterate over all timesteps, including the current one
-        for (int t = threadId; t <= pos; t += blockDim) {
+        for (int t = threadId; t <= positionNlayer.get(1); t += blockDim) {
             // Get the key vector for this head and at this timestep
             int keyOffset = loff + t * kvDim + (h / kvMul) * headSize;
 
@@ -529,7 +531,7 @@ public class TornadoVMCompute {
     /**
      * Find maximum attention score for numerical stability in softmax
      */
-    public static void findMaxAttentionScores(KernelContext context, int pos, int seqLen, FloatArray attScores, FloatArray maxValues, int workGroupSize) {
+    public static void findMaxAttentionScores(KernelContext context, IntArray positionNlayer, int seqLen, FloatArray attScores, FloatArray maxValues, int workGroupSize) {
         int h = context.groupIdx;         // Head index
         int threadId = context.localIdx;  // Thread ID within work group
         int blockDim = context.localGroupSizeX;  // Work group size
@@ -539,7 +541,7 @@ public class TornadoVMCompute {
 
         // Find the maximum value for numerical stability
         float maxVal = Float.NEGATIVE_INFINITY;
-        for (int t = threadId; t <= pos; t += blockDim) {
+        for (int t = threadId; t <= positionNlayer.get(1); t += blockDim) {
             maxVal = Math.max(maxVal, attScores.get(attOffset + t));
         }
 
@@ -560,7 +562,7 @@ public class TornadoVMCompute {
         }
     }
 
-    public static void calculateExpAndSum(KernelContext context, int pos, int seqLen, FloatArray attScores, FloatArray maxValues, FloatArray expValues, FloatArray sumValues, int localWorkGroupSize) {
+    public static void calculateExpAndSum(KernelContext context, IntArray positionNlayer, int seqLen, FloatArray attScores, FloatArray maxValues, FloatArray expValues, FloatArray sumValues, int localWorkGroupSize) {
         int h = context.groupIdx;         // Head index
         int threadId = context.localIdx;  // Thread ID within work group
         int blockDim = context.localGroupSizeX;  // Work group size
@@ -574,7 +576,7 @@ public class TornadoVMCompute {
 
         // Compute exp(score - max) and thread-local sum
         float expSum = 0.0f;
-        for (int t = threadId; t <= pos; t += blockDim) {
+        for (int t = threadId; t <= positionNlayer.get(1); t += blockDim) {
             float score = attScores.get(attOffset + t);
             float expValue = (float) Math.exp(score - maxVal);
             expValues.set(expOffset + t, expValue);
@@ -607,7 +609,7 @@ public class TornadoVMCompute {
     /**
      * Normalize exponential values to get softmax probabilities
      */
-    public static void normalizeSoftmax(KernelContext context, int pos, int seqLen, FloatArray expValues, FloatArray sumValues, FloatArray attScores) {
+    public static void normalizeSoftmax(KernelContext context, IntArray positionNlayer, int seqLen, FloatArray expValues, FloatArray sumValues, FloatArray attScores) {
         int h = context.groupIdx;         // Head index
         int threadId = context.localIdx;  // Thread ID within work group
         int blockDim = context.localGroupSizeX;  // Work group size
@@ -620,13 +622,13 @@ public class TornadoVMCompute {
         int attOffset = h * seqLen;
 
         // Normalize values and write back to attention scores
-        for (int t = threadId; t <= pos; t += blockDim) {
+        for (int t = threadId; t <= positionNlayer.get(1); t += blockDim) {
             float normalizedValue = expValues.get(expOffset + t) / sum;
             attScores.set(attOffset + t, normalizedValue);
         }
     }
 
-    public static void computeWeightedSum(KernelContext context, int pos, int seqLen, FloatArray attScores, FloatArray valueCache, FloatArray output, int kvDim, int kvMul, int headSize, int loff) {
+    public static void computeWeightedSum(KernelContext context, IntArray positionNlayer, int seqLen, FloatArray attScores, FloatArray valueCache, FloatArray output, int kvDim, int kvMul, int headSize, int loff) {
         int h = context.groupIdx;         // Head index
         int threadId = context.localIdx;  // Thread ID within work group
         int blockDim = context.localGroupSizeX;  // Work group size
@@ -640,7 +642,7 @@ public class TornadoVMCompute {
         // Calculate weighted sum for each head dimension
         for (int i = threadId; i < headSize; i += blockDim) {
             float val = 0.0f;
-            for (int t = 0; t <= pos; t++) {
+            for (int t = 0; t <= positionNlayer.get(1); t++) {
                 // Get the value vector for this head and timestep
                 int valueOffset = loff + t * kvDim + (h / kvMul) * headSize;
 
@@ -659,14 +661,16 @@ public class TornadoVMCompute {
     /**
      * Matrix-vector multiplication using KernelContext
      */
-    public static void matrixVectorMultiply(KernelContext context, FloatArray x, FloatArray output, FloatArray weights, int n, int d) {
+    public static void matrixVectorMultiply(KernelContext context, FloatArray x, FloatArray output, FloatArray weights, int n,
+            int d, IntArray positionNlayer) {
         int idx = context.globalIdx;
 
+        int offset = positionNlayer.get(1) * n;
         if (idx < d) {
             float sum = 0.0f;
             for (int j = 0; j < n; j++) {
                 if (j < x.getSize() && (idx * n + j) < weights.getSize()) {
-                    sum += weights.get(idx * n + j) * x.get(j);
+                    sum += weights.get(idx * offset + j) * x.get(j);
                 }
             }
 
