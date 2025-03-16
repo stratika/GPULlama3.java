@@ -256,16 +256,6 @@ public class TornadoVMLayerPlanner {
         taskGraphs.add(5, immutableFinalRMSGraph);
         taskGraphs.add(6, immutableLogitsGraph);
 
-        // Create execution plan with all graphs
-        //        TornadoExecutionPlan executionPlan = new TornadoExecutionPlan(
-        //                immutableRMSGraph,         // Graph 0: RMSNorm
-        //                immutableQKVGraph,         // Graph 1: QKV Matmuls
-        //                immutableRopeGraph,        // Graph 2: RoPE
-        //                immutableAttentionGraph,   // Graph 3: Multi-head Attention
-        //                immutableFFNGraph,         // Graph 4: FFN
-        //                immutableFinalRMSGraph,    // Graph 5: Final RMSNorm
-        //                immutableLogitsGraph       // Graph 6: Final projection to logits
-        //        );
 
         // Return the execution plan and grid scheduler as a tuple
         return new Tuple2<>(taskGraphs, gridScheduler);

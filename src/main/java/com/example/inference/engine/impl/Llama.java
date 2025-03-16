@@ -160,20 +160,17 @@ public record Llama(Configuration configuration, Tokenizer tokenizer, Weights we
 
     static FloatTensor forwardTornadoVM(Llama model, State state, int token, int position,  //
             Tuple2<List<ImmutableTaskGraph>, GridScheduler> tornadoVMListOfPlan) { //
-        // a few convenience variables
+
         Configuration config = model.configuration();
         Weights weights = model.weights();
         int dim = config.dim;
-        //        int headSize = config.headSize;
         int kvDim = (config.dim * config.numberOfKeyValueHeads) / config.numberOfHeads;
-        //        int kvMul = config.numberOfHeads / config.numberOfKeyValueHeads; // integer multiplier of the kv sharing in multiquery
-        //        float sqrtHeadSize = (float) Math.sqrt(headSize);
 
         // copy the token embedding into x
+
         weights.token_embedding_table.copyTo(token * dim, state.x, 0, dim);
         MemorySegment.copy(state.x.asMemorySegment(), 0, state.wrapX.getSegmentWithHeader(), 0, dim * 4);
 
-        // Update positions -> its a copy-in per token
         state.positionAndLayer.set(0, position);
 
         GridScheduler gridScheduler = tornadoVMListOfPlan.getSecond();
@@ -192,7 +189,8 @@ public record Llama(Configuration configuration, Tokenizer tokenizer, Weights we
         // @formatter:on
             // Process each layer
             for (int l = 0; l < config.numberOfLayers; l++) {
-                state.positionAndLayer.set(1, state.layer); // Update before execute (it an every copy in)
+
+                state.positionAndLayer.set(1, l); // Update before execute (it an every copy in)
 
                 // Step 1: RMSNorm for attention
                 executionPlan.withGraph(0).withGridScheduler(gridScheduler).execute();
@@ -205,7 +203,7 @@ public record Llama(Configuration configuration, Tokenizer tokenizer, Weights we
 
                 // new shift by l
                 // Calculate the offset based on layer, max sequence length, and position
-                long offset = l * config.contextLength * kvDim + state.position * kvDim;
+                long offset = l * config.contextLength * kvDim + position * kvDim;
                 // Map the key and value from graph 2 to KV cache in graph 3
 
                 executionPlan.mapOnDeviceMemoryRegion(state.wrapKeyCache, state.wrapK, offset, 2, 3);
@@ -232,26 +230,8 @@ public record Llama(Configuration configuration, Tokenizer tokenizer, Weights we
 
         // This copy-out after every execution !!!
         state.logits.asMemorySegment().copyFrom(state.wrapLogits.getSegment());
-
+        // this can be simplified as well
         return state.logits;
-    }
-
-
-
-    static void ffnLayerTornadoVM(State state, Tuple2<TornadoExecutionPlan, GridScheduler> tornadoVMFFNLayer) {
-        state.wrapXFloat.getSegment().copyFrom(state.x.asMemorySegment());
-        state.wrapHb.getSegment().copyFrom(state.hb.asMemorySegment());
-        state.wrapHb2.getSegment().copyFrom(state.hb2.asMemorySegment());
-        state.wrapXb.getSegment().copyFrom(state.xb.asMemorySegment());
-        state.wrapXb2.getSegment().copyFrom(state.xb2.asMemorySegment());
-
-        tornadoVMFFNLayer.getFirst().withGridScheduler(tornadoVMFFNLayer.getSecond()).execute();
-
-        state.xb2.asMemorySegment().copyFrom(state.wrapXb2.getSegment());
-        state.xb.asMemorySegment().copyFrom(state.wrapXb.getSegment());
-        state.hb2.asMemorySegment().copyFrom(state.wrapHb2.getSegment());
-        state.hb.asMemorySegment().copyFrom(state.wrapHb.getSegment());
-        state.x.asMemorySegment().copyFrom(state.wrapXFloat.getSegment());
     }
 
     /**
