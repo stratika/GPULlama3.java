@@ -188,39 +188,39 @@ public record Llama(Configuration configuration, Tokenizer tokenizer, Weights we
         ) {
         // @formatter:on
             // Process each layer
+            executionPlan.withGraph(0).execute();
             for (int l = 0; l < config.numberOfLayers; l++) {
 
                 state.positionAndLayer.set(1, l); // Update before execute (it an every copy in)
 
                 // Step 1: RMSNorm for attention
-                executionPlan.withGraph(0).withGridScheduler(gridScheduler).execute();
-
-                // Step 2: QKV Matmuls
                 executionPlan.withGraph(1).withGridScheduler(gridScheduler).execute();
 
-                // Step 3: RoPE rotation
+                // Step 2: QKV Matmuls
                 executionPlan.withGraph(2).withGridScheduler(gridScheduler).execute();
 
-                // new shift by l
-                // Calculate the offset based on layer, max sequence length, and position
-                long offset = l * config.contextLength * kvDim + position * kvDim;
-                // Map the key and value from graph 2 to KV cache in graph 3
-
-                executionPlan.mapOnDeviceMemoryRegion(state.wrapKeyCache, state.wrapK, offset, 2, 3);
-                executionPlan.mapOnDeviceMemoryRegion(state.wrapValueCache, state.wrapV, offset, 2, 3);
-
-                // Step 4: Multi-head Attention (scores, softmax, weighted sum)
+                // Step 3: RoPE rotation
                 executionPlan.withGraph(3).withGridScheduler(gridScheduler).execute();
 
-                // Step 5: Feed-forward neural network
+                // new shift by l
+                //    // Calculate the offset based on layer, max sequence length, and position
+                long offset = l * config.contextLength * kvDim + position * kvDim;
+
+                executionPlan.mapOnDeviceMemoryRegion(state.wrapKeyCache, state.wrapK, offset, 3, 4);
+                executionPlan.mapOnDeviceMemoryRegion(state.wrapValueCache, state.wrapV, offset, 3, 4);
+
+                // Step 4: Multi-head Attention (scores, softmax, weighted sum)
                 executionPlan.withGraph(4).withGridScheduler(gridScheduler).execute();
+
+                // Step 5: Feed-forward neural network
+                executionPlan.withGraph(5).withGridScheduler(gridScheduler).execute();
             }
 
             // Final RMSNorm
-            executionPlan.withGraph(5).withGridScheduler(gridScheduler).execute();
+            executionPlan.withGraph(6).withGridScheduler(gridScheduler).execute();
 
             // Final projection to logits
-            executionPlan.withGraph(6).withGridScheduler(gridScheduler).execute();
+            executionPlan.withGraph(7).withGridScheduler(gridScheduler).execute();
 
             // Copy results from TornadoVM buffers to state.logits
             state.logits.asMemorySegment().copyFrom(state.wrapLogits.getSegment());

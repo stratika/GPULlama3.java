@@ -487,12 +487,17 @@ public class TornadoVMCompute {
             FloatArray x, FloatArray output, FloatArray weights, int n, int d, IntArray posAndLayer) {
         int idx = context.globalIdx;
 
-        int layerOffset = posAndLayer.get(0) * n;
+        if (idx < output.getSize()) {  // Ensure we don't go out of bounds
+            int layer = posAndLayer.get(1);
+            // Base offset for the current layer: layer * d * n
+            // Each layer has a full d×n matrix
+            int layerOffset = layer * d * n;
 
-        if (idx < output.getSize()) {
             float sum = 0.0f;
             for (int j = 0; j < n; j++) {
-                sum += weights.get(idx * layerOffset + j) * x.get(j);
+                // For each output idx, we need to do a dot product of the row idx with vector x
+                // The weights are stored in row-major format
+                sum += weights.get(layerOffset + idx * n + j) * x.get(j);
             }
             output.set(idx, sum);
         }
@@ -714,6 +719,12 @@ public class TornadoVMCompute {
 
         if (idx < Math.min(input.getSize(), output.getSize())) {
             output.set(idx, output.get(idx) * input.get(idx));
+        }
+    }
+
+    public static void emptyTaskToForceCopyIn(FloatArray a) {
+        // Empty method with a dummy condition to avoid optimization
+        if (a.getSize() > 100000) {
         }
     }
 
