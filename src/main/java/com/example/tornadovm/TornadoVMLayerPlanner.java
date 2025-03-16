@@ -7,6 +7,7 @@ import com.example.inference.engine.impl.Llama;
 import com.example.loader.weights.State;
 import com.example.loader.weights.Weights;
 import uk.ac.manchester.tornado.api.GridScheduler;
+import uk.ac.manchester.tornado.api.ImmutableTaskGraph;
 import uk.ac.manchester.tornado.api.KernelContext;
 import uk.ac.manchester.tornado.api.TaskGraph;
 import uk.ac.manchester.tornado.api.TornadoExecutionPlan;
@@ -17,6 +18,7 @@ import uk.ac.manchester.tornado.api.types.arrays.FloatArray;
 
 import java.nio.FloatBuffer;
 import java.util.ArrayList;
+import java.util.List;
 
 public class TornadoVMLayerPlanner {
 
@@ -127,6 +129,11 @@ public class TornadoVMLayerPlanner {
         TaskGraph taskGraph;
         KernelContext context = new KernelContext();
         boolean isQ4Type = weights.wcls.toString().contains("Q4");
+        int dim = configuration.dim;
+        int headSize = configuration.headSize;
+        int kvDim = (configuration.dim * configuration.numberOfKeyValueHeads) / configuration.numberOfHeads;
+        int kvMul = configuration.numberOfHeads / configuration.numberOfKeyValueHeads; // integer multiplier of the kv sharing in multiquery
+        float sqrtHeadSize = (float) Math.sqrt(headSize);
 
         final int size = configuration.dim;
         final int localSize = 256;
@@ -135,18 +142,27 @@ public class TornadoVMLayerPlanner {
 
         taskGraph = new TaskGraph("fused")
                 .transferToDevice(DataTransferMode.EVERY_EXECUTION, state.wrapXFloat)
-                .transferToDevice(DataTransferMode.FIRST_EXECUTION, //
-                        weights.wclsByteArray, weights.rms_final_weight_as_floatArray,
-                        configuration.vocabularySize, configuration.dim, configuration.rmsNormEps)
+                .transferToDevice(DataTransferMode.FIRST_EXECUTION,
+                        weights.wclsByteArray,
+                        weights.rms_final_weight_as_floatArray,
+                        configuration.vocabularySize,
+                        configuration.dim,
+                        configuration.rmsNormEps,
+                        state.wrapQ,
+                        state.wrapK,
+                        state.wrapV,
+                        state.wrapAtt,
+                        state.wrapKeyCache,
+                        state.wrapValueCache
+                )
                 .task("reduce", TornadoVMCompute::reduceSquareSums, context, state.wrapXFloat, reduce) //
                 .task("sum", TornadoVMCompute::finalSum, context, reduce,configuration.dim, configuration.rmsNormEps) //
                 .task("ns", TornadoVMCompute::normalizeAndScale, context, state.wrapXFloat, weights.rms_final_weight_as_floatArray, reduce, configuration.dim)
-                .task("matmul-1", TornadoVMCompute::matmulTornadoQ8, context, weights.wclsByteArray, state.wrapXFloat, state.wrapLogits, configuration.dim)
-                .task("matmul-2", TornadoVMCompute::matmulTornadoQ8, context, weights.wclsByteArray, state.wrapXFloat, state.wrapLogits, configuration.dim)
-                .task("matmul-3", TornadoVMCompute::matmulTornadoQ8, context, weights.wclsByteArray, state.wrapXFloat, state.wrapLogits, configuration.dim)
-                .transferToHost(DataTransferMode.EVERY_EXECUTION, state.wrapLogits, state.wrapXFloat);
-
-
+                .task("matmul1", TornadoVMCompute::matrixVectorSimple, state.wrapXb, state.wrapQ, weights.wqFlat, configuration.dim, configuration.dim, state.layer) // check if kernel is access the right dims
+                .task("matmul2", TornadoVMCompute::matrixVectorSimple, state.wrapXb, state.wrapK, weights.wkFlat, kvDim, configuration.dim, state.layer) //
+                .task("matmul3", TornadoVMCompute::matrixVectorSimple, state.wrapXb, state.wrapV, weights.wvFlat, kvDim, configuration.dim, state.layer) //
+                .task("rope", TornadoVMCompute::ropeRotation, context, state.position, state.wrapQ, state.wrapK, kvDim,headSize)
+                .persistOnDevice(state.wrapLogits, state.wrapXFloat, state.wrapQ, state.wrapK);
 
         WorkerGrid worker = new WorkerGrid1D(size);
         worker.setGlobalWork(size, 1, 1);
@@ -160,8 +176,15 @@ public class TornadoVMLayerPlanner {
         gridScheduler.setWorkerGrid("fused.sum", new WorkerGrid1D(1));
         gridScheduler.setWorkerGrid("fused.ns", worker);
         gridScheduler.setWorkerGrid("fused.mv", finalTokenWorker);
-
+        gridScheduler.setWorkerGrid("matmul-1", worker);
+        gridScheduler.setWorkerGrid("matmul-2", worker);
+        gridScheduler.setWorkerGrid("matmul-3", worker);
+        gridScheduler.setWorkerGrid("rope", worker);
         return new Tuple2<>(taskGraph, gridScheduler);
+    }
+
+    private Tuple2<TaskGraph, GridScheduler> multiHeadedAttentionLayer() {
+
     }
 
     private Tuple2<TornadoExecutionPlan, GridScheduler> createTornadoExecutionPlanPerLayer(int l) {
@@ -236,5 +259,246 @@ public class TornadoVMLayerPlanner {
         // plans.get(plans.size() - 1) -> size = numOfLayers +1;
         tornadoVMPlans.add(createTornadoExecutionPlanFused());
         return tornadoVMPlans;
+    }
+
+
+    /**
+     * Set up and initialize all TornadoVM execution plans for LLM inference.
+     * This method creates all task graphs, configures worker grids, and returns
+     * a tuple containing the execution plan and grid scheduler that can be used in the forward method.
+     */
+    public static Tuple2<List<ImmutableTaskGraph>, GridScheduler> setupTornadoExecutionPlans(
+            Configuration config, Weights weights, State state) {
+
+        int dim = config.dim;
+        int headSize = config.headSize;
+        int numHeads = config.numberOfHeads;
+        int numKVHeads = config.numberOfKeyValueHeads;
+        int kvDim = (dim * numKVHeads) / numHeads;
+        int kvMul = numHeads / numKVHeads;
+
+        List<ImmutableTaskGraph> taskGraphs = new ArrayList<>();
+
+        // Define worker grid sizes
+        int localSizeRMS = 256;
+        int localSizeHeads = 64;
+        int localSizeFFN = 256;
+
+        FloatArray intermediateReduce = new FloatArray(dim / localSizeRMS);
+
+
+        // Create kernel context
+        KernelContext context = new KernelContext();
+
+        // --- Worker Grids ---
+        WorkerGrid dimWorker = new WorkerGrid1D(dim);
+        dimWorker.setGlobalWork(dim, 1, 1);
+        dimWorker.setLocalWork(localSizeRMS, 1, 1);
+
+        WorkerGrid headsWorker = new WorkerGrid1D(numHeads * localSizeHeads);
+        headsWorker.setGlobalWork(numHeads * localSizeHeads, 1, 1);
+        headsWorker.setLocalWork(localSizeHeads, 1, 1);
+
+        WorkerGrid singleWorker = new WorkerGrid1D(1);
+        singleWorker.setGlobalWork(1, 1, 1);
+        singleWorker.setLocalWork(1, 1, 1);
+
+        WorkerGrid hiddenDimWorker = new WorkerGrid1D(config.hiddenDim);
+        hiddenDimWorker.setGlobalWork(config.hiddenDim, 1, 1);
+        hiddenDimWorker.setLocalWork(localSizeFFN, 1, 1);
+
+        WorkerGrid vocabWorker = new WorkerGrid1D(config.vocabularySize);
+        vocabWorker.setGlobalWork(config.vocabularySize, 1, 1);
+        vocabWorker.setLocalWork(256, 1, 1);
+
+        WorkerGrid ropeWorker = new WorkerGrid1D(dim / 2);
+        ropeWorker.setGlobalWork(dim / 2, 1, 1);
+        ropeWorker.setLocalWork(localSizeRMS / 2, 1, 1);
+
+        // --- Configure Grid Scheduler ---
+        GridScheduler gridScheduler = new GridScheduler();
+
+        // --- Create Task Graphs ---
+
+        // @formatter:off
+        // Task Graph 0: RMSNorm
+        TaskGraph rmsNormGraph = new TaskGraph("rms-norm")
+                .transferToDevice(DataTransferMode.FIRST_EXECUTION, state.x)
+                .task("reduce", TornadoVMCompute::reduceSquareSums, context, state.wrapX, intermediateReduce, localSizeRMS)
+                .task("sum", TornadoVMCompute::finalSum, context, intermediateReduce, dim, config.rmsNormEps)
+                .task("normalize", TornadoVMCompute::normalizeAndScale, context,
+                        state.wrapXb, state.wrapX, weights.rms_att_weightFlat, intermediateReduce, dim, config.rmsNormEps)
+                .persistOnDevice(state.wrapX);
+
+        gridScheduler.setWorkerGrid("rms-norm.reduce", dimWorker);
+        gridScheduler.setWorkerGrid("rms-norm.sum", singleWorker);
+        gridScheduler.setWorkerGrid("rms-norm.normalize", dimWorker);
+
+        // Task Graph 1: QKV Matmuls
+        TaskGraph qkvGraph = new TaskGraph("qkv")
+                .consumeFromDevice(rmsNormGraph.getTaskGraphName(), state.xb)
+                .task("q-matmul", TornadoVMCompute::matrixVectorSimple, context, state.wrapXb, state.wrapQ,
+                        weights.wqFlat, dim, dim, state.positionAndLayer)
+                .task("k-matmul", TornadoVMCompute::matrixVectorSimple, context, state.wrapXb, state.wrapK,
+                        weights.wkFlat, dim, dim, state.positionAndLayer)
+                .task("v-matmul", TornadoVMCompute::matrixVectorSimple, context, state.wrapXb, state.wrapV,
+                        weights.wvFlat, dim, dim, state.positionAndLayer)
+                .persistOnDevice(state.q, state.k, state.v);
+
+        gridScheduler.setWorkerGrid("qkv.q-matmul", dimWorker);
+        gridScheduler.setWorkerGrid("qkv.k-matmul", dimWorker);
+        gridScheduler.setWorkerGrid("qkv.v-matmul", dimWorker);
+
+        // Task Graph 2: RoPE
+        TaskGraph ropeGraph = new TaskGraph("rope")
+                .transferToDevice(DataTransferMode.UNDER_DEMAND, state.q, state.k)
+                .task("rope", TornadoVMCompute::ropeRotation, context,
+                        state.position, state.wrapQ,
+                        state.wrapK, kvDim, headSize)
+                .transferToHost(DataTransferMode.UNDER_DEMAND, state.q, state.k);
+
+        gridScheduler.setWorkerGrid("rope.rope", ropeWorker);
+
+        // Task Graph 3: Multi-head Attention
+        // Important: The KV cache arrays are mapped to this graph from Graph 2 using device pointers
+        TaskGraph attentionGraph = new TaskGraph("attention")
+                // Attention memory is allocated on-device
+                .transferToDevice(DataTransferMode.FIRST_EXECUTION, state.att, state.maxValues,
+                        state.expValues, state.sumValues)
+                // KV cache arrays are mapped from previous graph (see mapOnDeviceMemoryRegion in forward method)
+                .transferToDevice(DataTransferMode.UNDER_DEMAND, state.q)
+
+                // Step 1: Calculate attention scores
+                .task("scores", TornadoVMCompute::calculateAttentionScores, context,
+                        state.position, config.contextLength, state.wrapQ, state.wrapKeyCache,
+                        state.wrapAtt, kvDim, kvMul, headSize, 0)
+                // Step 2: Find max for numerical stability
+                .task("max", TornadoVMCompute::findMaxAttentionScores, context,
+                        state.position, config.contextLength, state.wrapAtt, state.maxValues, localSizeHeads)
+                // Step 3: Calculate exp and sum
+                .task("expsum", TornadoVMCompute::calculateExpAndSum, context,
+                        state.position, config.contextLength, state.wrapAtt, state.maxValues,
+                        state.expValues, state.sumValues, localSizeHeads)
+                // Step 4: Normalize with softmax
+                .task("normalize", TornadoVMCompute::normalizeSoftmax, context,
+                        state.position, config.contextLength, state.expValues,
+                        state.sumValues, state.wrapAtt)
+                // Step 5: Compute weighted sum
+                .task("weighted-sum", TornadoVMCompute::computeWeightedSum, context,
+                        state.position, config.contextLength, state.wrapAtt, state.wrapValueCache,
+                        state.wrapXb, kvDim, kvMul, headSize, 0)
+                .transferToHost(DataTransferMode.UNDER_DEMAND, state.xb);
+
+        gridScheduler.setWorkerGrid("attention.scores", headsWorker);
+        gridScheduler.setWorkerGrid("attention.max", headsWorker);
+        gridScheduler.setWorkerGrid("attention.expsum", headsWorker);
+        gridScheduler.setWorkerGrid("attention.normalize", headsWorker);
+        gridScheduler.setWorkerGrid("attention.weighted-sum", headsWorker);
+
+        // Task Graph 4: FFN
+        TaskGraph ffnGraph = new TaskGraph("ffn")
+                // Input arrays are transferred on-demand (results from previous graph)
+                .transferToDevice(DataTransferMode.UNDER_DEMAND, state.xb)
+                // Static arrays are transferred once
+                .transferToDevice(DataTransferMode.FIRST_EXECUTION, state.hb, state.hb2, state.reduce)
+
+                // Step 1: Matrix multiplication with attention output and residual
+                .task("matmul1", TornadoVMCompute::matrixVectorMultiply,
+                        context, state.xb, state.x, weights.woFlat, dim, dim)
+                .task("residual1", TornadoVMCompute::addInPlace, context, state.x, state.xb)
+
+                // Step 2: RMSNorm sequence
+                .task("reduce", TornadoVMCompute::reduceSquareSums, context, state.xb, state.reduce, localSizeFFN)
+                .task("sum", TornadoVMCompute::finalSum, context, state.reduce, dim, config.rmsNormEps)
+                .task("ns", TornadoVMCompute::normalizeAndScale2,
+                        context, state.x, state.xb, weights.rms_ffn_weightFlat, state.reduce, dim)
+
+                // Step 3: Parallel projections with W1 and W3
+                .task("projection1", TornadoVMCompute::matrixVectorMultiply,
+                        context, state.x, state.hb, weights.w1Flat, dim, config.hiddenDim)
+                .task("projection3", TornadoVMCompute::matrixVectorMultiply,
+                        context, state.x, state.hb2, weights.w3Flat, dim, config.hiddenDim)
+
+                // Step 4: SiLU activation and element-wise multiplication
+                .task("silu", TornadoVMCompute::siluActivation, context, state.hb)
+                .task("multiply", TornadoVMCompute::elementMultiply, context, state.hb2, state.hb)
+
+                // Step 5: Final projection and residual
+                .task("projection2", TornadoVMCompute::matrixVectorMultiply,
+                        context, state.hb, state.x, weights.w2Flat, config.hiddenDim, dim)
+                .task("residual2", TornadoVMCompute::addInPlace, context, state.x, state.xb)
+
+                // Transfer result to host on-demand (will remain on device for next layer)
+                .transferToHost(DataTransferMode.UNDER_DEMAND, state.xb);
+
+        // @formatter:on
+
+        // Set FFN worker grids
+        gridScheduler.setWorkerGrid("ffn.matmul1", dimWorker);
+        gridScheduler.setWorkerGrid("ffn.residual1", dimWorker);
+        gridScheduler.setWorkerGrid("ffn.reduce", dimWorker);
+        gridScheduler.setWorkerGrid("ffn.sum", singleWorker);
+        gridScheduler.setWorkerGrid("ffn.ns", dimWorker);
+        gridScheduler.setWorkerGrid("ffn.projection1", hiddenDimWorker);
+        gridScheduler.setWorkerGrid("ffn.projection3", hiddenDimWorker);
+        gridScheduler.setWorkerGrid("ffn.silu", hiddenDimWorker);
+        gridScheduler.setWorkerGrid("ffn.multiply", hiddenDimWorker);
+        gridScheduler.setWorkerGrid("ffn.projection2", dimWorker);
+        gridScheduler.setWorkerGrid("ffn.residual2", dimWorker);
+
+        // Task Graph 5: Final RMSNorm
+        TaskGraph finalRmsNormGraph = new TaskGraph("final-rms")
+                .transferToDevice(DataTransferMode.UNDER_DEMAND, state.x)
+                .task("reduce", TornadoVMCompute::reduceSquareSums, context, state.wrapX, state.reduce, localSizeRMS)
+                .task("sum", TornadoVMCompute::finalSum, context, state.reduce, dim, config.rmsNormEps)
+                .task("normalize", TornadoVMCompute::normalizeAndScale, context,
+                        state.wrapXFloat, state.wrapX, weights.rms_final_weight_as_floatArray,
+                        state.reduce, dim, config.rmsNormEps)
+                .transferToHost(DataTransferMode.UNDER_DEMAND, state.x);
+
+        gridScheduler.setWorkerGrid("final-rms.reduce", dimWorker);
+        gridScheduler.setWorkerGrid("final-rms.sum", singleWorker);
+        gridScheduler.setWorkerGrid("final-rms.normalize", dimWorker);
+
+        // Task Graph 6: Final Projection to Logits
+        TaskGraph logitsGraph = new TaskGraph("logits")
+                .transferToDevice(DataTransferMode.UNDER_DEMAND, state.x)
+                .task("projection", TornadoVMCompute::matmulTornadoQ8, context,
+                        weights.wclsByteArray, state.wrapXFloat, state.wrapLogits, dim)
+                .transferToHost(DataTransferMode.EVERY_EXECUTION, state.logits);
+
+        gridScheduler.setWorkerGrid("logits.projection", vocabWorker);
+
+        // Create immutable task graphs
+        ImmutableTaskGraph immutableRMSGraph = rmsNormGraph.snapshot();
+        ImmutableTaskGraph immutableQKVGraph = qkvGraph.snapshot();
+        ImmutableTaskGraph immutableRopeGraph = ropeGraph.snapshot();
+        ImmutableTaskGraph immutableAttentionGraph = attentionGraph.snapshot();
+        ImmutableTaskGraph immutableFFNGraph = ffnGraph.snapshot();
+        ImmutableTaskGraph immutableFinalRMSGraph = finalRmsNormGraph.snapshot();
+        ImmutableTaskGraph immutableLogitsGraph = logitsGraph.snapshot();
+
+        taskGraphs.add(0, immutableRMSGraph);
+        taskGraphs.add(1, immutableQKVGraph);
+        taskGraphs.add(2, immutableRopeGraph);
+        taskGraphs.add(3, immutableAttentionGraph);
+        taskGraphs.add(4, immutableFFNGraph);
+        taskGraphs.add(5, immutableFinalRMSGraph);
+        taskGraphs.add(6, immutableLogitsGraph);
+
+
+        // Create execution plan with all graphs
+//        TornadoExecutionPlan executionPlan = new TornadoExecutionPlan(
+//                immutableRMSGraph,         // Graph 0: RMSNorm
+//                immutableQKVGraph,         // Graph 1: QKV Matmuls
+//                immutableRopeGraph,        // Graph 2: RoPE
+//                immutableAttentionGraph,   // Graph 3: Multi-head Attention
+//                immutableFFNGraph,         // Graph 4: FFN
+//                immutableFinalRMSGraph,    // Graph 5: Final RMSNorm
+//                immutableLogitsGraph       // Graph 6: Final projection to logits
+//        );
+
+        // Return the execution plan and grid scheduler as a tuple
+        return new Tuple2<>(taskGraphs, gridScheduler);
     }
 }
