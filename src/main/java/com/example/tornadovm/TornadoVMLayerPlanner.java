@@ -20,13 +20,11 @@ import java.util.List;
 public class TornadoVMLayerPlanner {
 
     private final State state;
-    private final Llama model;
     private final Configuration config;
     private final Weights weights;
 
     public TornadoVMLayerPlanner(State state, Llama model) {
         this.state = state;
-        this.model = model;
         this.config = model.configuration();
         this.weights = model.weights();
     }
@@ -101,7 +99,7 @@ public class TornadoVMLayerPlanner {
                 .task("reduce", TornadoVMCompute::reduceSquareSums, context, state.wrapX, intermediateReduceFirst, localSizeRMS)
                 .task("sum", TornadoVMCompute::finalSum, context, intermediateReduceFirst, dim, config.rmsNormEps)
                 .task("normalize", TornadoVMCompute::normalizeAndScale, context,
-                        state.wrapXb, state.wrapX, weights.rms_att_weightFlat, intermediateReduceFirst, dim, config.rmsNormEps)
+                        state.wrapXb, state.wrapX, weights.rms_att_weightFlat, intermediateReduceFirst, dim, state.positionAndLayer)
                 .persistOnDevice(state.wrapX, state.positionAndLayer);
 
         gridScheduler.setWorkerGrid("rms-norm.reduce", dimWorker);
@@ -111,7 +109,7 @@ public class TornadoVMLayerPlanner {
         // Task Graph 1: QKV Matmuls
         TaskGraph qkvGraph = new TaskGraph("qkv")
                 .consumeFromDevice(rmsNormGraph.getTaskGraphName(), state.wrapX, state.positionAndLayer)
-                .transferToDevice(DataTransferMode.FIRST_EXECUTION, state.wrapQ, state.wrapK, state.wrapV,
+                .transferToDevice(DataTransferMode.FIRST_EXECUTION,
                         weights.wqFlat, weights.wkFlat, weights.wvFlat)
                 .task("q-matmul", TornadoVMCompute::matrixVectorSimple, context, state.wrapXb, state.wrapQ,
                         weights.wqFlat, dim, dim, state.positionAndLayer)
@@ -127,11 +125,11 @@ public class TornadoVMLayerPlanner {
 
         // Task Graph 2: RoPE
         TaskGraph ropeGraph = new TaskGraph("rope")
-                .consumeFromDevice(qkvGraph.getTaskGraphName(), state.wrapQ, state.wrapK, state.wrapV, state.positionAndLayer)
+                .consumeFromDevice(qkvGraph.getTaskGraphName(), state.wrapQ, state.wrapK, state.positionAndLayer)
                 .task("rope", TornadoVMCompute::ropeRotation, context,
                         state.positionAndLayer, state.wrapQ,
                         state.wrapK, kvDim, headSize)
-                .persistOnDevice(state.wrapQ, state.wrapK, state.wrapV, state.positionAndLayer);
+                .persistOnDevice(state.wrapQ, state.wrapK, state.positionAndLayer);
 
         gridScheduler.setWorkerGrid("rope.rope", ropeWorker);
 
@@ -186,7 +184,7 @@ public class TornadoVMLayerPlanner {
                 .task("reduce", TornadoVMCompute::reduceSquareSums, context, state.wrapXb, intermediateReduceTwo, localSizeFFN)
                 .task("sum", TornadoVMCompute::finalSum, context, intermediateReduceTwo, dim, config.rmsNormEps)
                 .task("ns", TornadoVMCompute::normalizeAndScale,
-                        context, state.wrapX, state.wrapXb, weights.rms_ffn_weightFlat, intermediateReduceTwo, dim, config.rmsNormEps)
+                        context, state.wrapX, state.wrapXb, weights.rms_ffn_weightFlat, intermediateReduceTwo, dim, state.positionAndLayer)
 
                 // Step 3: Parallel projections with W1 and W3
                 .task("projection1", TornadoVMCompute::matrixVectorMultiply,
@@ -225,7 +223,8 @@ public class TornadoVMLayerPlanner {
         TaskGraph finalRmsNormGraph = new TaskGraph("final-rms").transferToDevice(DataTransferMode.UNDER_DEMAND, state.x)
                 .task("reduce", TornadoVMCompute::reduceSquareSums, context, state.wrapX, intermediateReduceThree, localSizeRMS)
                 .task("sum", TornadoVMCompute::finalSum, context, intermediateReduceThree, dim, config.rmsNormEps)
-                .task("normalize", TornadoVMCompute::normalizeAndScale, context, state.wrapXFloat, state.wrapX, weights.rms_final_weight_as_floatArray, intermediateReduceThree, dim, config.rmsNormEps)
+                .task("normalize", TornadoVMCompute::normalizeAndScale, context, state.wrapXFloat, state.wrapX,
+                        weights.rms_final_weight_as_floatArray, intermediateReduceThree, dim, state.positionAndLayer)
                 .transferToHost(DataTransferMode.UNDER_DEMAND, state.x);
 
         gridScheduler.setWorkerGrid("final-rms.reduce", dimWorker);

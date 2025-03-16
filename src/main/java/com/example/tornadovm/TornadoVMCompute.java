@@ -458,12 +458,14 @@ public class TornadoVMCompute {
     }
 
     public static void normalizeAndScale(KernelContext context, FloatArray out, FloatArray
-            input, FloatArray weight, FloatArray scalingFactorBuffer, int size, float eps) {
+            input, FloatArray weight, FloatArray scalingFactorBuffer, int size, IntArray positionNlayer) {
 
         int globalIdx = context.globalIdx;
 
+        int layerOffset = positionNlayer.get(1) * size;
+
         if (globalIdx < size) {
-            float scaledValue = weight.get(globalIdx) * (scalingFactorBuffer.get(0) * input.get(globalIdx));
+            float scaledValue = weight.get(layerOffset + globalIdx) * (scalingFactorBuffer.get(0) * input.get(globalIdx));
             out.set(globalIdx, scaledValue);
         }
     }
@@ -485,11 +487,12 @@ public class TornadoVMCompute {
             FloatArray x, FloatArray output, FloatArray weights, int n, int d, IntArray posAndLayer) {
         int idx = context.globalIdx;
 
+        int layerOffset = posAndLayer.get(0) * n;
 
         if (idx < output.getSize()) {
             float sum = 0.0f;
             for (int j = 0; j < n; j++) {
-                sum += weights.get(idx * (posAndLayer.get(1) * n) + j) * x.get(j);
+                sum += weights.get(idx * layerOffset + j) * x.get(j);
             }
             output.set(idx, sum);
         }
@@ -665,12 +668,13 @@ public class TornadoVMCompute {
             int d, IntArray positionNlayer) {
         int idx = context.globalIdx;
 
-        int offset = positionNlayer.get(1) * n;
+        int layerOffset = positionNlayer.get(1) * n;
+
         if (idx < d) {
             float sum = 0.0f;
             for (int j = 0; j < n; j++) {
                 if (j < x.getSize() && (idx * n + j) < weights.getSize()) {
-                    sum += weights.get(idx * offset + j) * x.get(j);
+                    sum += weights.get(idx * layerOffset + j) * x.get(j);
                 }
             }
 
