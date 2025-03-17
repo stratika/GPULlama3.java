@@ -158,8 +158,10 @@ public record Llama(Configuration configuration, Tokenizer tokenizer, Weights we
         return state.logits;
     }
 
+
+
     static FloatTensor forwardTornadoVM(Llama model, State state, int token, int position,  //
-            Tuple2<List<ImmutableTaskGraph>, GridScheduler> tornadoVMListOfPlan) { //
+            Tuple2<List<ImmutableTaskGraph>, List<GridScheduler>> tornadoVMListOfPlan) { //
 
         Configuration config = model.configuration();
         Weights weights = model.weights();
@@ -173,54 +175,59 @@ public record Llama(Configuration configuration, Tokenizer tokenizer, Weights we
 
         state.positionAndLayer.set(0, position);
 
-        GridScheduler gridScheduler = tornadoVMListOfPlan.getSecond();
+        List<GridScheduler> schedulers = tornadoVMListOfPlan.getSecond();
+        List<ImmutableTaskGraph> taskGraphs = tornadoVMListOfPlan.getFirst();
 
         // @formatter:off
         try (
             TornadoExecutionPlan executionPlan = new TornadoExecutionPlan(
-            tornadoVMListOfPlan.getFirst().get(0),
-            tornadoVMListOfPlan.getFirst().get(1),
-            tornadoVMListOfPlan.getFirst().get(2),
-            tornadoVMListOfPlan.getFirst().get(3),
-            tornadoVMListOfPlan.getFirst().get(4),
-            tornadoVMListOfPlan.getFirst().get(5),
-            tornadoVMListOfPlan.getFirst().get(6))
+                    taskGraphs.get(0),
+                    taskGraphs.get(1),
+                    taskGraphs.get(2),
+                    taskGraphs.get(3),
+                    taskGraphs.get(4),
+                    taskGraphs.get(5),
+                    taskGraphs.get(6),
+                    taskGraphs.get(7))
         ) {
         // @formatter:on
             // Process each layer
-            executionPlan.withGraph(0).execute();
+            executionPlan.withGraph(0).withGridScheduler(schedulers.get(0)).execute();
             for (int l = 0; l < config.numberOfLayers; l++) {
 
                 state.positionAndLayer.set(1, l); // Update before execute (it an every copy in)
 
                 // Step 1: RMSNorm for attention
-                executionPlan.withGraph(1).withGridScheduler(gridScheduler).execute();
+                executionPlan.withGraph(1).withGridScheduler(schedulers.get(1)).execute();
 
                 // Step 2: QKV Matmuls
-                executionPlan.withGraph(2).withGridScheduler(gridScheduler).execute();
+                executionPlan.withGraph(2).withGridScheduler(schedulers.get(2)).execute();
 
                 // Step 3: RoPE rotation
-                executionPlan.withGraph(3).withGridScheduler(gridScheduler).execute();
+                executionPlan.withGraph(3).withGridScheduler(schedulers.get(3)).execute();
 
                 // new shift by l
                 //    // Calculate the offset based on layer, max sequence length, and position
                 long offset = l * config.contextLength * kvDim + position * kvDim;
+                System.out.println("Mapping memory regions at offset: " + offset);
+                System.out.println("Key cache size: " + state.wrapKeyCache.getSize());
+                System.out.println("K vector size: " + state.wrapK.getSize());
 
                 executionPlan.mapOnDeviceMemoryRegion(state.wrapKeyCache, state.wrapK, offset, 3, 4);
                 executionPlan.mapOnDeviceMemoryRegion(state.wrapValueCache, state.wrapV, offset, 3, 4);
 
                 // Step 4: Multi-head Attention (scores, softmax, weighted sum)
-                executionPlan.withGraph(4).withGridScheduler(gridScheduler).execute();
+                executionPlan.withGraph(4).withGridScheduler(schedulers.get(4)).execute();
 
                 // Step 5: Feed-forward neural network
-                executionPlan.withGraph(5).withGridScheduler(gridScheduler).execute();
+                executionPlan.withGraph(5).withGridScheduler(schedulers.get(5)).execute();
             }
 
             // Final RMSNorm
-            executionPlan.withGraph(6).withGridScheduler(gridScheduler).execute();
+            executionPlan.withGraph(6).withGridScheduler(schedulers.get(6)).execute();
 
             // Final projection to logits
-            executionPlan.withGraph(7).withGridScheduler(gridScheduler).execute();
+            executionPlan.withGraph(7).withGridScheduler(schedulers.get(7)).execute();
 
             // Copy results from TornadoVM buffers to state.logits
             state.logits.asMemorySegment().copyFrom(state.wrapLogits.getSegment());
@@ -263,7 +270,7 @@ public record Llama(Configuration configuration, Tokenizer tokenizer, Weights we
     public static List<Integer> generateTokens(Llama model, State state, int startPosition, List<Integer> promptTokens, Set<Integer> stopTokens, int maxTokens, Sampler sampler, boolean echo,
             IntConsumer onTokenGenerated) {
         TornadoVMLayerPlanner tornadoVMLayerPlanner = new TornadoVMLayerPlanner(state, model);
-        Tuple2<List<ImmutableTaskGraph>, GridScheduler> tornadoVMPlan = tornadoVMLayerPlanner.setupTornadoForwardPlan();
+        Tuple2<List<ImmutableTaskGraph>, List<GridScheduler>> tornadoVMPlan = tornadoVMLayerPlanner.setupTornadoForwardPlan();
 
         long startNanos = System.nanoTime();
         long startGen = 0;
@@ -276,7 +283,8 @@ public record Llama(Configuration configuration, Tokenizer tokenizer, Weights we
         int promptIndex = 0;
 
         for (int position = startPosition; position < maxTokens; ++position) {
-            forward(model, state, token, position, tornadoVMPlan);
+            //            forward(model, state, token, position, tornadoVMPlan);
+            forwardTornadoVM(model, state, token, position, tornadoVMPlan);
             startGen = System.nanoTime();
             if (promptIndex < promptTokens.size()) {
                 // Force-pick token from prompt.

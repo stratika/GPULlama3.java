@@ -428,7 +428,7 @@ public class TornadoVMCompute {
         int localGroupSize = context.localGroupSizeX;
         int groupID = context.groupIdx; // Expose Group ID
 
-        float[] localA = context.allocateFloatLocalArray(localGroupSize);
+        float[] localA = context.allocateFloatLocalArray(localWorkGroupSize);
         localA[localIdx] = a.get(globalIdx) * a.get(globalIdx);
         for (int stride = (localGroupSize / 2); stride > 0; stride /= 2) {
             context.localBarrier();
@@ -441,17 +441,34 @@ public class TornadoVMCompute {
         }
     }
 
+//    public static void finalSum(KernelContext context, FloatArray reduce, int size, float eps) {
+//        int globalIdx = context.globalIdx;
+//
+//        float sum = 0.0f;
+//        if (globalIdx == 0) {
+//            for (int i = 0; i < size; i++) {
+//                sum += reduce.get(i);
+//            }
+//        }
+//
+//        float ss = sum / (float) size;
+//        ss += eps;
+//        ss = 1.0f / TornadoMath.sqrt(ss);
+//        reduce.set(0, ss);
+//    }
+
     public static void finalSum(KernelContext context, FloatArray reduce, int size, float eps) {
         int globalIdx = context.globalIdx;
 
         float sum = 0.0f;
         if (globalIdx == 0) {
-            for (int i = 0; i < size; i++) {
+            // Use reduce.getSize() instead of size
+            for (int i = 0; i < reduce.getSize(); i++) {
                 sum += reduce.get(i);
             }
         }
 
-        float ss = sum / (float) size;
+        float ss = sum / (float) size;  // Keep dividing by the original size
         ss += eps;
         ss = 1.0f / TornadoMath.sqrt(ss);
         reduce.set(0, ss);
