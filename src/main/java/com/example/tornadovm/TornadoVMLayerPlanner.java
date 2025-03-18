@@ -44,14 +44,14 @@ public class TornadoVMLayerPlanner {
         // Validate reduce array size matches expected calculation pattern
         int expectedReduceSize = config.dim / localSizeRMS;
         if (intermediateReduceFirst.getSize() != expectedReduceSize) {
-            System.out.println("WARNING: intermediateReduceFirst has incorrect size: " +
-                    intermediateReduceFirst.getSize() + ", expected: " + expectedReduceSize);
+            System.out.println("WARNING: intermediateReduceFirst has incorrect size: " + intermediateReduceFirst.getSize() + ", expected: " + expectedReduceSize);
         }
     }
-    public Tuple2<List<ImmutableTaskGraph>, List<GridScheduler>> setupTornadoForwardPlan() {
+
+    public Tuple2<List<ImmutableTaskGraph>, GridScheduler> setupTornadoForwardPlan() {
         List<ImmutableTaskGraph> taskGraphs = setupForwardTaskgraphs();
-        List<GridScheduler> schedulers = setupGridSchedulers(taskGraphs);
-        return new Tuple2<>(taskGraphs, schedulers);
+        GridScheduler scheduler = setupGridSchedulers();
+        return new Tuple2<>(taskGraphs, scheduler);
     }
 
     public List<ImmutableTaskGraph> setupForwardTaskgraphs() {
@@ -96,16 +96,17 @@ public class TornadoVMLayerPlanner {
         TaskGraph rmsNormGraph = new TaskGraph("rmsnorm")
                 .consumeFromDevice(lookUpBufferX.getTaskGraphName(), state.wrapX)
                 .transferToDevice(DataTransferMode.EVERY_EXECUTION, state.positionAndLayer)
+                .transferToDevice(DataTransferMode.FIRST_EXECUTION, weights.rms_att_weightFlat)
                 .task("reduce", TornadoVMCompute::reduceSquareSums, context, state.wrapX, intermediateReduceFirst, localSizeRMS)
                 .task("sum", TornadoVMCompute::finalSum, context, intermediateReduceFirst, dim, config.rmsNormEps)
                 .task("normalize", TornadoVMCompute::normalizeAndScale, context,
                         state.wrapXb, state.wrapX, weights.rms_att_weightFlat, intermediateReduceFirst, dim, state.positionAndLayer)
-                .persistOnDevice(state.wrapX, state.positionAndLayer);
+                .persistOnDevice(state.wrapX, state.wrapXb, state.positionAndLayer);
 
 
         // Task Graph 1: QKV Matmuls
         TaskGraph qkvGraph = new TaskGraph("qkv")
-                .consumeFromDevice(rmsNormGraph.getTaskGraphName(), state.wrapX, state.positionAndLayer)
+                .consumeFromDevice(rmsNormGraph.getTaskGraphName(), state.wrapX, state.wrapXb, state.positionAndLayer)
                 .transferToDevice(DataTransferMode.FIRST_EXECUTION,
                         weights.wqFlat, weights.wkFlat, weights.wvFlat)
                 .task("qmatmul", TornadoVMCompute::matrixVectorSimple, context, state.wrapXb, state.wrapQ,
@@ -246,8 +247,8 @@ public class TornadoVMLayerPlanner {
         return taskGraphs;
     }
 
-    private List<GridScheduler> setupGridSchedulers(List<ImmutableTaskGraph> taskGraphs) {
-        List<GridScheduler> schedulers = new ArrayList<>();
+    private GridScheduler setupGridSchedulers() {
+        GridScheduler tornadoForwardScheduler = new GridScheduler();
 
         // Create common worker grids that will be used across different schedulers
         WorkerGrid dimWorker = new WorkerGrid1D(config.dim);
@@ -277,65 +278,49 @@ public class TornadoVMLayerPlanner {
         // Create a scheduler for each task graph
 
         // Scheduler 0: lookUpBufferX
-        GridScheduler lookupScheduler = new GridScheduler();
-        lookupScheduler.setWorkerGrid("lookUpBufferX.forceUpdateXperToken", singleWorker);
-        schedulers.add(lookupScheduler);
+        tornadoForwardScheduler.addWorkerGrid("lookUpBufferX.forceUpdateXperToken", singleWorker);
 
         // Scheduler 1: RMSNorm
-        GridScheduler rmsNormScheduler = new GridScheduler();
-        rmsNormScheduler.setWorkerGrid("rmsnorm.reduce", dimWorker);
-        rmsNormScheduler.setWorkerGrid("rmsnorm.sum", singleWorker);
-        rmsNormScheduler.setWorkerGrid("rmsnorm.normalize", dimWorker);
-        schedulers.add(rmsNormScheduler);
+        tornadoForwardScheduler.addWorkerGrid("rmsnorm.reduce", dimWorker);
+        tornadoForwardScheduler.addWorkerGrid("rmsnorm.sum", singleWorker);
+        tornadoForwardScheduler.addWorkerGrid("rmsnorm.normalize", dimWorker);
 
         // Scheduler 2: QKV
-        GridScheduler qkvScheduler = new GridScheduler();
-        qkvScheduler.setWorkerGrid("qkv.qmatmul", dimWorker);
-        qkvScheduler.setWorkerGrid("qkv.kmatmul", dimWorker);
-        qkvScheduler.setWorkerGrid("qkv.vmatmul", dimWorker);
-        schedulers.add(qkvScheduler);
+        tornadoForwardScheduler.addWorkerGrid("qkv.qmatmul", dimWorker);
+        tornadoForwardScheduler.addWorkerGrid("qkv.kmatmul", dimWorker);
+        tornadoForwardScheduler.addWorkerGrid("qkv.vmatmul", dimWorker);
 
         // Scheduler 3: RoPE
-        GridScheduler ropeScheduler = new GridScheduler();
-        ropeScheduler.setWorkerGrid("rotation.rope", ropeWorker);
-        schedulers.add(ropeScheduler);
+        tornadoForwardScheduler.addWorkerGrid("rotation.rope", ropeWorker);
 
         // Scheduler 4: Attention
-        GridScheduler attentionScheduler = new GridScheduler();
-        attentionScheduler.setWorkerGrid("attention.scores", headsWorker);
-        attentionScheduler.setWorkerGrid("attention.max", headsWorker);
-        attentionScheduler.setWorkerGrid("attention.expsum", headsWorker);
-        attentionScheduler.setWorkerGrid("attention.normalize", headsWorker);
-        attentionScheduler.setWorkerGrid("attention.weighted-sum", headsWorker);
-        schedulers.add(attentionScheduler);
+        tornadoForwardScheduler.addWorkerGrid("attention.scores", headsWorker);
+        tornadoForwardScheduler.addWorkerGrid("attention.max", headsWorker);
+        tornadoForwardScheduler.addWorkerGrid("attention.expsum", headsWorker);
+        tornadoForwardScheduler.addWorkerGrid("attention.normalize", headsWorker);
+        tornadoForwardScheduler.addWorkerGrid("attention.weighted-sum", headsWorker);
 
         // Scheduler 5: FFN
-        GridScheduler ffnScheduler = new GridScheduler();
-        ffnScheduler.setWorkerGrid("ffn.matmul1", dimWorker);
-        ffnScheduler.setWorkerGrid("ffn.residual1", dimWorker);
-        ffnScheduler.setWorkerGrid("ffn.reduceFFN", dimWorker);
-        ffnScheduler.setWorkerGrid("ffn.sum", singleWorker);
-        ffnScheduler.setWorkerGrid("ffn.ns", dimWorker);
-        ffnScheduler.setWorkerGrid("ffn.projcectOne", hiddenDimWorker);
-        ffnScheduler.setWorkerGrid("ffn.projectionThree", hiddenDimWorker);
-        ffnScheduler.setWorkerGrid("ffn.silu", hiddenDimWorker);
-        ffnScheduler.setWorkerGrid("ffn.multiply", hiddenDimWorker);
-        ffnScheduler.setWorkerGrid("ffn.projectionTwo", dimWorker);
-        ffnScheduler.setWorkerGrid("ffn.residual2", dimWorker);
-        schedulers.add(ffnScheduler);
+        tornadoForwardScheduler.addWorkerGrid("ffn.matmul1", dimWorker);
+        tornadoForwardScheduler.addWorkerGrid("ffn.residual1", dimWorker);
+        tornadoForwardScheduler.addWorkerGrid("ffn.reduceFFN", dimWorker);
+        tornadoForwardScheduler.addWorkerGrid("ffn.sum", singleWorker);
+        tornadoForwardScheduler.addWorkerGrid("ffn.ns", dimWorker);
+        tornadoForwardScheduler.addWorkerGrid("ffn.projcectOne", hiddenDimWorker);
+        tornadoForwardScheduler.addWorkerGrid("ffn.projectionThree", hiddenDimWorker);
+        tornadoForwardScheduler.addWorkerGrid("ffn.silu", hiddenDimWorker);
+        tornadoForwardScheduler.addWorkerGrid("ffn.multiply", hiddenDimWorker);
+        tornadoForwardScheduler.addWorkerGrid("ffn.projectionTwo", dimWorker);
+        tornadoForwardScheduler.addWorkerGrid("ffn.residual2", dimWorker);
 
         // Scheduler 6: Final RMSNorm
-        GridScheduler finalRmsScheduler = new GridScheduler();
-        finalRmsScheduler.setWorkerGrid("finalrms.reduceRMS", dimWorker);
-        finalRmsScheduler.setWorkerGrid("finalrms.sum", singleWorker);
-        finalRmsScheduler.setWorkerGrid("finalrms.normalize", dimWorker);
-        schedulers.add(finalRmsScheduler);
+        tornadoForwardScheduler.addWorkerGrid("finalrms.reduceRMS", dimWorker);
+        tornadoForwardScheduler.addWorkerGrid("finalrms.sum", singleWorker);
+        tornadoForwardScheduler.addWorkerGrid("finalrms.normalize", dimWorker);
 
         // Scheduler 7: Logits
-        GridScheduler logitsScheduler = new GridScheduler();
-        logitsScheduler.setWorkerGrid("logits.projection", vocabWorker);
-        schedulers.add(logitsScheduler);
+        tornadoForwardScheduler.addWorkerGrid("logits.projection", vocabWorker);
 
-        return schedulers;
+        return tornadoForwardScheduler;
     }
 }

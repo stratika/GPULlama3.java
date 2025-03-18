@@ -49,29 +49,32 @@ public class TornadoVMCompute {
         }
     }
 
-    public static void ropeRotation(KernelContext context, IntArray positionNlayer,
-            FloatArray sq, FloatArray sk, int kv_dim, int head_size) {
+    public static void ropeRotation(KernelContext context, IntArray positionNlayer, FloatArray sq, FloatArray sk, int kv_dim, int head_size) {
         int i = context.globalIdx * 2;
-        if (i >= kv_dim) {
-            return;
-        }
 
-        int head_dim = i % head_size;
-        float freq = 1.0f / TornadoMath.pow(10000.0f, head_dim / (float) head_size);
-        float val = positionNlayer.get(0) * freq;
-        float fcr = TornadoMath.cos(val);
-        float fci = TornadoMath.sin(val);
+        // Ensure we're within bounds and handle the even indices properly
+        if (i < sq.getSize() && i % 2 == 0) {
+            int head_dim = i % head_size;
+            float freq = 1.0f / TornadoMath.pow(10000.0f, head_dim / (float) head_size);
+            float val = positionNlayer.get(0) * freq;
+            float fcr = TornadoMath.cos(val);
+            float fci = TornadoMath.sin(val);
 
-        int rotn = i < kv_dim ? 2 : 1; // how many vectors? 2 = q & k, 1 = q only
-        float v0 = sq.get(0);
-        float v1 = sq.get(1);
-        sq.set(0, v0 * fcr - v1 * fci);
-        sq.set(0 + 1, v0 * fci + v1 * fcr);
-        for (int v = 1; v < rotn; v++) {
-            float v0z = sk.get(i);
-            float v1z = sk.get(i + 1);
-            sk.set(i, v0z * fcr - v1z * fci);
-            sk.set(i + 1, v0z * fci + v1z * fcr);
+            int rotn = i < kv_dim ? 2 : 1; // how many vectors? 2 = q & k, 1 = q only
+
+            // Rotate query vector
+            float v0q = sq.get(i);
+            float v1q = sq.get(i + 1);
+            sq.set(i, v0q * fcr - v1q * fci);
+            sq.set(i + 1, v0q * fci + v1q * fcr);
+
+            // Rotate key vector if needed
+            if (rotn > 1 && i < sk.getSize()) {
+                float v0k = sk.get(i);
+                float v1k = sk.get(i + 1);
+                sk.set(i, v0k * fcr - v1k * fci);
+                sk.set(i + 1, v0k * fci + v1k * fcr);
+            }
         }
     }
 
@@ -363,30 +366,30 @@ public class TornadoVMCompute {
         }
     }
 
-//    public static void addInPlace(FloatArray input, FloatArray output) {
-//        for (@Parallel int i = 0; i < input.getSize(); i++) {
-//            // Perform element-wise addition
-//            float result = output.get(i) + input.get(i);
-//            output.set(i, result);
-//        }
-//    }
+    //    public static void addInPlace(FloatArray input, FloatArray output) {
+    //        for (@Parallel int i = 0; i < input.getSize(); i++) {
+    //            // Perform element-wise addition
+    //            float result = output.get(i) + input.get(i);
+    //            output.set(i, result);
+    //        }
+    //    }
 
-//    public static void multiplyInPlace(FloatArray input, FloatArray output) {
-//        for (@Parallel int i = 0; i < input.getSize(); i++) {
-//            // Perform element-wise multiplication
-//            float result = output.get(i) * input.get(i);
-//            output.set(i, result);
-//        }
-//    }
+    //    public static void multiplyInPlace(FloatArray input, FloatArray output) {
+    //        for (@Parallel int i = 0; i < input.getSize(); i++) {
+    //            // Perform element-wise multiplication
+    //            float result = output.get(i) * input.get(i);
+    //            output.set(i, result);
+    //        }
+    //    }
 
-//    public static void mapInPlace(FloatArray input) {
-//        for (@Parallel int i = 0; i < input.getSize(); i++) {
-//            // Apply the transformation: value -> value / (1.0 + exp(-value))
-//            float value = input.get(i);
-//            float result = value / (1.0f + TornadoMath.exp(-value));
-//            input.set(i, result);
-//        }
-//    }
+    //    public static void mapInPlace(FloatArray input) {
+    //        for (@Parallel int i = 0; i < input.getSize(); i++) {
+    //            // Apply the transformation: value -> value / (1.0 + exp(-value))
+    //            float value = input.get(i);
+    //            float result = value / (1.0f + TornadoMath.exp(-value));
+    //            input.set(i, result);
+    //        }
+    //    }
 
     public static void matrixVectorSimple(FloatArray x, FloatArray xout, FloatArray w, int n, int d) {
         for (@Parallel int i = 0; i < x.getSize(); i++) {
@@ -441,21 +444,21 @@ public class TornadoVMCompute {
         }
     }
 
-//    public static void finalSum(KernelContext context, FloatArray reduce, int size, float eps) {
-//        int globalIdx = context.globalIdx;
-//
-//        float sum = 0.0f;
-//        if (globalIdx == 0) {
-//            for (int i = 0; i < size; i++) {
-//                sum += reduce.get(i);
-//            }
-//        }
-//
-//        float ss = sum / (float) size;
-//        ss += eps;
-//        ss = 1.0f / TornadoMath.sqrt(ss);
-//        reduce.set(0, ss);
-//    }
+    //    public static void finalSum(KernelContext context, FloatArray reduce, int size, float eps) {
+    //        int globalIdx = context.globalIdx;
+    //
+    //        float sum = 0.0f;
+    //        if (globalIdx == 0) {
+    //            for (int i = 0; i < size; i++) {
+    //                sum += reduce.get(i);
+    //            }
+    //        }
+    //
+    //        float ss = sum / (float) size;
+    //        ss += eps;
+    //        ss = 1.0f / TornadoMath.sqrt(ss);
+    //        reduce.set(0, ss);
+    //    }
 
     public static void finalSum(KernelContext context, FloatArray reduce, int size, float eps) {
         int globalIdx = context.globalIdx;
@@ -474,8 +477,7 @@ public class TornadoVMCompute {
         reduce.set(0, ss);
     }
 
-    public static void normalizeAndScale(KernelContext context, FloatArray out, FloatArray
-            input, FloatArray weight, FloatArray scalingFactorBuffer, int size, IntArray positionNlayer) {
+    public static void normalizeAndScale(KernelContext context, FloatArray out, FloatArray input, FloatArray weight, FloatArray scalingFactorBuffer, int size, IntArray positionNlayer) {
 
         int globalIdx = context.globalIdx;
 
@@ -499,9 +501,7 @@ public class TornadoVMCompute {
         }
     }
 
-
-    public static void matrixVectorSimple(KernelContext context,
-            FloatArray x, FloatArray output, FloatArray weights, int n, int d, IntArray posAndLayer) {
+    public static void matrixVectorSimple(KernelContext context, FloatArray x, FloatArray output, FloatArray weights, int n, int d, IntArray posAndLayer) {
         int idx = context.globalIdx;
 
         if (idx < output.getSize()) {  // Ensure we don't go out of bounds
@@ -523,7 +523,8 @@ public class TornadoVMCompute {
     /**
      * Calculate attention scores between query and key vectors
      */
-    public static void calculateAttentionScores(KernelContext context, IntArray positionNlayer, int seqLen, FloatArray query, FloatArray keyCache, FloatArray attScores, int kvDim, int kvMul, int headSize, int loff) {
+    public static void calculateAttentionScores(KernelContext context, IntArray positionNlayer, int seqLen, FloatArray query, FloatArray keyCache, FloatArray attScores, int kvDim, int kvMul,
+            int headSize, int loff) {
         int h = context.groupIdx;         // Head index
         int threadId = context.localIdx;  // Thread ID within work group
         int blockDim = context.localGroupSizeX;  // Work group size
@@ -587,7 +588,8 @@ public class TornadoVMCompute {
         }
     }
 
-    public static void calculateExpAndSum(KernelContext context, IntArray positionNlayer, int seqLen, FloatArray attScores, FloatArray maxValues, FloatArray expValues, FloatArray sumValues, int localWorkGroupSize) {
+    public static void calculateExpAndSum(KernelContext context, IntArray positionNlayer, int seqLen, FloatArray attScores, FloatArray maxValues, FloatArray expValues, FloatArray sumValues,
+            int localWorkGroupSize) {
         int h = context.groupIdx;         // Head index
         int threadId = context.localIdx;  // Thread ID within work group
         int blockDim = context.localGroupSizeX;  // Work group size
@@ -653,7 +655,8 @@ public class TornadoVMCompute {
         }
     }
 
-    public static void computeWeightedSum(KernelContext context, IntArray positionNlayer, int seqLen, FloatArray attScores, FloatArray valueCache, FloatArray output, int kvDim, int kvMul, int headSize, int loff) {
+    public static void computeWeightedSum(KernelContext context, IntArray positionNlayer, int seqLen, FloatArray attScores, FloatArray valueCache, FloatArray output, int kvDim, int kvMul,
+            int headSize, int loff) {
         int h = context.groupIdx;         // Head index
         int threadId = context.localIdx;  // Thread ID within work group
         int blockDim = context.localGroupSizeX;  // Work group size
@@ -686,17 +689,35 @@ public class TornadoVMCompute {
     /**
      * Matrix-vector multiplication using KernelContext
      */
-    public static void matrixVectorMultiply(KernelContext context, FloatArray x, FloatArray output, FloatArray weights, int n,
-            int d, IntArray positionNlayer) {
+    //    public static void matrixVectorMultiply(KernelContext context, FloatArray x, FloatArray output, FloatArray weights, int n, int d, IntArray positionNlayer) {
+    //        int idx = context.globalIdx;
+    //
+    //        int layerOffset = positionNlayer.get(1) * n;
+    //
+    //        if (idx < d) {
+    //            float sum = 0.0f;
+    //            for (int j = 0; j < n; j++) {
+    //                if (j < x.getSize() && (idx * n + j) < weights.getSize()) {
+    //                    sum += weights.get(idx * layerOffset + j) * x.get(j);
+    //                }
+    //            }
+    //
+    //            output.set(idx, sum);
+    //        }
+    //    }
+    public static void matrixVectorMultiply(KernelContext context, FloatArray x, FloatArray output, FloatArray weights, int n, int d, IntArray positionNlayer) {
         int idx = context.globalIdx;
 
-        int layerOffset = positionNlayer.get(1) * n;
+        // Calculate the layer offset correctly
+        int layer = positionNlayer.get(1);
+        int layerOffset = layer * d * n;  // The correct formula
 
         if (idx < d) {
             float sum = 0.0f;
             for (int j = 0; j < n; j++) {
-                if (j < x.getSize() && (idx * n + j) < weights.getSize()) {
-                    sum += weights.get(idx * layerOffset + j) * x.get(j);
+                if (j < x.getSize() && (layerOffset + idx * n + j) < weights.getSize()) {
+                    // Use the correct index calculation
+                    sum += weights.get(layerOffset + idx * n + j) * x.get(j);
                 }
             }
 

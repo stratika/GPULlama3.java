@@ -7,11 +7,18 @@ import com.example.inference.Sampler;
 import com.example.loader.weights.State;
 import com.example.loader.weights.Weights;
 import com.example.tokenizer.impl.Tokenizer;
+import com.example.tornadovm.TornadoVMCompute;
 import com.example.tornadovm.TornadoVMLayerPlanner;
 import uk.ac.manchester.tornado.api.GridScheduler;
 import uk.ac.manchester.tornado.api.ImmutableTaskGraph;
+import uk.ac.manchester.tornado.api.KernelContext;
+import uk.ac.manchester.tornado.api.TaskGraph;
 import uk.ac.manchester.tornado.api.TornadoExecutionPlan;
+import uk.ac.manchester.tornado.api.WorkerGrid;
+import uk.ac.manchester.tornado.api.WorkerGrid1D;
+import uk.ac.manchester.tornado.api.enums.DataTransferMode;
 import uk.ac.manchester.tornado.api.exceptions.TornadoExecutionPlanException;
+import uk.ac.manchester.tornado.api.types.arrays.FloatArray;
 
 import java.lang.foreign.MemorySegment;
 import java.nio.FloatBuffer;
@@ -158,7 +165,413 @@ public record Llama(Configuration configuration, Tokenizer tokenizer, Weights we
         return state.logits;
     }
 
+    static FloatTensor forwardTornadoVMExplicitCopy(Llama model, State state, int token, int position, Tuple2<List<ImmutableTaskGraph>, GridScheduler> tornadoVMListOfPlan) {
 
+        Configuration config = model.configuration();
+        Weights weights = model.weights();
+        int dim = config.dim;
+        int kvDim = (config.dim * config.numberOfKeyValueHeads) / config.numberOfHeads;
+        int seqLen = config.headSize;
+        System.out.println("=== Starting Explicit Copy TornadoVM Forward Pass ===");
+        FloatArray attScores = new FloatArray(seqLen);
+        FloatArray maxValues = new FloatArray(1);
+        FloatArray expValues = new FloatArray(seqLen);
+        FloatArray sumValues = new FloatArray(1);
+
+        // Copy the token embedding into x
+        weights.token_embedding_table.copyTo(token * dim, state.x, 0, dim);
+        System.out.println("Token embedding copied to state.x");
+
+        // Explicitly copy to wrapX
+        MemorySegment.copy(state.x.asMemorySegment(), 0, state.wrapX.getSegmentWithHeader(), 0, dim * 4);
+        System.out.println("state.x copied to state.wrapX");
+
+        // Set position
+        state.positionAndLayer.set(0, position);
+        System.out.println("Position set to: " + position);
+
+        List<GridScheduler> schedulers = tornadoVMListOfPlan.getSecond();
+        List<ImmutableTaskGraph> taskGraphs = tornadoVMListOfPlan.getFirst();
+
+        // Process just one layer for testing
+        int l = 0;
+        state.positionAndLayer.set(1, l);
+        System.out.println("Layer set to: " + l);
+
+        // Step 1: Execute lookUpBufferX
+        System.out.println("\nExecuting Graph 0: lookUpBufferX");
+        try (TornadoExecutionPlan executionPlan = new TornadoExecutionPlan(taskGraphs.get(0))) {
+            executionPlan.withGridScheduler(schedulers.get(0)).execute();
+            System.out.println("✅ Graph 0 executed successfully");
+        } catch (Exception e) {
+            System.out.println("❌ Error in Graph 0: " + e.getMessage());
+            e.printStackTrace();
+            return state.logits;
+        }
+
+        // Step 2: Execute RMSNorm
+        System.out.println("\nExecuting Graph 1: RMSNorm");
+        try (TornadoExecutionPlan executionPlan = new TornadoExecutionPlan(taskGraphs.get(1))) {
+            executionPlan.withGridScheduler(schedulers.get(1)).execute();
+            System.out.println("✅ Graph 1 executed successfully");
+
+            // Debug: Copy wrapXb back to verify results
+            System.out.println("Verifying state.wrapXb after RMSNorm");
+            FloatArray tempXb = new FloatArray(dim);
+            MemorySegment.copy(state.wrapXb.getSegment(), 0, tempXb.getSegmentWithHeader(), 0, dim * 4);
+            float sum = 0;
+            for (int i = 0; i < Math.min(5, dim); i++) {
+                sum += tempXb.get(i);
+                System.out.println("wrapXb[" + i + "] = " + tempXb.get(i));
+            }
+            System.out.println("Average of first 5 values: " + (sum / Math.min(5, dim)));
+        } catch (Exception e) {
+            System.out.println("❌ Error in Graph 1: " + e.getMessage());
+            e.printStackTrace();
+            return state.logits;
+        }
+
+        // Step 3: Execute QKV Matmuls
+        System.out.println("\nExecuting Graph 2: QKV Matmuls");
+        try (TornadoExecutionPlan executionPlan = new TornadoExecutionPlan(taskGraphs.get(2))) {
+            executionPlan.withGridScheduler(schedulers.get(2)).execute();
+            System.out.println("✅ Graph 2 executed successfully");
+
+            // Debug: Copy Q, K, V back to verify results
+            System.out.println("Verifying state.wrapQ after QKV Matmuls");
+            FloatArray tempQ = new FloatArray(dim);
+            MemorySegment.copy(state.wrapQ.getSegment(), 0, tempQ.getSegmentWithHeader(), 0, dim * 4);
+            for (int i = 0; i < Math.min(5, dim); i++) {
+                System.out.println("wrapQ[" + i + "] = " + tempQ.get(i));
+            }
+        } catch (Exception e) {
+            System.out.println("❌ Error in Graph 2: " + e.getMessage());
+            e.printStackTrace();
+            return state.logits;
+        }
+
+        // Step 4: Execute RoPE
+        System.out.println("\nExecuting Graph 3: RoPE");
+        try (TornadoExecutionPlan executionPlan = new TornadoExecutionPlan(taskGraphs.get(3))) {
+            executionPlan.withGridScheduler(schedulers.get(3)).execute();
+            System.out.println("✅ Graph 3 executed successfully");
+
+            // Debug: Copy Q, K back to verify results after rotation
+            System.out.println("Verifying state.wrapQ after RoPE");
+            FloatArray tempQ = new FloatArray(dim);
+            MemorySegment.copy(state.wrapQ.getSegment(), 0, tempQ.getSegmentWithHeader(), 0, dim * 4);
+            for (int i = 0; i < Math.min(10, dim); i += 2) {
+                System.out.println("wrapQ[" + i + "," + (i + 1) + "] = " + tempQ.get(i) + ", " + tempQ.get(i + 1));
+            }
+        } catch (Exception e) {
+            System.out.println("❌ Error in Graph 3: " + e.getMessage());
+            e.printStackTrace();
+            return state.logits;
+        }
+
+        // Step 5: Copy Q, K to KV cache manually
+        long offset = l * config.contextLength * kvDim + position * kvDim;
+        System.out.println("\nManually copying Q/K to KV cache at offset: " + offset);
+
+        // Create a temporary copy for the KV cache
+        FloatArray tempK = new FloatArray(dim);
+        MemorySegment.copy(state.wrapK.getSegment(), 0, tempK.getSegmentWithHeader(), 0, dim * 4);
+
+        // Copy to KV cache
+        for (int i = 0; i < kvDim; i++) {
+            state.keyCache[l].setFloat(position * kvDim + i, tempK.get(i));
+        }
+        System.out.println("K manually copied to KV cache");
+
+        // Create a temporary copy for the V values
+        FloatArray tempV = new FloatArray(dim);
+        MemorySegment.copy(state.wrapV.getSegment(), 0, tempV.getSegmentWithHeader(), 0, dim * 4);
+
+        // Copy to KV cache
+        for (int i = 0; i < kvDim; i++) {
+            state.valueCache[l].setFloat(position * kvDim + i, tempV.get(i));
+        }
+        System.out.println("V manually copied to KV cache");
+
+        // Step 6: Create a standalone Attention graph that doesn't rely on memory mapping
+        System.out.println("\nExecuting standalone Attention graph");
+        try {
+            // Create the standalone task graph
+            TaskGraph standaloneAttention = new TaskGraph("standalone_attention").transferToDevice(DataTransferMode.EVERY_EXECUTION, state.positionAndLayer, state.wrapQ, state.wrapKeyCache,
+                            state.wrapValueCache)
+                    .task("scores", TornadoVMCompute::calculateAttentionScores, new KernelContext(), state.positionAndLayer, config.contextLength, state.wrapQ, state.wrapKeyCache, state.wrapAtt,
+                            kvDim, config.numberOfHeads / config.numberOfKeyValueHeads, config.headSize, 0)
+                    .task("max", TornadoVMCompute::findMaxAttentionScores, new KernelContext(), state.positionAndLayer, config.contextLength, state.wrapAtt, maxValues, 64)
+                    .task("expsum", TornadoVMCompute::calculateExpAndSum, new KernelContext(), state.positionAndLayer, config.contextLength, state.wrapAtt, maxValues, expValues, sumValues, 64)
+                    .task("normalize", TornadoVMCompute::normalizeSoftmax, new KernelContext(), state.positionAndLayer, config.contextLength, expValues, sumValues, state.wrapAtt)
+                    .task("weighted-sum", TornadoVMCompute::computeWeightedSum, new KernelContext(), state.positionAndLayer, config.contextLength, state.wrapAtt, state.wrapValueCache, state.wrapXb,
+                            kvDim, config.numberOfHeads / config.numberOfKeyValueHeads, config.headSize, 0).transferToHost(DataTransferMode.EVERY_EXECUTION, state.wrapXb);
+
+            ImmutableTaskGraph immutableStandaloneGraph = standaloneAttention.snapshot();
+
+            // Create a scheduler for the standalone graph
+            GridScheduler standaloneScheduler = new GridScheduler();
+            WorkerGrid headsWorker = new WorkerGrid1D(config.numberOfHeads * config.headSize);
+            headsWorker.setGlobalWork(config.numberOfHeads * config.headSize, 1, 1);
+            headsWorker.setLocalWork(64, 1, 1);
+            standaloneScheduler.addWorkerGrid("standalone_attention.scores", headsWorker);
+            standaloneScheduler.addWorkerGrid("standalone_attention.max", headsWorker);
+            standaloneScheduler.addWorkerGrid("standalone_attention.expsum", headsWorker);
+            standaloneScheduler.addWorkerGrid("standalone_attention.normalize", headsWorker);
+            standaloneScheduler.addWorkerGrid("standalone_attention.weighted-sum", headsWorker);
+
+            // Execute the standalone graph
+            try (TornadoExecutionPlan executionPlan = new TornadoExecutionPlan(immutableStandaloneGraph)) {
+                executionPlan.withGridScheduler(standaloneScheduler).execute();
+                System.out.println("✅ Standalone attention graph executed successfully");
+
+                // Debug: Copy Xb back to verify results
+                System.out.println("Verifying state.wrapXb after Attention");
+                FloatArray tempXb = new FloatArray(dim);
+                MemorySegment.copy(state.wrapXb.getSegment(), 0, tempXb.getSegmentWithHeader(), 0, dim * 4);
+                for (int i = 0; i < Math.min(5, dim); i++) {
+                    System.out.println("wrapXb[" + i + "] = " + tempXb.get(i));
+                }
+            }
+        } catch (Exception e) {
+            System.out.println("❌ Error in standalone attention: " + e.getMessage());
+            e.printStackTrace();
+            return state.logits;
+        }
+
+        // Step 7: Execute FFN
+        System.out.println("\nExecuting Graph 5: FFN");
+        try (TornadoExecutionPlan executionPlan = new TornadoExecutionPlan(taskGraphs.get(5))) {
+            executionPlan.withGridScheduler(schedulers.get(5)).execute();
+            System.out.println("✅ Graph 5 executed successfully");
+
+            // Debug: Copy X back to verify results
+            System.out.println("Verifying state.wrapX after FFN");
+            FloatArray tempX = new FloatArray(dim);
+            MemorySegment.copy(state.wrapX.getSegment(), 0, tempX.getSegmentWithHeader(), 0, dim * 4);
+            for (int i = 0; i < Math.min(5, dim); i++) {
+                System.out.println("wrapX[" + i + "] = " + tempX.get(i));
+            }
+        } catch (Exception e) {
+            System.out.println("❌ Error in Graph 5: " + e.getMessage());
+            e.printStackTrace();
+            return state.logits;
+        }
+
+        // Step 8: Execute Final RMSNorm
+        System.out.println("\nExecuting Graph 6: Final RMSNorm");
+        try (TornadoExecutionPlan executionPlan = new TornadoExecutionPlan(taskGraphs.get(6))) {
+            executionPlan.withGridScheduler(schedulers.get(6)).execute();
+            System.out.println("✅ Graph 6 executed successfully");
+
+            // Debug: Copy X back to verify results
+            System.out.println("Verifying state.wrapX after Final RMSNorm");
+            FloatArray tempX = new FloatArray(dim);
+            MemorySegment.copy(state.wrapX.getSegment(), 0, tempX.getSegmentWithHeader(), 0, dim * 4);
+            for (int i = 0; i < Math.min(5, dim); i++) {
+                System.out.println("wrapX[" + i + "] = " + tempX.get(i));
+            }
+        } catch (Exception e) {
+            System.out.println("❌ Error in Graph 6: " + e.getMessage());
+            e.printStackTrace();
+            return state.logits;
+        }
+
+        // Step 9: Execute Logits Projection
+        System.out.println("\nExecuting Graph 7: Logits Projection");
+        try (TornadoExecutionPlan executionPlan = new TornadoExecutionPlan(taskGraphs.get(7))) {
+            executionPlan.withGridScheduler(schedulers.get(7)).execute();
+            System.out.println("✅ Graph 7 executed successfully");
+
+            // Copy results from TornadoVM buffers to state.logits
+            state.logits.asMemorySegment().copyFrom(state.wrapLogits.getSegment());
+
+            // Debug: Examine top logits
+            System.out.println("Top 5 logits:");
+            float maxLogit = Float.NEGATIVE_INFINITY;
+            int maxIdx = -1;
+            for (int i = 0; i < config.vocabularySize; i++) {
+                if (state.logits.getFloat(i) > maxLogit) {
+                    maxLogit = state.logits.getFloat(i);
+                    maxIdx = i;
+                }
+            }
+            System.out.println("Max logit: " + maxLogit + " at index " + maxIdx);
+
+            System.out.println("\n=== Explicit Copy TornadoVM Forward Pass Completed Successfully ===");
+        } catch (Exception e) {
+            System.out.println("❌ Error in Graph 7: " + e.getMessage());
+            e.printStackTrace();
+            return state.logits;
+        }
+
+        return state.logits;
+    }
+
+    static FloatTensor forwardTornadoVMIncremental(Llama model, State state, int token, int position, Tuple2<List<ImmutableTaskGraph>, List<GridScheduler>> tornadoVMListOfPlan) {
+
+        Configuration config = model.configuration();
+        Weights weights = model.weights();
+        int dim = config.dim;
+        int kvDim = (config.dim * config.numberOfKeyValueHeads) / config.numberOfHeads;
+
+        // Copy the token embedding into x
+        weights.token_embedding_table.copyTo(token * dim, state.x, 0, dim);
+        MemorySegment.copy(state.x.asMemorySegment(), 0, state.wrapX.getSegmentWithHeader(), 0, dim * 4);
+
+        state.positionAndLayer.set(0, position);
+
+        List<GridScheduler> schedulers = tornadoVMListOfPlan.getSecond();
+        List<ImmutableTaskGraph> taskGraphs = tornadoVMListOfPlan.getFirst();
+
+        System.out.println("=== Starting Incremental TornadoVM Forward Pass ===");
+
+        // Test Graph 0: lookUpBufferX
+        System.out.println("\nTesting Graph 0: lookUpBufferX");
+        try (TornadoExecutionPlan executionPlan = new TornadoExecutionPlan(taskGraphs.get(0))) {
+            executionPlan.withGridScheduler(schedulers.get(0)).execute();
+            System.out.println("✅ Graph 0 executed successfully");
+        } catch (Exception e) {
+            System.out.println("❌ Error in Graph 0: " + e.getMessage());
+            e.printStackTrace();
+            return state.logits;
+        }
+
+        // Test Graph 1: RMSNorm
+        System.out.println("\nTesting Graph 1: RMSNorm");
+        try (TornadoExecutionPlan executionPlan = new TornadoExecutionPlan(taskGraphs.get(1))) {
+            executionPlan.withGridScheduler(schedulers.get(1)).execute();
+            System.out.println("✅ Graph 1 executed successfully");
+        } catch (Exception e) {
+            System.out.println("❌ Error in Graph 1: " + e.getMessage());
+            e.printStackTrace();
+            return state.logits;
+        }
+
+        // Process just one layer for testing
+        int l = 0;
+        state.positionAndLayer.set(1, l);
+
+        // Test Graph 2: QKV Matmuls
+        System.out.println("\nTesting Graph 2: QKV Matmuls for layer " + l);
+        try (TornadoExecutionPlan executionPlan = new TornadoExecutionPlan(taskGraphs.get(2))) {
+            executionPlan.withGridScheduler(schedulers.get(2)).execute();
+            System.out.println("✅ Graph 2 executed successfully");
+        } catch (Exception e) {
+            System.out.println("❌ Error in Graph 2: " + e.getMessage());
+            e.printStackTrace();
+            return state.logits;
+        }
+
+        // Test Graph 3: RoPE
+        System.out.println("\nTesting Graph 3: RoPE for layer " + l);
+        try (TornadoExecutionPlan executionPlan = new TornadoExecutionPlan(taskGraphs.get(3))) {
+            executionPlan.withGridScheduler(schedulers.get(3)).execute();
+            System.out.println("✅ Graph 3 executed successfully");
+        } catch (Exception e) {
+            System.out.println("❌ Error in Graph 3: " + e.getMessage());
+            e.printStackTrace();
+            return state.logits;
+        }
+
+        // Memory mapping offset calculation
+        long offset = l * config.contextLength * kvDim + position * kvDim;
+        System.out.println("\nMapping memory regions at offset: " + offset);
+        System.out.println("Key cache size: " + state.wrapKeyCache.getSize());
+        System.out.println("K vector size: " + state.wrapK.getSize());
+
+        // Test Graph 4: Attention - create a temporary test graph to avoid memory mapping
+        System.out.println("\nTesting Graph 4: Attention for layer " + l);
+
+        try {
+            // Create a simplified test task graph that doesn't rely on memory mapping
+            TaskGraph testAttentionGraph = new TaskGraph("test_attention").transferToDevice(DataTransferMode.EVERY_EXECUTION, state.positionAndLayer, state.wrapQ, state.wrapKeyCache)
+                    .task("scores", TornadoVMCompute::calculateAttentionScores, new KernelContext(), state.positionAndLayer, config.contextLength, state.wrapQ, state.wrapKeyCache, state.wrapAtt,
+                            kvDim, config.numberOfHeads / config.numberOfKeyValueHeads, config.headSize, 0).transferToHost(DataTransferMode.EVERY_EXECUTION, state.wrapAtt);
+
+            ImmutableTaskGraph immutableTestGraph = testAttentionGraph.snapshot();
+
+            // Create a scheduler for the test graph
+            GridScheduler testScheduler = new GridScheduler();
+            WorkerGrid headsWorker = new WorkerGrid1D(config.numberOfHeads * config.headSize);
+            headsWorker.setGlobalWork(config.numberOfHeads * config.headSize, 1, 1);
+            headsWorker.setLocalWork(64, 1, 1);
+            testScheduler.addWorkerGrid("test_attention.scores", headsWorker);
+
+            // Execute the test graph
+            try (TornadoExecutionPlan executionPlan = new TornadoExecutionPlan(immutableTestGraph)) {
+                executionPlan.withGridScheduler(testScheduler).execute();
+                System.out.println("✅ Test attention scores calculated successfully");
+            }
+
+            System.out.println("✅ Graph 4 alternative test successful");
+        } catch (Exception e) {
+            System.out.println("❌ Error in Graph 4 alternative: " + e.getMessage());
+            e.printStackTrace();
+            return state.logits;
+        }
+
+        // If this works, then we can try a multi-graph execution for the actual attention
+        try {
+            System.out.println("\nTesting multi-graph execution with RoPE and Attention");
+            try (TornadoExecutionPlan executionPlan = new TornadoExecutionPlan(taskGraphs.get(3), taskGraphs.get(4))) {
+                // Execute the RoPE graph first
+                executionPlan.withGraph(0).withGridScheduler(schedulers.get(3)).execute();
+
+                // Map memory regions between the two graphs
+                executionPlan.mapOnDeviceMemoryRegion(state.wrapKeyCache, state.wrapK, offset, 0, 1);
+                executionPlan.mapOnDeviceMemoryRegion(state.wrapValueCache, state.wrapV, offset, 0, 1);
+
+                // Execute the Attention graph
+                executionPlan.withGraph(1).withGridScheduler(schedulers.get(4)).execute();
+
+                System.out.println("✅ Multi-graph with memory mapping executed successfully");
+            }
+        } catch (Exception e) {
+            System.out.println("❌ Error in multi-graph execution: " + e.getMessage());
+            e.printStackTrace();
+            // Continue testing even if this fails
+        }
+
+        // Test Graph 5: FFN
+        System.out.println("\nTesting Graph 5: FFN for layer " + l);
+        try (TornadoExecutionPlan executionPlan = new TornadoExecutionPlan(taskGraphs.get(5))) {
+            executionPlan.withGridScheduler(schedulers.get(5)).execute();
+            System.out.println("✅ Graph 5 executed successfully");
+        } catch (Exception e) {
+            System.out.println("❌ Error in Graph 5: " + e.getMessage());
+            e.printStackTrace();
+            return state.logits;
+        }
+
+        // Test Graph 6: Final RMSNorm
+        System.out.println("\nTesting Graph 6: Final RMSNorm");
+        try (TornadoExecutionPlan executionPlan = new TornadoExecutionPlan(taskGraphs.get(6))) {
+            executionPlan.withGridScheduler(schedulers.get(6)).execute();
+            System.out.println("✅ Graph 6 executed successfully");
+        } catch (Exception e) {
+            System.out.println("❌ Error in Graph 6: " + e.getMessage());
+            e.printStackTrace();
+            return state.logits;
+        }
+
+        // Test Graph 7: Logits Projection
+        System.out.println("\nTesting Graph 7: Logits Projection");
+        try (TornadoExecutionPlan executionPlan = new TornadoExecutionPlan(taskGraphs.get(7))) {
+            executionPlan.withGridScheduler(schedulers.get(7)).execute();
+            System.out.println("✅ Graph 7 executed successfully");
+
+            // Copy results from TornadoVM buffers to state.logits
+            state.logits.asMemorySegment().copyFrom(state.wrapLogits.getSegment());
+            System.out.println("\n=== Incremental TornadoVM Forward Pass Completed Successfully ===");
+        } catch (Exception e) {
+            System.out.println("❌ Error in Graph 7: " + e.getMessage());
+            e.printStackTrace();
+            return state.logits;
+        }
+
+        return state.logits;
+    }
 
     static FloatTensor forwardTornadoVM(Llama model, State state, int token, int position,  //
             Tuple2<List<ImmutableTaskGraph>, List<GridScheduler>> tornadoVMListOfPlan) { //
@@ -270,7 +683,7 @@ public record Llama(Configuration configuration, Tokenizer tokenizer, Weights we
     public static List<Integer> generateTokens(Llama model, State state, int startPosition, List<Integer> promptTokens, Set<Integer> stopTokens, int maxTokens, Sampler sampler, boolean echo,
             IntConsumer onTokenGenerated) {
         TornadoVMLayerPlanner tornadoVMLayerPlanner = new TornadoVMLayerPlanner(state, model);
-        Tuple2<List<ImmutableTaskGraph>, List<GridScheduler>> tornadoVMPlan = tornadoVMLayerPlanner.setupTornadoForwardPlan();
+        Tuple2<List<ImmutableTaskGraph>, GridScheduler> tornadoVMPlan = tornadoVMLayerPlanner.setupTornadoForwardPlan();
 
         long startNanos = System.nanoTime();
         long startGen = 0;
@@ -284,7 +697,7 @@ public record Llama(Configuration configuration, Tokenizer tokenizer, Weights we
 
         for (int position = startPosition; position < maxTokens; ++position) {
             //            forward(model, state, token, position, tornadoVMPlan);
-            forwardTornadoVM(model, state, token, position, tornadoVMPlan);
+            forwardTornadoVMExplicitCopy(model, state, token, position, tornadoVMPlan);
             startGen = System.nanoTime();
             if (promptIndex < promptTokens.size()) {
                 // Force-pick token from prompt.
