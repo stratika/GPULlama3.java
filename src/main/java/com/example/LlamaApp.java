@@ -2,7 +2,6 @@ package com.example;
 
 import com.example.aot.AOT;
 import com.example.aux.ChatFormat;
-
 import com.example.inference.CategoricalSampler;
 import com.example.inference.Sampler;
 import com.example.inference.ToppSampler;
@@ -11,12 +10,13 @@ import com.example.inference.engine.impl.Options;
 import com.example.loader.weights.ModelLoader;
 import com.example.loader.weights.State;
 
-
 import java.io.IOException;
-import java.util.*;
+import java.util.ArrayList;
+import java.util.List;
+import java.util.Scanner;
+import java.util.Set;
 import java.util.random.RandomGenerator;
 import java.util.random.RandomGeneratorFactory;
-
 
 public class LlamaApp {
     public static final boolean USE_VECTOR_API = Boolean.parseBoolean(System.getProperty("llama.VectorAPI", "true"));
@@ -72,13 +72,24 @@ public class LlamaApp {
             conversationTokens.addAll(chatFormat.encodeMessage(new ChatFormat.Message(ChatFormat.Role.USER, userText)));
             conversationTokens.addAll(chatFormat.encodeHeader(new ChatFormat.Message(ChatFormat.Role.ASSISTANT, "")));
             Set<Integer> stopTokens = chatFormat.getStopTokens();
-            List<Integer> responseTokens = Llama.generateTokens(model, state, startPosition, conversationTokens.subList(startPosition, conversationTokens.size()), stopTokens, options.maxTokens(), sampler, options.echo(), token -> {
-                if (options.stream()) {
-                    if (!model.tokenizer().isSpecialToken(token)) {
-                        System.out.print(model.tokenizer().decode(List.of(token)));
-                    }
-                }
-            });
+
+            //            List<Integer> responseTokens = LlamaForwardDebug.generateTokensDebug(model, state, startPosition, conversationTokens.subList(startPosition, conversationTokens.size()), stopTokens,
+            //                    options.maxTokens(), sampler, options.echo(), token -> token -> {
+            //                        if (options.stream()) {
+            //                            if (!model.tokenizer().isSpecialToken(token)) {
+            //                                System.out.print(model.tokenizer().decode(List.of(token)));
+            //                            }
+            //                        }
+            //                    }););
+//            List<Integer> responseTokens = LlamaForwardDebug.generateTokensDebug
+            List<Integer> responseTokens = Llama.generateTokens(model, state, startPosition, conversationTokens.subList(startPosition, conversationTokens.size()), stopTokens,
+                    options.maxTokens(), sampler, options.echo(), token -> {
+                        if (options.stream()) {
+                            if (!model.tokenizer().isSpecialToken(token)) {
+                                System.out.print(model.tokenizer().decode(List.of(token)));
+                            }
+                        }
+                    });
             // Include stop token in the prompt history, but not in the response displayed to the user.
             conversationTokens.addAll(responseTokens);
             startPosition = conversationTokens.size();
@@ -111,6 +122,8 @@ public class LlamaApp {
         promptTokens.addAll(chatFormat.encodeHeader(new ChatFormat.Message(ChatFormat.Role.ASSISTANT, "")));
 
         Set<Integer> stopTokens = chatFormat.getStopTokens();
+        // Use the debug version
+
         List<Integer> responseTokens = Llama.generateTokens(model, state, 0, promptTokens, stopTokens, options.maxTokens(), sampler, options.echo(), token -> {
             if (options.stream()) {
                 if (!model.tokenizer().isSpecialToken(token)) {
@@ -131,8 +144,8 @@ public class LlamaApp {
         Options options = Options.parseOptions(args);
         Llama model;
         if (USE_AOT) {
-             model = AOT.tryUsePreLoaded(options.modelPath(), options.maxTokens());
-        } else  {
+            model = AOT.tryUsePreLoaded(options.modelPath(), options.maxTokens());
+        } else {
             model = ModelLoader.loadModel(options.modelPath(), options.maxTokens(), true);
         }
         Sampler sampler = selectSampler(model.configuration().vocabularySize, options.temperature(), options.topp(), options.seed());

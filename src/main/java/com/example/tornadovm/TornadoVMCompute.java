@@ -520,11 +520,34 @@ public class TornadoVMCompute {
         }
     }
 
+    public static void forcePropagationOneArray(FloatArray x) {
+        x.set(0, x.get(0));
+    }
+
+    public static void forcePropagationTwoArrays(FloatArray x, FloatArray y) {
+        x.set(0, x.get(0));
+        y.set(0, y.get(0));
+    }
+
+    public static void forcePropagationThreeArrays(FloatArray x, FloatArray y, FloatArray z) {
+        x.set(0, x.get(0));
+        y.set(0, y.get(0));
+        z.set(0, z.get(0));
+    }
+
+    public static void forcePropagationFourArrays(FloatArray x, FloatArray y, FloatArray z, FloatArray w) {
+        x.set(0, x.get(0));
+        y.set(0, y.get(0));
+        z.set(0, z.get(0));
+        w.set(0, w.get(0));
+    }
+
     /**
      * Calculate attention scores between query and key vectors
      */
+
     public static void calculateAttentionScores(KernelContext context, IntArray positionNlayer, int seqLen, FloatArray query, FloatArray keyCache, FloatArray attScores, int kvDim, int kvMul,
-            int headSize, int loff) {
+            int headSize, int loff, int localWorkgourpSize) {
         int h = context.groupIdx;         // Head index
         int threadId = context.localIdx;  // Thread ID within work group
         int blockDim = context.localGroupSizeX;  // Work group size
@@ -534,9 +557,9 @@ public class TornadoVMCompute {
 
         // Attention scores offset for this head
         int attOffset = h * seqLen;
+        int position = positionNlayer.get(0);
 
-        // Iterate over all timesteps, including the current one
-        for (int t = threadId; t <= positionNlayer.get(1); t += blockDim) {
+        for (int t = threadId; t <= position; t += blockDim) {
             // Get the key vector for this head and at this timestep
             int keyOffset = loff + t * kvDim + (h / kvMul) * headSize;
 
@@ -547,12 +570,76 @@ public class TornadoVMCompute {
             }
 
             // Scale by sqrt(head_size)
-            score /= Math.sqrt(headSize);
+            score /= TornadoMath.sqrt(headSize);
 
             // Save the score to the attention buffer
             attScores.set(attOffset + t, score);
         }
     }
+
+    //    public static void calculateAttentionScores(KernelContext context,
+    //            IntArray positionNlayer, int seqLen, FloatArray query, FloatArray keyCache, FloatArray attScores, int kvDim, int kvMul,
+    //            int headSize, int loff, int localWorkgourpSize) {
+    //        int h = context.groupIdx;         // Head index
+    //        int threadId = context.localIdx;  // Thread ID within work group
+    ////        int blockDim = context.localGroupSizeX;  // Work group size
+    //        int blockDim = localWorkgourpSize;  // Work group size
+    //
+    //        // Get the query vector offset for this head
+    //        int queryOffset = h * headSize;
+    //
+    //        // Attention scores offset for this head
+    //        int attOffset = h * seqLen;
+    //
+    //        // Iterate over all timesteps, including the current one
+    //        for (int t = threadId; t <= positionNlayer.get(1); t += blockDim) {
+    //            // Get the key vector for this head and at this timestep
+    //            int keyOffset = loff + t * kvDim + (h / kvMul) * headSize;
+    //
+    //            // Calculate the attention score as the dot product of query and key
+    //            float score = 0.0f;
+    //            for (int i = 0; i < headSize; i++) {
+    //                score += query.get(queryOffset + i) * keyCache.get(keyOffset + i);
+    //            }
+    //
+    //            // Scale by sqrt(head_size)
+    //            score /= TornadoMath.sqrt(headSize);
+    //
+    //            // Save the score to the attention buffer
+    //            attScores.set(attOffset + t, score);
+    //        }
+    //    }
+    //    public static void calculateAttentionScores(KernelContext context,
+    //            IntArray positionNlayer, int seqLen, FloatArray query, FloatArray keyCache, FloatArray attScores, int kvDim, int kvMul,
+    //            int headSize, int loff) {
+    //        int h = context.groupIdx;         // Head index
+    //        int threadId = context.localIdx;  // Thread ID within work group
+    //        int blockDim = context.localGroupSizeX;  // Work group size
+    //
+    //        // Get the query vector offset for this head
+    //        int queryOffset = h * headSize;
+    //
+    //        // Attention scores offset for this head
+    //        int attOffset = h * seqLen;
+    //
+    //        // Iterate over all timesteps, including the current one
+    //        for (int t = threadId; t <= positionNlayer.get(1); t += blockDim) {
+    //            // Get the key vector for this head and at this timestep
+    //            int keyOffset = loff + t * kvDim + (h / kvMul) * headSize;
+    //
+    //            // Calculate the attention score as the dot product of query and key
+    //            float score = 0.0f;
+    //            for (int i = 0; i < headSize; i++) {
+    //                score += query.get(queryOffset + i) * keyCache.get(keyOffset + i);
+    //            }
+    //
+    //            // Scale by sqrt(head_size)
+    //            score /= Math.sqrt(headSize);
+    //
+    //            // Save the score to the attention buffer
+    //            attScores.set(attOffset + t, score);
+    //        }
+    //    }
 
     /**
      * Find maximum attention score for numerical stability in softmax
@@ -760,9 +847,11 @@ public class TornadoVMCompute {
         }
     }
 
-    public static void emptyTaskToForceCopyIn(FloatArray a) {
-        // Empty method with a dummy condition to avoid optimization
-        if (a.getSize() > 100000) {
+    public static void emptyTaskToForceCopyIn(FloatArray buffer) {
+        float dummy = buffer.get(0);
+        // Prevent optimization removal with a conditional that will never execute
+        if (dummy > Float.MAX_VALUE) {
+            buffer.set(0, dummy); // Will never execute, but compiler doesn't know
         }
     }
 

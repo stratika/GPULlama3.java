@@ -104,7 +104,7 @@ public final class ModelLoader {
                 loadQuantized(tensorEntries.getOrDefault("output.weight", tokenEmbeddings))
         );
         
-        if (true) {
+        if (false) {
             WeightsValidator validator = new WeightsValidator(qw);
             // Run validation
             boolean isValid = validator.validateAll();
