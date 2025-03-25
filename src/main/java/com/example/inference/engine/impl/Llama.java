@@ -7,6 +7,7 @@ import com.example.inference.Sampler;
 import com.example.loader.weights.State;
 import com.example.loader.weights.Weights;
 import com.example.tokenizer.impl.Tokenizer;
+import com.example.tornadovm.TornadoVMCompute;
 import com.example.tornadovm.TornadoVMLayerPlanner;
 import uk.ac.manchester.tornado.api.GridScheduler;
 import uk.ac.manchester.tornado.api.ImmutableTaskGraph;
@@ -33,7 +34,7 @@ public record Llama(Configuration configuration, Tokenizer tokenizer, Weights we
         out.mapWithIndexInPlace(0, size, (value, index) -> weight.get(index) * (finalss * x.getFloat(index)));
     }
 
-    static FloatTensor forward(Llama model, State state, int token, int position, Tuple2<List<ImmutableTaskGraph>, GridScheduler> tornadoVMListOfPlan) {
+    static FloatTensor forwardJava(Llama model, State state, int token, int position) {
         // a few convenience variables
         Configuration config = model.configuration();
         Weights weights = model.weights();
@@ -56,7 +57,6 @@ public record Llama(Configuration configuration, Tokenizer tokenizer, Weights we
             weights.wq[l].matmul(state.xb, state.q, dim, dim);
             weights.wk[l].matmul(state.xb, state.k, kvDim, dim);
             weights.wv[l].matmul(state.xb, state.v, kvDim, dim);
-            //            weights.wcls.matmul(state.x, state.logits, config.vocabularySize, dim);
 
             // RoPE relative positional encoding: complex-valued rotate q and k in each head
             for (int i = 0; i < dim; i += 2) {
@@ -160,21 +160,19 @@ public record Llama(Configuration configuration, Tokenizer tokenizer, Weights we
 
     static FloatTensor forwardTornadoVM(Llama model, State state, int token, int position,  //
             Tuple2<List<ImmutableTaskGraph>, GridScheduler> tornadoVMListOfPlan) { //
-
+        GridScheduler scheduler = tornadoVMListOfPlan.getSecond();
+        List<ImmutableTaskGraph> taskGraphs = tornadoVMListOfPlan.getFirst();
         Configuration config = model.configuration();
+
         Weights weights = model.weights();
         int dim = config.dim;
         int kvDim = (config.dim * config.numberOfKeyValueHeads) / config.numberOfHeads;
 
         // copy the token embedding into x
-
         weights.token_embedding_table.copyTo(token * dim, state.x, 0, dim);
         MemorySegment.copy(state.x.asMemorySegment(), 0, state.wrapX.getSegmentWithHeader(), 0, dim * 4);
 
         state.positionAndLayer.set(0, position);
-
-        GridScheduler scheduler = tornadoVMListOfPlan.getSecond();
-        List<ImmutableTaskGraph> taskGraphs = tornadoVMListOfPlan.getFirst();
 
         // @formatter:off
         try (
@@ -189,8 +187,9 @@ public record Llama(Configuration configuration, Tokenizer tokenizer, Weights we
                     taskGraphs.get(7))
         ) {
         // @formatter:on
-            // Process each layer
+            // Step 0: Initial buffer setup
             executionPlan.withGraph(0).withGridScheduler(scheduler).execute();
+
             for (int l = 0; l < config.numberOfLayers; l++) {
 
                 state.positionAndLayer.set(1, l); // Update before execute (it an every copy in)
@@ -219,6 +218,7 @@ public record Llama(Configuration configuration, Tokenizer tokenizer, Weights we
 
                 // Step 5: Feed-forward neural network
                 executionPlan.withGraph(5).withGridScheduler(scheduler).execute();
+                System.out.println("====== End of layer ====== " + l);
             }
 
             // Final RMSNorm
@@ -235,12 +235,10 @@ public record Llama(Configuration configuration, Tokenizer tokenizer, Weights we
 
         // This copy-out after every execution !!!
         state.logits.asMemorySegment().copyFrom(state.wrapLogits.getSegment());
-        // this can be simplified as well
         return state.logits;
     }
 
-    static FloatTensor forwardTornadoVMDebug(Llama model, State state, int token, int position,
-            Tuple2<List<ImmutableTaskGraph>, GridScheduler> tornadoVMListOfPlan) {
+    static FloatTensor forwardTornadoVMDebug(Llama model, State state, int token, int position, Tuple2<List<ImmutableTaskGraph>, GridScheduler> tornadoVMListOfPlan) {
 
         Configuration config = model.configuration();
         Weights weights = model.weights();
@@ -263,8 +261,7 @@ public record Llama(Configuration configuration, Tokenizer tokenizer, Weights we
 
         System.out.println("Starting TornadoVM forward pass in debug mode");
 
-        try (TornadoExecutionPlan executionPlan = new TornadoExecutionPlan(
-                taskGraphs.get(0),  // Initial buffer setup
+        try (TornadoExecutionPlan executionPlan = new TornadoExecutionPlan(taskGraphs.get(0),  // Initial buffer setup
                 taskGraphs.get(1),  // RMSNorm for attention
                 taskGraphs.get(2),  // QKV Matmuls
                 taskGraphs.get(3),  // RoPE rotation
@@ -377,10 +374,11 @@ public record Llama(Configuration configuration, Tokenizer tokenizer, Weights we
         int promptIndex = 0;
 
         for (int position = startPosition; position < maxTokens; ++position) {
-            //            forward(model, state, token, position, tornadoVMPlan);
-            //            LlamaForwardDebug(model, state, token, position, tornadoVMPlan);
-            forwardTornadoVMDebug(model, state, token, position, tornadoVMPlan);
-            System.exit(0);
+            if (TornadoVMCompute.TORNADOVM) {
+                forwardTornadoVM(model, state, token, position, tornadoVMPlan);
+            } else {
+                forwardJava(model, state, token, position);
+            }
             startGen = System.nanoTime();
             if (promptIndex < promptTokens.size()) {
                 // Force-pick token from prompt.

@@ -377,17 +377,18 @@ public class TornadoVMLayerPlanner {
         // ================ TASK GRAPH 0: BUFFER INITIALIZATION ================
         // This forces the wrapX buffer to be copied to the device
         TaskGraph lookUpBufferX = new TaskGraph("lookUpBufferX")
-                .transferToDevice(DataTransferMode.EVERY_EXECUTION, state.wrapX, state.positionAndLayer)
+                .transferToDevice(DataTransferMode.EVERY_EXECUTION, state.wrapX)
                 .task("forceUpdateXperToken", TornadoVMCompute::emptyTaskToForceCopyIn, state.wrapX)
-                .task("forceOnet", TornadoVMCompute::forcePropagationOneArray, state.positionAndLayer)
-                .persistOnDevice(state.wrapX, state.positionAndLayer); // Critical to persist both buffers
+//                .task("forceOnet", TornadoVMCompute::forcePropagationOneArray, state.positionAndLayer)
+                .persistOnDevice(state.wrapX); // Critical to persist both buffers
         taskGraphs.add(lookUpBufferX.snapshot());
 
         // ================ TASK GRAPH 1: RMS NORM ================
         // Fixed to properly consume from previous graph
         TaskGraph rmsNormGraph = new TaskGraph("rmsnorm")
-                .consumeFromDevice(lookUpBufferX.getTaskGraphName(), state.wrapX, state.positionAndLayer)
+                .consumeFromDevice(lookUpBufferX.getTaskGraphName(), state.wrapX)
                 .transferToDevice(DataTransferMode.FIRST_EXECUTION, weights.rms_att_weightFlat)
+                .transferToDevice(DataTransferMode.EVERY_EXECUTION, state.positionAndLayer)
                 .task("reduce", TornadoVMCompute::reduceSquareSums, context, state.wrapX, intermediateReduceFirst, localSizeRMS)
                 .task("sum", TornadoVMCompute::finalSum, context, intermediateReduceFirst, dim, config.rmsNormEps)
                 .task("normalize", TornadoVMCompute::normalizeAndScale, context, state.wrapXb, state.wrapX, weights.rms_att_weightFlat, intermediateReduceFirst, dim, state.positionAndLayer)
