@@ -390,7 +390,7 @@ public class TornadoVMLayerPlanner {
                 .transferToDevice(DataTransferMode.FIRST_EXECUTION, weights.rms_att_weightFlat)
                 .transferToDevice(DataTransferMode.EVERY_EXECUTION, state.positionAndLayer)
                 .task("reduce", TornadoVMCompute::reduceSquareSums, context, state.wrapX, intermediateReduceFirst, localSizeRMS)
-                .task("sum", TornadoVMCompute::finalSum, context, intermediateReduceFirst, dim, config.rmsNormEps)
+                .task("sum", TornadoVMCompute::finalSum, intermediateReduceFirst, dim, config.rmsNormEps)
                 .task("normalize", TornadoVMCompute::normalizeAndScale, context, state.wrapXb, state.wrapX, weights.rms_att_weightFlat, intermediateReduceFirst, dim, state.positionAndLayer)
                 .persistOnDevice(state.wrapX, state.wrapXb, state.positionAndLayer);
         taskGraphs.add(rmsNormGraph.snapshot());
@@ -441,7 +441,7 @@ public class TornadoVMLayerPlanner {
                 .task("residual1", TornadoVMCompute::addInPlace, context, state.wrapX, state.wrapXb2)
                 // Step 2: RMSNorm sequence
                 .task("reduceFFN", TornadoVMCompute::reduceSquareSums, context, state.wrapX, intermediateReduceTwo, localSizeFFN)
-                .task("sum", TornadoVMCompute::finalSum, context, intermediateReduceTwo, dim, config.rmsNormEps)
+                .task("sum", TornadoVMCompute::finalSum, intermediateReduceTwo, dim, config.rmsNormEps)
                 .task("ns", TornadoVMCompute::normalizeAndScale, context, state.wrapXb, state.wrapX, weights.rms_ffn_weightFlat, intermediateReduceTwo, dim, state.positionAndLayer)
                 // Step 3: Parallel projections with W1 and W3
                 .task("projcectOne", TornadoVMCompute::matrixVectorMultiply, context, state.wrapXb, state.wrapHb, weights.w1Flat, dim, config.hiddenDim, state.positionAndLayer)
@@ -460,8 +460,7 @@ public class TornadoVMLayerPlanner {
                 .consumeFromDevice(ffnGraph.getTaskGraphName(), state.wrapX, state.positionAndLayer)
                 .transferToDevice(DataTransferMode.FIRST_EXECUTION, weights.rms_final_weight_as_floatArray)
                 .task("reduceRMS", TornadoVMCompute::reduceSquareSums, context, state.wrapX, intermediateReduceThree, localSizeRMS)
-                .task("sum", TornadoVMCompute::finalSum, context, intermediateReduceThree, dim, config.rmsNormEps)
-//                .task("forcePropagationAttention", TornadoVMCompute::forcePropagationOneArray,state.wrapX)
+                .task("sum", TornadoVMCompute::finalSum, intermediateReduceThree, dim, config.rmsNormEps)
                 .task("normalize", TornadoVMCompute::normalizeAndScaleInNout, context, state.wrapX, weights.rms_final_weight_as_floatArray, intermediateReduceThree, dim, state.positionAndLayer)
                 .persistOnDevice(state.wrapX, state.positionAndLayer);
         taskGraphs.add(finalRmsNormGraph.snapshot());
@@ -471,7 +470,6 @@ public class TornadoVMLayerPlanner {
                 .consumeFromDevice(finalRmsNormGraph.getTaskGraphName(), state.wrapX, state.positionAndLayer)
                 .transferToDevice(DataTransferMode.FIRST_EXECUTION, weights.wclsByteArray)
                 .task("projection", TornadoVMCompute::matmulTornadoQ8, context, weights.wclsByteArray, state.wrapX, state.wrapLogits, dim)
-                // Add a "touch" operation to ensure proper transfer
                 .transferToHost(DataTransferMode.EVERY_EXECUTION, state.wrapLogits);
         taskGraphs.add(logitsGraph.snapshot());
 

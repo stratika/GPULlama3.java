@@ -433,6 +433,7 @@ public class TornadoVMCompute {
 
         float[] localA = context.allocateFloatLocalArray(localWorkGroupSize);
         localA[localIdx] = a.get(globalIdx) * a.get(globalIdx);
+
         for (int stride = (localGroupSize / 2); stride > 0; stride /= 2) {
             context.localBarrier();
             if (localIdx < stride) {
@@ -460,7 +461,7 @@ public class TornadoVMCompute {
 //            reduce.set(0, ss);
 //        }
 
-    public static void finalSum(KernelContext context, FloatArray reduce, int size, float eps) {
+    public static void finalSum(FloatArray reduce, int size, float eps) {
 
         float sum = 0.0f;
 
@@ -555,7 +556,8 @@ public class TornadoVMCompute {
      * Calculate attention scores between query and key vectors
      */
 
-    public static void calculateAttentionScores(KernelContext context, IntArray positionNlayer, int seqLen, FloatArray query, FloatArray keyCache, FloatArray attScores, int kvDim, int kvMul,
+    public static void calculateAttentionScores(KernelContext context, IntArray positionNlayer,
+            int seqLen, FloatArray query, FloatArray keyCache, FloatArray attScores, int kvDim, int kvMul,
             int headSize, int loff, int localWorkgourpSize) {
         int h = context.groupIdx;         // Head index
         int threadId = context.localIdx;  // Thread ID within work group
@@ -703,7 +705,6 @@ public class TornadoVMCompute {
         // Compute exp(score - max) and thread-local sum
         float expSum = 0.0f;
         for (int t = threadId; t < position; t += blockDim) {
-            //            for (int t = threadId; t <= positionNlayer.get(1); t += blockDim) {
             float score = attScores.get(attOffset + t);
             float expValue = (float) Math.exp(score - maxVal);
             expValues.set(expOffset + t, expValue);
@@ -751,7 +752,6 @@ public class TornadoVMCompute {
 
         // Normalize values and write back to attention scores
         for (int t = threadId; t < position; t += blockDim) {
-            //            for (int t = threadId; t <= positionNlayer.get(1); t += blockDim) {
             float normalizedValue = expValues.get(expOffset + t) / sum;
             attScores.set(attOffset + t, normalizedValue);
         }
@@ -774,7 +774,6 @@ public class TornadoVMCompute {
         for (int i = threadId; i < headSize; i += blockDim) {
             float val = 0.0f;
             for (int t = 0; t < position; t++) {
-                //                for (int t = 0; t <= positionNlayer.get(1); t++) {
                 // Get the value vector for this head and timestep
                 int valueOffset = loff + t * kvDim + (h / kvMul) * headSize;
 
@@ -790,25 +789,6 @@ public class TornadoVMCompute {
         context.localBarrier();
     }
 
-    /**
-     * Matrix-vector multiplication using KernelContext
-     */
-    //    public static void matrixVectorMultiply(KernelContext context, FloatArray x, FloatArray output, FloatArray weights, int n, int d, IntArray positionNlayer) {
-    //        int idx = context.globalIdx;
-    //
-    //        int layerOffset = positionNlayer.get(1) * n;
-    //
-    //        if (idx < d) {
-    //            float sum = 0.0f;
-    //            for (int j = 0; j < n; j++) {
-    //                if (j < x.getSize() && (idx * n + j) < weights.getSize()) {
-    //                    sum += weights.get(idx * layerOffset + j) * x.get(j);
-    //                }
-    //            }
-    //
-    //            output.set(idx, sum);
-    //        }
-    //    }
     public static void matrixVectorMultiply(KernelContext context, FloatArray x, FloatArray output, FloatArray weights, int n, int d, IntArray positionNlayer) {
         int idx = context.globalIdx;
 
