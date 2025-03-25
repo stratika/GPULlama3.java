@@ -380,6 +380,7 @@ public record Llama(Configuration configuration, Tokenizer tokenizer, Weights we
             //            forward(model, state, token, position, tornadoVMPlan);
             //            LlamaForwardDebug(model, state, token, position, tornadoVMPlan);
             forwardTornadoVMDebug(model, state, token, position, tornadoVMPlan);
+            System.exit(0);
             startGen = System.nanoTime();
             if (promptIndex < promptTokens.size()) {
                 // Force-pick token from prompt.

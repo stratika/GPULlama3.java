@@ -444,31 +444,28 @@ public class TornadoVMCompute {
         }
     }
 
-    //    public static void finalSum(KernelContext context, FloatArray reduce, int size, float eps) {
-    //        int globalIdx = context.globalIdx;
-    //
-    //        float sum = 0.0f;
-    //        if (globalIdx == 0) {
-    //            for (int i = 0; i < size; i++) {
-    //                sum += reduce.get(i);
-    //            }
-    //        }
-    //
-    //        float ss = sum / (float) size;
-    //        ss += eps;
-    //        ss = 1.0f / TornadoMath.sqrt(ss);
-    //        reduce.set(0, ss);
-    //    }
+//        public static void finalSum(KernelContext context, FloatArray reduce, int size, float eps) {
+//            int globalIdx = context.globalIdx;
+//
+//            float sum = 0.0f;
+//            if (globalIdx == 0) {
+//                for (int i = 0; i < size; i++) {
+//                    sum += reduce.get(i);
+//                }
+//            }
+//
+//            float ss = sum / (float) size;
+//            ss += eps;
+//            ss = 1.0f / TornadoMath.sqrt(ss);
+//            reduce.set(0, ss);
+//        }
 
     public static void finalSum(KernelContext context, FloatArray reduce, int size, float eps) {
-        int globalIdx = context.globalIdx;
 
         float sum = 0.0f;
-        if (globalIdx == 0) {
-            // Use reduce.getSize() instead of size
-            for (int i = 0; i < reduce.getSize(); i++) {
-                sum += reduce.get(i);
-            }
+
+        for (int i = 0; i < reduce.getSize(); i++) {
+            sum += reduce.get(i);
         }
 
         float ss = sum / (float) size;  // Keep dividing by the original size
@@ -483,10 +480,18 @@ public class TornadoVMCompute {
 
         int layerOffset = positionNlayer.get(1) * size;
 
-        if (globalIdx < size) {
-            float scaledValue = weight.get(layerOffset + globalIdx) * (scalingFactorBuffer.get(0) * input.get(globalIdx));
-            out.set(globalIdx, scaledValue);
-        }
+        float scaledValue = weight.get(layerOffset + globalIdx) * (scalingFactorBuffer.get(0) * input.get(globalIdx));
+        out.set(globalIdx, scaledValue);
+    }
+
+    public static void normalizeAndScaleInNout(KernelContext context, FloatArray inputNoUT, FloatArray weight, FloatArray scalingFactorBuffer, int size, IntArray positionNlayer) {
+        int globalIdx = context.globalIdx;
+
+        int layerOffset = positionNlayer.get(1) * size;
+
+
+        float scaledValue = weight.get(layerOffset + globalIdx) * (scalingFactorBuffer.get(0) * inputNoUT.get(globalIdx));
+        inputNoUT.set(globalIdx, scaledValue);
     }
 
     public static void matrixVectorSimple(KernelContext context, FloatArray x, FloatArray output, FloatArray weights, int n, int d) {
@@ -524,6 +529,10 @@ public class TornadoVMCompute {
         x.set(0, x.get(0));
     }
 
+    public static void forcePropagationOneArray(IntArray x) {
+        x.set(0, x.get(0));
+    }
+
     public static void forcePropagationTwoArrays(FloatArray x, FloatArray y) {
         x.set(0, x.get(0));
         y.set(0, y.get(0));
@@ -557,9 +566,9 @@ public class TornadoVMCompute {
 
         // Attention scores offset for this head
         int attOffset = h * seqLen;
-        int position = positionNlayer.get(0);
+        int position = positionNlayer.get(0) + 1;
 
-        for (int t = threadId; t <= position; t += blockDim) {
+        for (int t = threadId; t < position; t += blockDim) {
             // Get the key vector for this head and at this timestep
             int keyOffset = loff + t * kvDim + (h / kvMul) * headSize;
 
@@ -644,7 +653,7 @@ public class TornadoVMCompute {
     /**
      * Find maximum attention score for numerical stability in softmax
      */
-    public static void findMaxAttentionScores(KernelContext context, IntArray positionNlayer, int seqLen, FloatArray attScores, FloatArray maxValues, int workGroupSize) {
+    public static void findMaxAttentionScoress(KernelContext context, IntArray positionNlayer, int seqLen, FloatArray attScores, FloatArray maxValues, int workGroupSize) {
         int h = context.groupIdx;         // Head index
         int threadId = context.localIdx;  // Thread ID within work group
         int blockDim = context.localGroupSizeX;  // Work group size
@@ -654,7 +663,9 @@ public class TornadoVMCompute {
 
         // Find the maximum value for numerical stability
         float maxVal = Float.NEGATIVE_INFINITY;
-        for (int t = threadId; t <= positionNlayer.get(1); t += blockDim) {
+        int position = positionNlayer.get(0) + 1;
+
+        for (int t = threadId; t < position; t += blockDim) {
             maxVal = Math.max(maxVal, attScores.get(attOffset + t));
         }
 
@@ -687,10 +698,12 @@ public class TornadoVMCompute {
         // Attention scores and exp values offset for this head
         int attOffset = h * seqLen;
         int expOffset = h * seqLen;
+        int position = positionNlayer.get(0) + 1;
 
         // Compute exp(score - max) and thread-local sum
         float expSum = 0.0f;
-        for (int t = threadId; t <= positionNlayer.get(1); t += blockDim) {
+        for (int t = threadId; t < position; t += blockDim) {
+            //            for (int t = threadId; t <= positionNlayer.get(1); t += blockDim) {
             float score = attScores.get(attOffset + t);
             float expValue = (float) Math.exp(score - maxVal);
             expValues.set(expOffset + t, expValue);
@@ -734,9 +747,11 @@ public class TornadoVMCompute {
         // Exp values and attention scores offset for this head
         int expOffset = h * seqLen;
         int attOffset = h * seqLen;
+        int position = positionNlayer.get(0) + 1;
 
         // Normalize values and write back to attention scores
-        for (int t = threadId; t <= positionNlayer.get(1); t += blockDim) {
+        for (int t = threadId; t < position; t += blockDim) {
+            //            for (int t = threadId; t <= positionNlayer.get(1); t += blockDim) {
             float normalizedValue = expValues.get(expOffset + t) / sum;
             attScores.set(attOffset + t, normalizedValue);
         }
@@ -753,11 +768,13 @@ public class TornadoVMCompute {
 
         // Output offset for this head
         int outputOffset = h * headSize;
+        int position = positionNlayer.get(0) + 1;
 
         // Calculate weighted sum for each head dimension
         for (int i = threadId; i < headSize; i += blockDim) {
             float val = 0.0f;
-            for (int t = 0; t <= positionNlayer.get(1); t++) {
+            for (int t = 0; t < position; t++) {
+                //                for (int t = 0; t <= positionNlayer.get(1); t++) {
                 // Get the value vector for this head and timestep
                 int valueOffset = loff + t * kvDim + (h / kvMul) * headSize;
 
