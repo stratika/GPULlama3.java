@@ -14,9 +14,50 @@ import java.util.stream.IntStream;
 
 public class TornadoVMCompute {
     public static final boolean TORNADOVM = Boolean.parseBoolean(System.getProperty("use.tornadovm", "false"));
-    public static final long WORKGROUP = Long.parseLong(System.getProperty("llama.workgroup", "16"));
 
     public TornadoVMCompute() {
+    }
+
+    /**
+     * In-place addition using KernelContext
+     */
+    public static void addInPlace(KernelContext context, FloatArray input, FloatArray output) {
+        int idx = context.globalIdx;
+
+        if (idx < Math.min(input.getSize(), output.getSize())) {
+            output.set(idx, output.get(idx) + input.get(idx));
+        }
+    }
+
+    /**
+     * SiLU activation function using KernelContext
+     */
+    public static void siluActivation(KernelContext context, FloatArray input) {
+        int idx = context.globalIdx;
+
+        if (idx < input.getSize()) {
+            float value = input.get(idx);
+            float result = value / (1.0f + TornadoMath.exp(-value));
+            input.set(idx, result);
+        }
+    }
+
+    /**
+     * Element-wise multiplication using KernelContext
+     */
+    public static void elementMultiply(KernelContext context, FloatArray input, FloatArray output) {
+        int idx = context.globalIdx;
+
+        if (idx < Math.min(input.getSize(), output.getSize())) {
+            output.set(idx, output.get(idx) * input.get(idx));
+        }
+    }
+
+    public static void emptyTaskToForceCopyIn(FloatArray buffer) {
+        float dummy = buffer.get(0);
+        if (dummy > Float.MAX_VALUE) {
+            buffer.set(0, dummy);
+        }
     }
 
     public static void matmulTornadoQ4Pure(ByteArray thisx, FloatArray that, FloatArray out, int dim1, int vocabSize) {
@@ -311,41 +352,6 @@ public class TornadoVMCompute {
         });
     }
 
-    //    public static void reduceSquareSums(KernelContext context, FloatArray x, FloatArray reduce) {
-    //        int globalIdx = context.globalIdx;
-    //        int localIdx = context.localIdx;
-    //        int localGroupSize = context.localGroupSizeX;
-    //        int groupID = context.groupIdx; // Expose Group ID
-    //
-    //        float[] localA = context.allocateFloatLocalArray((int) 256);
-    //        localA[localIdx] = x.get(globalIdx) * x.get(globalIdx);
-    //        for (int stride = (localGroupSize / 2); stride > 0; stride /= 2) {
-    //            context.localBarrier();
-    //            if (localIdx < stride) {
-    //                localA[localIdx] += localA[localIdx + stride];
-    //            }
-    //        }
-    //        if (localIdx == 0) {
-    //            reduce.set(groupID, localA[0]);
-    //        }
-    //    }
-
-    //    public static void finalSum(KernelContext context, FloatArray reduce, int size, float eps) {
-    //        int globalIdx = context.globalIdx;
-    //
-    //        float sum = 0.0f;
-    //        if (globalIdx == 0) {
-    //            for (int i = 0; i < size; i++) {
-    //                sum += reduce.get(i);
-    //            }
-    //        }
-    //
-    //        float ss = sum / (float) size;
-    //        ss += eps;
-    //        ss = 1.0f / TornadoMath.sqrt(ss);
-    //        reduce.set(0, ss);
-    //    }
-
     public static void normalizeAndScale(KernelContext context, FloatArray x, FloatArray weight, FloatArray scalingFactorBuffer, int size) {
 
         int globalIdx = context.globalIdx;
@@ -355,41 +361,6 @@ public class TornadoVMCompute {
             x.set(globalIdx, scaledValue);
         }
     }
-
-    public static void normalizeAndScale2(KernelContext context, FloatArray out, FloatArray x, FloatArray weight, FloatArray scalingFactorBuffer, int size) {
-
-        int globalIdx = context.globalIdx;
-
-        if (globalIdx < size) {
-            float scaledValue = weight.get(globalIdx) * (scalingFactorBuffer.get(0) * x.get(globalIdx));
-            out.set(globalIdx, scaledValue);
-        }
-    }
-
-    //    public static void addInPlace(FloatArray input, FloatArray output) {
-    //        for (@Parallel int i = 0; i < input.getSize(); i++) {
-    //            // Perform element-wise addition
-    //            float result = output.get(i) + input.get(i);
-    //            output.set(i, result);
-    //        }
-    //    }
-
-    //    public static void multiplyInPlace(FloatArray input, FloatArray output) {
-    //        for (@Parallel int i = 0; i < input.getSize(); i++) {
-    //            // Perform element-wise multiplication
-    //            float result = output.get(i) * input.get(i);
-    //            output.set(i, result);
-    //        }
-    //    }
-
-    //    public static void mapInPlace(FloatArray input) {
-    //        for (@Parallel int i = 0; i < input.getSize(); i++) {
-    //            // Apply the transformation: value -> value / (1.0 + exp(-value))
-    //            float value = input.get(i);
-    //            float result = value / (1.0f + TornadoMath.exp(-value));
-    //            input.set(i, result);
-    //        }
-    //    }
 
     public static void matrixVectorSimple(FloatArray x, FloatArray xout, FloatArray w, int n, int d) {
         for (@Parallel int i = 0; i < x.getSize(); i++) {
@@ -445,22 +416,6 @@ public class TornadoVMCompute {
         }
     }
 
-//        public static void finalSum(KernelContext context, FloatArray reduce, int size, float eps) {
-//            int globalIdx = context.globalIdx;
-//
-//            float sum = 0.0f;
-//            if (globalIdx == 0) {
-//                for (int i = 0; i < size; i++) {
-//                    sum += reduce.get(i);
-//                }
-//            }
-//
-//            float ss = sum / (float) size;
-//            ss += eps;
-//            ss = 1.0f / TornadoMath.sqrt(ss);
-//            reduce.set(0, ss);
-//        }
-
     public static void finalSum(FloatArray reduce, int size, float eps) {
 
         float sum = 0.0f;
@@ -489,7 +444,6 @@ public class TornadoVMCompute {
         int globalIdx = context.globalIdx;
 
         int layerOffset = positionNlayer.get(1) * size;
-
 
         float scaledValue = weight.get(layerOffset + globalIdx) * (scalingFactorBuffer.get(0) * inputNoUT.get(globalIdx));
         inputNoUT.set(globalIdx, scaledValue);
@@ -556,8 +510,7 @@ public class TornadoVMCompute {
      * Calculate attention scores between query and key vectors
      */
 
-    public static void calculateAttentionScores(KernelContext context, IntArray positionNlayer,
-            int seqLen, FloatArray query, FloatArray keyCache, FloatArray attScores, int kvDim, int kvMul,
+    public static void calculateAttentionScores(KernelContext context, IntArray positionNlayer, int seqLen, FloatArray query, FloatArray keyCache, FloatArray attScores, int kvDim, int kvMul,
             int headSize, int loff, int localWorkgourpSize) {
         int h = context.groupIdx;         // Head index
         int threadId = context.localIdx;  // Thread ID within work group
@@ -587,70 +540,6 @@ public class TornadoVMCompute {
             attScores.set(attOffset + t, score);
         }
     }
-
-    //    public static void calculateAttentionScores(KernelContext context,
-    //            IntArray positionNlayer, int seqLen, FloatArray query, FloatArray keyCache, FloatArray attScores, int kvDim, int kvMul,
-    //            int headSize, int loff, int localWorkgourpSize) {
-    //        int h = context.groupIdx;         // Head index
-    //        int threadId = context.localIdx;  // Thread ID within work group
-    ////        int blockDim = context.localGroupSizeX;  // Work group size
-    //        int blockDim = localWorkgourpSize;  // Work group size
-    //
-    //        // Get the query vector offset for this head
-    //        int queryOffset = h * headSize;
-    //
-    //        // Attention scores offset for this head
-    //        int attOffset = h * seqLen;
-    //
-    //        // Iterate over all timesteps, including the current one
-    //        for (int t = threadId; t <= positionNlayer.get(1); t += blockDim) {
-    //            // Get the key vector for this head and at this timestep
-    //            int keyOffset = loff + t * kvDim + (h / kvMul) * headSize;
-    //
-    //            // Calculate the attention score as the dot product of query and key
-    //            float score = 0.0f;
-    //            for (int i = 0; i < headSize; i++) {
-    //                score += query.get(queryOffset + i) * keyCache.get(keyOffset + i);
-    //            }
-    //
-    //            // Scale by sqrt(head_size)
-    //            score /= TornadoMath.sqrt(headSize);
-    //
-    //            // Save the score to the attention buffer
-    //            attScores.set(attOffset + t, score);
-    //        }
-    //    }
-    //    public static void calculateAttentionScores(KernelContext context,
-    //            IntArray positionNlayer, int seqLen, FloatArray query, FloatArray keyCache, FloatArray attScores, int kvDim, int kvMul,
-    //            int headSize, int loff) {
-    //        int h = context.groupIdx;         // Head index
-    //        int threadId = context.localIdx;  // Thread ID within work group
-    //        int blockDim = context.localGroupSizeX;  // Work group size
-    //
-    //        // Get the query vector offset for this head
-    //        int queryOffset = h * headSize;
-    //
-    //        // Attention scores offset for this head
-    //        int attOffset = h * seqLen;
-    //
-    //        // Iterate over all timesteps, including the current one
-    //        for (int t = threadId; t <= positionNlayer.get(1); t += blockDim) {
-    //            // Get the key vector for this head and at this timestep
-    //            int keyOffset = loff + t * kvDim + (h / kvMul) * headSize;
-    //
-    //            // Calculate the attention score as the dot product of query and key
-    //            float score = 0.0f;
-    //            for (int i = 0; i < headSize; i++) {
-    //                score += query.get(queryOffset + i) * keyCache.get(keyOffset + i);
-    //            }
-    //
-    //            // Scale by sqrt(head_size)
-    //            score /= Math.sqrt(headSize);
-    //
-    //            // Save the score to the attention buffer
-    //            attScores.set(attOffset + t, score);
-    //        }
-    //    }
 
     /**
      * Find maximum attention score for numerical stability in softmax
@@ -796,60 +685,15 @@ public class TornadoVMCompute {
         int layer = positionNlayer.get(1);
         int layerOffset = layer * d * n;  // The correct formula
 
-        if (idx < d) {
-            float sum = 0.0f;
-            for (int j = 0; j < n; j++) {
-                if (j < x.getSize() && (layerOffset + idx * n + j) < weights.getSize()) {
-                    // Use the correct index calculation
-                    sum += weights.get(layerOffset + idx * n + j) * x.get(j);
-                }
+        float sum = 0.0f;
+        for (int j = 0; j < n; j++) {
+            if (j < x.getSize() && (layerOffset + idx * n + j) < weights.getSize()) {
+                // Use the correct index calculation
+                sum += weights.get(layerOffset + idx * n + j) * x.get(j);
             }
-
-            output.set(idx, sum);
         }
-    }
 
-    /**
-     * In-place addition using KernelContext
-     */
-    public static void addInPlace(KernelContext context, FloatArray input, FloatArray output) {
-        int idx = context.globalIdx;
-
-        if (idx < Math.min(input.getSize(), output.getSize())) {
-            output.set(idx, output.get(idx) + input.get(idx));
-        }
-    }
-
-    /**
-     * SiLU activation function using KernelContext
-     */
-    public static void siluActivation(KernelContext context, FloatArray input) {
-        int idx = context.globalIdx;
-
-        if (idx < input.getSize()) {
-            float value = input.get(idx);
-            float result = value / (1.0f + TornadoMath.exp(-value));
-            input.set(idx, result);
-        }
-    }
-
-    /**
-     * Element-wise multiplication using KernelContext
-     */
-    public static void elementMultiply(KernelContext context, FloatArray input, FloatArray output) {
-        int idx = context.globalIdx;
-
-        if (idx < Math.min(input.getSize(), output.getSize())) {
-            output.set(idx, output.get(idx) * input.get(idx));
-        }
-    }
-
-    public static void emptyTaskToForceCopyIn(FloatArray buffer) {
-        float dummy = buffer.get(0);
-        // Prevent optimization removal with a conditional that will never execute
-        if (dummy > Float.MAX_VALUE) {
-            buffer.set(0, dummy); // Will never execute, but compiler doesn't know
-        }
+        output.set(idx, sum);
     }
 
 }

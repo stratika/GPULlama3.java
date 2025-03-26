@@ -9,6 +9,7 @@ import com.example.loader.weights.Weights;
 import com.example.tokenizer.impl.Tokenizer;
 import com.example.tornadovm.TornadoVMCompute;
 import com.example.tornadovm.TornadoVMLayerPlanner;
+import com.example.tornadovm.TornadoVMMasterPlan;
 import uk.ac.manchester.tornado.api.GridScheduler;
 import uk.ac.manchester.tornado.api.ImmutableTaskGraph;
 import uk.ac.manchester.tornado.api.TornadoExecutionPlan;
@@ -159,84 +160,118 @@ public record Llama(Configuration configuration, Tokenizer tokenizer, Weights we
     }
 
     static FloatTensor forwardTornadoVM(Llama model, State state, int token, int position,  //
-            Tuple2<List<ImmutableTaskGraph>, GridScheduler> tornadoVMListOfPlan) { //
-        GridScheduler scheduler = tornadoVMListOfPlan.getSecond();
-        List<ImmutableTaskGraph> taskGraphs = tornadoVMListOfPlan.getFirst();
+            TornadoVMMasterPlan tornadoVMMasterPlan) { //
         Configuration config = model.configuration();
 
         Weights weights = model.weights();
         int dim = config.dim;
-        int kvDim = (config.dim * config.numberOfKeyValueHeads) / config.numberOfHeads;
 
         // copy the token embedding into x
         weights.token_embedding_table.copyTo(token * dim, state.x, 0, dim);
+
         MemorySegment.copy(state.x.asMemorySegment(), 0, state.wrapX.getSegmentWithHeader(), 0, dim * 4);
 
-        state.positionAndLayer.set(0, position);
-
-        // @formatter:off
-        try (
-            TornadoExecutionPlan executionPlan = new TornadoExecutionPlan(
-                    taskGraphs.get(0),
-                    taskGraphs.get(1),
-                    taskGraphs.get(2),
-                    taskGraphs.get(3),
-                    taskGraphs.get(4),
-                    taskGraphs.get(5),
-                    taskGraphs.get(6),
-                    taskGraphs.get(7))
-        ) {
-        // @formatter:on
-            // Step 0: Initial buffer setup
-            executionPlan.withGraph(0).withGridScheduler(scheduler).execute();
-
-            for (int l = 0; l < config.numberOfLayers; l++) {
-
-                state.positionAndLayer.set(1, l); // Update before execute (it an every copy in)
-
-                // Step 1: RMSNorm for attention
-                executionPlan.withGraph(1).withGridScheduler(scheduler).execute();
-
-                // Step 2: QKV Matmuls
-                executionPlan.withGraph(2).withGridScheduler(scheduler).execute();
-
-                // Step 3: RoPE rotation
-                executionPlan.withGraph(3).withGridScheduler(scheduler).execute();
-
-                // new shift by l
-                //    // Calculate the offset based on layer, max sequence length, and position
-                long offset = l * config.contextLength * kvDim + position * kvDim;
-                System.out.println("Mapping memory regions at offset: " + offset);
-                System.out.println("Key cache size: " + state.wrapKeyCache.getSize());
-                System.out.println("K vector size: " + state.wrapK.getSize());
-
-                executionPlan.mapOnDeviceMemoryRegion(state.wrapKeyCache, state.wrapK, offset, 3, 4);
-                executionPlan.mapOnDeviceMemoryRegion(state.wrapValueCache, state.wrapV, offset, 3, 4);
-
-                // Step 4: Multi-head Attention (scores, softmax, weighted sum)
-                executionPlan.withGraph(4).withGridScheduler(scheduler).execute();
-
-                // Step 5: Feed-forward neural network
-                executionPlan.withGraph(5).withGridScheduler(scheduler).execute();
-                System.out.println("====== End of layer ====== " + l);
-            }
-
-            // Final RMSNorm
-            executionPlan.withGraph(6).withGridScheduler(scheduler).execute();
-
-            // Final projection to logits
-            executionPlan.withGraph(7).withGridScheduler(scheduler).execute();
-
-            // Copy results from TornadoVM buffers to state.logits
-            state.logits.asMemorySegment().copyFrom(state.wrapLogits.getSegment());
-        } catch (TornadoExecutionPlanException e) {
-            throw new RuntimeException(e);
-        }
+        tornadoVMMasterPlan.tornadoVMForwardExecute(position);
 
         // This copy-out after every execution !!!
         state.logits.asMemorySegment().copyFrom(state.wrapLogits.getSegment());
         return state.logits;
     }
+
+
+//    static FloatTensor forwardTornadoVM(Llama model, State state, int token, int position,  //
+//            Tuple2<List<ImmutableTaskGraph>, GridScheduler> tornadoVMListOfPlan) { //
+//        GridScheduler scheduler = tornadoVMListOfPlan.getSecond();
+//        List<ImmutableTaskGraph> taskGraphs = tornadoVMListOfPlan.getFirst();
+//        Configuration config = model.configuration();
+//
+//        Weights weights = model.weights();
+//        int dim = config.dim;
+//        int kvDim = (config.dim * config.numberOfKeyValueHeads) / config.numberOfHeads;
+//
+//        // copy the token embedding into x
+//        weights.token_embedding_table.copyTo(token * dim, state.x, 0, dim);
+//
+//        MemorySegment.copy(state.x.asMemorySegment(), 0, state.wrapX.getSegmentWithHeader(), 0, dim * 4);
+//
+//        state.positionAndLayer.set(0, position);
+//        System.out.println("Position: " + position);
+//
+////        MasterPlan.execute(); -> state.x
+//        // @formatter:off
+//        try (
+//            TornadoExecutionPlan executionPlan = new TornadoExecutionPlan(
+//                    taskGraphs.get(0),
+//                    taskGraphs.get(1),
+//                    taskGraphs.get(2),
+//                    taskGraphs.get(3),
+//                    taskGraphs.get(4),
+//                    taskGraphs.get(5),
+//                    taskGraphs.get(6),
+//                    taskGraphs.get(7))
+//        ) {
+//        // @formatter:on
+//            // Step 0: Initial buffer setup
+//            executionPlan.withGraph(0).withGridScheduler(scheduler).execute();
+//
+//            for (int l = 0; l < config.numberOfLayers; l++) {
+//                System.out.println("");
+//                System.out.println("====== Start of layer ====== " + l);
+//
+//                state.positionAndLayer.set(1, l); // Update before execute (it an every copy in)
+//
+//                // Step 1: RMSNorm for attention
+//                executionPlan.withGraph(1).withGridScheduler(scheduler).execute();
+//
+//                // Step 2: QKV Matmuls
+//                executionPlan.withGraph(2).withGridScheduler(scheduler).execute();
+//
+//                // Step 3: RoPE rotation
+//                executionPlan.withGraph(3).withGridScheduler(scheduler).execute();
+//
+//                // new shift by l
+//                //    // Calculate the offset based on layer, max sequence length, and position
+//                long offset = l * config.contextLength * kvDim + position * kvDim;
+//
+//                System.out.println("Mapping memory regions at offset: " + offset);
+//                System.out.println("Key cache size: " + state.wrapKeyCache.getSize());
+//                System.out.println("K vector size: " + state.wrapK.getSize());
+//
+//                System.out.println("Layer: " + l + ", Position: " + position);
+//                System.out.println("Dimensions - dim: " + config.dim + ", kvDim: " + kvDim + ", contextLength: " + config.contextLength);
+//                System.out.println("Calculated offset: " + offset);
+//
+////                executionPlan.mapOnDeviceMemoryRegion(state.wrapK, state.wrapKeyCache, offset, 3, 4);
+////                executionPlan.mapOnDeviceMemoryRegion(state.wrapV, state.wrapValueCache, offset, 3, 4);
+//
+//                executionPlan.mapOnDeviceMemoryRegion(state.wrapKeyCache, state.wrapK, offset, 3, 4);
+//                executionPlan.mapOnDeviceMemoryRegion(state.wrapValueCache, state.wrapV, offset, 3, 4);
+//
+//                // Step 4: Multi-head Attention (scores, softmax, weighted sum)
+//                executionPlan.withGraph(4).withGridScheduler(scheduler).execute();
+//
+//                // Step 5: Feed-forward neural network
+//                executionPlan.withGraph(5).withGridScheduler(scheduler).execute();
+//                executionPlan.withAllGraphs();
+//                System.out.println("====== End of layer ====== " + l);
+//            }
+//
+//            // Final RMSNorm
+//            executionPlan.withGraph(6).withGridScheduler(scheduler).execute();
+//
+//            // Final projection to logits
+//            executionPlan.withGraph(7).withGridScheduler(scheduler).execute();
+//
+//            // Copy results from TornadoVM buffers to state.logits
+////            state.logits.asMemorySegment().copyFrom(state.wrapLogits.getSegment());
+//        } catch (TornadoExecutionPlanException e) {
+//            throw new RuntimeException(e);
+//        }
+//
+//        // This copy-out after every execution !!!
+//        state.logits.asMemorySegment().copyFrom(state.wrapLogits.getSegment());
+//        return state.logits;
+//    }
 
     static FloatTensor forwardTornadoVMDebug(Llama model, State state, int token, int position, Tuple2<List<ImmutableTaskGraph>, GridScheduler> tornadoVMListOfPlan) {
 
@@ -288,7 +323,12 @@ public record Llama(Configuration configuration, Tokenizer tokenizer, Weights we
             System.out.println("Mapping memory regions at offset: " + offset);
             System.out.println("Key cache size: " + state.wrapKeyCache.getSize());
             System.out.println("K vector size: " + state.wrapK.getSize());
-
+//            long kvDim = (config.dim * config.numberOfKeyValueHeads) / config.numberOfHeads;
+//            long offset = layer * config.contextLength * kvDim + position * kvDim;
+//            System.out.println("Layer: " + layer + ", Position: " + position);
+//            System.out.println("Dimensions - dim: " + config.dim + ", kvDim: " + kvDim +
+//                    ", contextLength: " + config.contextLength);
+//            System.out.println("Calculated offset: " + offset);
             // CRITICAL: The correct way to map memory regions
             // We need to map both the key and value cache regions before executing attention
             // The order of arguments is (dest, source, offset, fromGraphIndex, toGraphIndex)
@@ -360,8 +400,9 @@ public record Llama(Configuration configuration, Tokenizer tokenizer, Weights we
      */
     public static List<Integer> generateTokens(Llama model, State state, int startPosition, List<Integer> promptTokens, Set<Integer> stopTokens, int maxTokens, Sampler sampler, boolean echo,
             IntConsumer onTokenGenerated) {
-        TornadoVMLayerPlanner tornadoVMLayerPlanner = new TornadoVMLayerPlanner(state, model);
-        Tuple2<List<ImmutableTaskGraph>, GridScheduler> tornadoVMPlan = tornadoVMLayerPlanner.setupTornadoForwardPlan();
+
+        TornadoVMMasterPlan tornadoVMPlan = new TornadoVMMasterPlan(state, model);
+
 
         long startNanos = System.nanoTime();
         long startGen = 0;

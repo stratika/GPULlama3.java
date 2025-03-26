@@ -71,12 +71,20 @@ public final class State {
         this.wrapLogits = new FloatArray(config.vocabularySize);
         this.wrapX = new FloatArray(config.dim);
         this.wrapQ = new FloatArray(config.dim);
-        this.wrapK = new FloatArray(config.dim);
-        this.wrapV = new FloatArray(config.dim);
+//        this.wrapK = new FloatArray(config.dim);
+//        this.wrapV = new FloatArray(config.dim);
+        this.wrapK = new FloatArray(config.contextLength * kvDim * config.numberOfLayers);
+        this.wrapV = new FloatArray(config.contextLength * kvDim * config.numberOfLayers);
         this.wrapAtt = new FloatArray(config.numberOfHeads * config.contextLength);
-        this.wrapKeyCache = new FloatArray(config.contextLength * kvDim * config.numberOfLayers);
-        this.wrapValueCache = new FloatArray(config.contextLength * kvDim * config.numberOfLayers);
+        this.wrapKeyCache = new FloatArray(config.dim);
+        this.wrapValueCache = new FloatArray(config.dim);
         this.positionAndLayer = new IntArray(2);
         this.latestToken = -1;
+        long totalCacheSize = config.contextLength * kvDim * config.numberOfLayers;
+        System.out.println("Allocating KV cache with dimensions:");
+        System.out.println("- Context length: " + config.contextLength);
+        System.out.println("- KV dimension: " + kvDim);
+        System.out.println("- Number of layers: " + config.numberOfLayers);
+        System.out.println("- Total elements: " + totalCacheSize);
     }
 }
