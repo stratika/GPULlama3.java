@@ -52,6 +52,10 @@ public class TornadoVMMasterPlan {
                 System.out.println("====== Start of layer ====== " + l);
 
                 state.positionAndLayer.set(1, l); // Update before execute (it an every copy in)
+                int offset = l * config.contextLength * kvDim;
+                int layerOffset = offset  + position;
+
+                state.positionAndLayer.set(2, layerOffset);
 
                 // Step 1: RMSNorm for attention
                 executionPlan.withGraph(1).withGridScheduler(scheduler).execute();
@@ -64,33 +68,31 @@ public class TornadoVMMasterPlan {
 
                 // new shift by l
                 //    // Calculate the offset based on layer, max sequence length, and position
-                long offset = l * config.contextLength * kvDim + position * kvDim;
 
-                System.out.println("Mapping memory regions at offset: " + offset);
+                System.out.println("Mapping memory regions at offset: " + layerOffset);
                 System.out.println("Key cache size: " + state.wrapKeyCache.getSize());
                 System.out.println("K vector size: " + state.wrapK.getSize());
 
                 System.out.println("Layer: " + l + ", Position: " + position);
                 System.out.println("Dimensions - dim: " + config.dim + ", kvDim: " + kvDim + ", contextLength: " + config.contextLength);
-                System.out.println("Calculated offset: " + offset);
+                System.out.println("Calculated offset: " + layerOffset);
 
-                executionPlan.mapOnDeviceMemoryRegion(state.wrapKeyCache, state.wrapK, offset, 3, 4);
-                executionPlan.mapOnDeviceMemoryRegion(state.wrapValueCache, state.wrapV, offset, 3, 4);
+                executionPlan.withGraph(4).execute();
 
                 // Step 4: Multi-head Attention (scores, softmax, weighted sum)
-                executionPlan.withGraph(4).withGridScheduler(scheduler).execute();
+                executionPlan.withGraph(5).withGridScheduler(scheduler).execute();
 
                 // Step 5: Feed-forward neural network
-                executionPlan.withGraph(5).withGridScheduler(scheduler).execute();
+                executionPlan.withGraph(6).withGridScheduler(scheduler).execute();
                 executionPlan.withAllGraphs();
                 System.out.println("====== End of layer ====== " + l);
             }
 
             // Final RMSNorm
-            executionPlan.withGraph(6).withGridScheduler(scheduler).execute();
+            executionPlan.withGraph(7).withGridScheduler(scheduler).execute();
 
             // Final projection to logits
-            executionPlan.withGraph(7).withGridScheduler(scheduler).execute();
+            executionPlan.withGraph(8).withGridScheduler(scheduler).execute();
 
             // Copy results from TornadoVM buffers to state.logits
         } catch (TornadoExecutionPlanException e) {

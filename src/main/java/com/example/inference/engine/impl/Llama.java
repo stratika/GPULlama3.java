@@ -75,7 +75,8 @@ public record Llama(Configuration configuration, Tokenizer tokenizer, Weights we
             }
 
             // save key,value at this time step (position) to our kv cache
-            //int loff = l * config.seq_len * kvDim; // kv cache layer offset for convenience
+            //int loff = l * config.seq_len * kvDim;
+            // kv cache layer offset for convenience
             state.k.copyTo(0, state.keyCache[l], position * kvDim, kvDim);
             state.v.copyTo(0, state.valueCache[l], position * kvDim, kvDim);
 

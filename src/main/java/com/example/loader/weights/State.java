@@ -29,12 +29,11 @@ public final class State {
     // Wrappers for TornadoVM compatibility (FloatArray data structure for TornadoVM acceleration)
     // TornadoVM uses FloatArray for more efficient handling of data, particularly when running on GPU or other accelerators.
     public final FloatArray wrapLogits; // FloatArray wrapper for the logits tensor, compatible with TornadoVM for GPU execution.
-    public final FloatArray wrapXFloat; // FloatArray wrapper for the x activation tensor, enabling faster processing in TornadoVM.
     public final FloatArray wrapXb;     // FloatArray wrapper for xb (residual branch activation), optimized for TornadoVM usage.
     public final FloatArray wrapXb2;    // FloatArray wrapper for xb2, another residual buffer to aid in computations with TornadoVM.
     public final FloatArray wrapHb;     // FloatArray wrapper for hb (hidden dimension buffer for FFN), optimized for TornadoVM.
     public final FloatArray wrapHb2;    // FloatArray wrapper for hb2, additional hidden buffer for FFN, for compatibility with TornadoVM.
-    public final FloatArray wrapX;
+    public final FloatArray wrapX;     // FloatArray wrapper for the current activation tensor, optimized for TornadoVM.
 
     public final FloatArray wrapQ; // FloatArray wrapper for the query tensor, optimized for TornadoVM.
     public final FloatArray wrapK; // FloatArray wrapper for the key tensor, optimized for TornadoVM.
@@ -63,24 +62,28 @@ public final class State {
         int kvDim = (config.dim * config.numberOfKeyValueHeads) / config.numberOfHeads;
         this.keyCache = Stream.generate(() -> ArrayFloatTensor.allocate(config.contextLength, kvDim)).limit(config.numberOfLayers).toArray(FloatTensor[]::new);
         this.valueCache = Stream.generate(() -> ArrayFloatTensor.allocate(config.contextLength, kvDim)).limit(config.numberOfLayers).toArray(FloatTensor[]::new);
-        this.wrapXFloat = new FloatArray(config.dim);
+
+        this.wrapX = new FloatArray(config.dim);
         this.wrapXb = new FloatArray(config.dim);
         this.wrapXb2 = new FloatArray(config.dim);
         this.wrapHb = new FloatArray(config.hiddenDim);
         this.wrapHb2 = new FloatArray(config.hiddenDim);
+
         this.wrapLogits = new FloatArray(config.vocabularySize);
-        this.wrapX = new FloatArray(config.dim);
+
         this.wrapQ = new FloatArray(config.dim);
-//        this.wrapK = new FloatArray(config.dim);
-//        this.wrapV = new FloatArray(config.dim);
-        this.wrapK = new FloatArray(config.contextLength * kvDim * config.numberOfLayers);
-        this.wrapV = new FloatArray(config.contextLength * kvDim * config.numberOfLayers);
+        this.wrapK = new FloatArray(config.dim);
+        this.wrapV = new FloatArray(config.dim);
+
+        // dim vs kvdim
+        this.wrapKeyCache = new FloatArray(config.contextLength * kvDim * config.numberOfLayers);
+        this.wrapValueCache = new FloatArray(config.contextLength * kvDim * config.numberOfLayers);
+
         this.wrapAtt = new FloatArray(config.numberOfHeads * config.contextLength);
-        this.wrapKeyCache = new FloatArray(config.dim);
-        this.wrapValueCache = new FloatArray(config.dim);
-        this.positionAndLayer = new IntArray(2);
+        this.positionAndLayer = new IntArray(3);
         this.latestToken = -1;
         long totalCacheSize = config.contextLength * kvDim * config.numberOfLayers;
+
         System.out.println("Allocating KV cache with dimensions:");
         System.out.println("- Context length: " + config.contextLength);
         System.out.println("- KV dimension: " + kvDim);

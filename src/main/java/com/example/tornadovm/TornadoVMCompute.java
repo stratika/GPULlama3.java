@@ -90,7 +90,8 @@ public class TornadoVMCompute {
         }
     }
 
-    public static void ropeRotation(KernelContext context, IntArray positionNlayer, FloatArray sq, FloatArray sk, int kv_dim, int head_size) {
+    public static void ropeRotation(KernelContext context,
+            IntArray positionNlayer, FloatArray sq, FloatArray sk, int kv_dim, int head_size) {
         int i = context.globalIdx * 2;
 
         // Ensure we're within bounds and handle the even indices properly
@@ -506,6 +507,15 @@ public class TornadoVMCompute {
         w.set(0, w.get(0));
     }
 
+    public static void forcePropagationFiveArrays
+            (FloatArray x, FloatArray y, FloatArray z, FloatArray w, FloatArray cv) {
+        x.set(0, x.get(0));
+        y.set(0, y.get(0));
+        z.set(0, z.get(0));
+        w.set(0, w.get(0));
+        cv.set(0, cv.get(0));
+    }
+
     /**
      * Calculate attention scores between query and key vectors
      */
@@ -696,4 +706,10 @@ public class TornadoVMCompute {
         output.set(idx, sum);
     }
 
+    public static void copyToCache(FloatArray dest, FloatArray src, IntArray positioNlayer) {
+        for (@Parallel int i = 0; i < src.getSize(); i++) {
+            dest.set(positioNlayer.get(2) + i, src.get(i));
+        }
+
+    }
 }
