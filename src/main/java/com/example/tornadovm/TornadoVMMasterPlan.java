@@ -76,19 +76,15 @@ public class TornadoVMMasterPlan {
             // @formatter:on
             state.positionAndLayer.set(0, position);
 
-            // Log initial memory usage
-//            System.out.printf("Initial device memory usage: %.2f MB\n",
-//                    executionPlan.getCurrentDeviceMemoryUsage() / (1024.0 * 1024.0));
-
             // Update before execute (it an every copy in)
+//            executionPlan.withGraph(0).withGridScheduler(scheduler).execute();
+            executionPlan.withGraph(0).withGridScheduler(scheduler).execute();
+//            executionPlan.forceCopyIn("rmsnorm",state.wrapX);
 
             for (int l = 0; l < config.numberOfLayers; l++) {
 //                System.out.println("");
 //                System.out.println("====== Start of layer ====== " + l);
 
-                TornadoExecutionResult execute0 = executionPlan.withGraph(0).withGridScheduler(scheduler)
-                        .withProfiler(ProfilerMode.SILENT).execute();
-//                logMemoryUsage(execute0, "Graph 0 execution", -1);
 
                 int layerOffset = l * config.contextLength * kvDim + position * kvDim;
 
@@ -97,54 +93,30 @@ public class TornadoVMMasterPlan {
 
 
                 // Step 1: RMSNorm for attention
-                TornadoExecutionResult execute1 = executionPlan.withGraph(1).withGridScheduler(scheduler)
-                        .withProfiler(ProfilerMode.SILENT).execute();
-//                logMemoryUsage(execute1, "RMSNorm", l);
+                executionPlan.withGraph(1).withGridScheduler(scheduler).execute();
 
                 // Step 2: QKV Matmuls
-                TornadoExecutionResult execute2 =
-                        executionPlan.withGraph(2).withGridScheduler(scheduler)
-                        .withProfiler(ProfilerMode.SILENT).execute();
-//                logMemoryUsage(execute2, "QKV Matmuls", l);
+                executionPlan.withGraph(2).withGridScheduler(scheduler).execute();
 
                 // Step 3: RoPE rotation
-                TornadoExecutionResult execute3 = executionPlan.withGraph(3).withGridScheduler(scheduler)
-                        .withProfiler(ProfilerMode.SILENT).execute();
-//                logMemoryUsage(execute3, "RoPE", l);
+                executionPlan.withGraph(3).withGridScheduler(scheduler).execute();
 
-//                System.out.printf("Layer=%d, Position=%d, KVDim=%d, Offset=%d, LayerOffset=%d, CacheSize=%d\n",
-//                        l, position, kvDim, layerOffset, layerOffset, state.wrapKeyCache.getSize());
-//                System.out.println("Layer: " + l + ", Position: " + position);
-//                System.out.println("KV dimensions: kvDim=" + kvDim + ", contextLength=" + config.contextLength);
-//                System.out.println("Key cache size: " + state.wrapKeyCache.getSize());
-//                System.out.println("Calculated offset: " + layerOffset);
-//                System.out.println("Would access up to: " + (layerOffset + kvDim));
-                TornadoExecutionResult execute4 = executionPlan.withGraph(4)
-                        .withProfiler(ProfilerMode.SILENT).execute();
-//                logMemoryUsage(execute4, "Copy to Cache", l);
+                executionPlan.withGraph(4).execute();
 
                 // Step 4: Multi-head Attention (scores, softmax, weighted sum)
-                TornadoExecutionResult execute5 = executionPlan.withGraph(5).withGridScheduler(scheduler)
-                        .withProfiler(ProfilerMode.SILENT).execute();
-//                logMemoryUsage(execute5, "Attention", l);
+                 executionPlan.withGraph(5).withGridScheduler(scheduler).execute();
 
                 // Step 5: Feed-forward neural network
-                TornadoExecutionResult execute6 = executionPlan.withGraph(6).withGridScheduler(scheduler)
-                        .withProfiler(ProfilerMode.SILENT).execute();
-//                logMemoryUsage(execute6, "FFN", l);
+                executionPlan.withGraph(6).withGridScheduler(scheduler).execute();
 
 //                System.out.println("====== End of layer ====== " + l);
             }
 
             // Final RMSNorm
-            TornadoExecutionResult execute7 = executionPlan.withGraph(7).withGridScheduler(scheduler)
-                    .withProfiler(ProfilerMode.SILENT).execute();
-//            logMemoryUsage(execute7, "Final RMSNorm", -1);
+            executionPlan.withGraph(7).withGridScheduler(scheduler).execute();
 
             // Final projection to logits
-            TornadoExecutionResult execute8 = executionPlan.withGraph(8).withGridScheduler(scheduler)
-                    .withProfiler(ProfilerMode.SILENT).execute();
-//            logMemoryUsage(execute8, "Final Projection", -1);
+            executionPlan.withGraph(8).withGridScheduler(scheduler).execute();
 
             // Copy results from TornadoVM buffers to state.logits
         } catch (TornadoExecutionPlanException e) {
