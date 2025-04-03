@@ -90,8 +90,7 @@ public class TornadoVMCompute {
         }
     }
 
-    public static void ropeRotation(KernelContext context,
-            IntArray positionNlayer, FloatArray sq, FloatArray sk, int kv_dim, int head_size) {
+    public static void ropeRotation(KernelContext context, IntArray positionNlayer, FloatArray sq, FloatArray sk, int kv_dim, int head_size) {
         int i = context.globalIdx * 2;
 
         // Ensure we're within bounds and handle the even indices properly
@@ -494,7 +493,18 @@ public class TornadoVMCompute {
         y.set(0, y.get(0));
     }
 
+    public static void forcePropagationTwoArrays(FloatArray x, IntArray y) {
+        x.set(0, x.get(0));
+        y.set(0, y.get(0));
+    }
+
     public static void forcePropagationThreeArrays(FloatArray x, FloatArray y, FloatArray z) {
+        x.set(0, x.get(0));
+        y.set(0, y.get(0));
+        z.set(0, z.get(0));
+    }
+
+    public static void forcePropagationThreeArrays(FloatArray x, FloatArray y, IntArray z) {
         x.set(0, x.get(0));
         y.set(0, y.get(0));
         z.set(0, z.get(0));
@@ -507,13 +517,21 @@ public class TornadoVMCompute {
         w.set(0, w.get(0));
     }
 
-    public static void forcePropagationFiveArrays
-            (FloatArray x, FloatArray y, FloatArray z, FloatArray w, FloatArray cv) {
+    public static void forcePropagationFiveArrays(FloatArray x, FloatArray y, FloatArray z, FloatArray w, FloatArray cv) {
         x.set(0, x.get(0));
         y.set(0, y.get(0));
         z.set(0, z.get(0));
         w.set(0, w.get(0));
         cv.set(0, cv.get(0));
+    }
+
+    public static void forcePropagationSixArrays(FloatArray x, FloatArray y, FloatArray z, FloatArray w, FloatArray cv, FloatArray xyz) {
+        x.set(0, x.get(0));
+        y.set(0, y.get(0));
+        z.set(0, z.get(0));
+        w.set(0, w.get(0));
+        cv.set(0, cv.get(0));
+        xyz.set(0, xyz.get(0));
     }
 
     /**
@@ -707,8 +725,9 @@ public class TornadoVMCompute {
     }
 
     public static void copyToCache(FloatArray dest, FloatArray src, IntArray positioNlayer) {
+        int destOffset = positioNlayer.get(2);
         for (@Parallel int i = 0; i < src.getSize(); i++) {
-            dest.set(positioNlayer.get(2) + i, src.get(i));
+            dest.set(destOffset + i, src.get(i));
         }
 
     }

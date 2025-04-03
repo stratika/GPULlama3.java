@@ -84,10 +84,10 @@ public final class State {
         this.latestToken = -1;
         long totalCacheSize = config.contextLength * kvDim * config.numberOfLayers;
 
-        System.out.println("Allocating KV cache with dimensions:");
-        System.out.println("- Context length: " + config.contextLength);
-        System.out.println("- KV dimension: " + kvDim);
-        System.out.println("- Number of layers: " + config.numberOfLayers);
-        System.out.println("- Total elements: " + totalCacheSize);
+//        System.out.println("Allocating KV cache with dimensions:");
+//        System.out.println("- Context length: " + config.contextLength);
+//        System.out.println("- KV dimension: " + kvDim);
+//        System.out.println("- Number of layers: " + config.numberOfLayers);
+//        System.out.println("- Total elements: " + totalCacheSize);
     }
 }
