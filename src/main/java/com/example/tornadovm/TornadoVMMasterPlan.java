@@ -51,10 +51,14 @@ public class TornadoVMMasterPlan {
 
         // Update before execute (it an every copy in)
 
+        executionPlan.withGraph(0).withGridScheduler(scheduler).execute();
+
+//        executionPlan.forceCopyIn(state.x);
+
         for (int l = 0; l < config.numberOfLayers; l++) {
             //                System.out.println("");
             //                System.out.println("====== Start of layer ====== " + l);
-            executionPlan.withGraph(0).withGridScheduler(scheduler).execute();
+
 
             int layerOffset = l * config.contextLength * kvDim + position * kvDim;
 
@@ -99,5 +103,9 @@ public class TornadoVMMasterPlan {
         } else {
             System.out.printf("%s: Total memory usage = %.2f MB\n", stage, memoryInMB);
         }
+    }
+
+    public void freeTornadoExecutionPlan() {
+        executionPlan.freeDeviceMemory();
     }
 }

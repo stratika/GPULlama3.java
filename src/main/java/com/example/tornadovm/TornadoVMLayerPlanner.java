@@ -154,7 +154,7 @@ public class TornadoVMLayerPlanner {
 
         // ================ TASK GRAPH 1: RMS NORM ================
         TaskGraph rmsNormGraph = new TaskGraph("rmsnorm")
-//                .consumeFromDevice(state.wrapX)
+    //                .consumeFromDevice(state.wrapX)
                 .consumeFromDevice(lookUpBufferX.getTaskGraphName(), state.wrapX)
                 .transferToDevice(DataTransferMode.FIRST_EXECUTION, weights.rms_att_weightFlat, intermediateReduceFirst, state.wrapXb)
                 .transferToDevice(DataTransferMode.EVERY_EXECUTION, state.positionAndLayer)
@@ -279,6 +279,8 @@ public class TornadoVMLayerPlanner {
                 .persistOnDevice(state.wrapX, state.positionAndLayer, context);
         taskGraphs.add(finalRmsNormGraph.snapshot());
 
+
+        // Taskgraph 6 & 7 can be merged into one !!!!
 
         // ================ TASK GRAPH 7: FINAL PROJECTION TO LOGITS ================
         TaskGraph logitsGraph = new TaskGraph("logits")
