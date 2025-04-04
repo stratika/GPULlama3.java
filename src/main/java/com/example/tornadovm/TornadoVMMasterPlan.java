@@ -86,11 +86,8 @@ public class TornadoVMMasterPlan {
             //                System.out.println("====== End of layer ====== " + l);
         }
 
-        // Final RMSNorm
+        // Final RMSNorm and Logits
         executionPlan.withGraph(7).withGridScheduler(scheduler).execute();
-
-        // Final projection to logits
-        executionPlan.withGraph(8).withGridScheduler(scheduler).execute();
 
         // Copy results from TornadoVM buffers to state.logits
     }

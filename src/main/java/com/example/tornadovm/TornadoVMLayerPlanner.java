@@ -96,12 +96,12 @@ public class TornadoVMLayerPlanner {
         tornadoForwardScheduler.addWorkerGrid("ffn.residual2", dimWorker);
 
         // Scheduler 6: Final RMSNorm
-        tornadoForwardScheduler.addWorkerGrid("finalrms.reduceRMS", dimWorker);
-        tornadoForwardScheduler.addWorkerGrid("finalrms.sum", singleWorker);
-        tornadoForwardScheduler.addWorkerGrid("finalrms.normalize", dimWorker);
+        tornadoForwardScheduler.addWorkerGrid("finalrms_and_logits.reduceRMS", dimWorker);
+        tornadoForwardScheduler.addWorkerGrid("finalrms_and_logits.sum", singleWorker);
+        tornadoForwardScheduler.addWorkerGrid("finalrms_and_logits.normalize", dimWorker);
 
         // Scheduler 7: Logits
-        tornadoForwardScheduler.addWorkerGrid("logits.projection", vocabWorker);
+        tornadoForwardScheduler.addWorkerGrid("finalrms_and_logits.projection", vocabWorker);
 
         return tornadoForwardScheduler;
     }
@@ -267,29 +267,19 @@ public class TornadoVMLayerPlanner {
                 taskGraphs.add(ffnGraph.snapshot());
 
 
-        // ================ TASK GRAPH 6: FINAL RMS NORM ================
-        TaskGraph finalRmsNormGraph = new TaskGraph("finalrms")
+        // ================ TASK GRAPH 6+7: FINAL RMS NORM AND LOGITS PROJECTION ================
+        TaskGraph finalRmsAndLogitsGraph = new TaskGraph("finalrms_and_logits")
                 .consumeFromDevice(ffnGraph.getTaskGraphName(), state.wrapX, state.positionAndLayer, context)
-                .transferToDevice(DataTransferMode.FIRST_EXECUTION, weights.rms_final_weight_as_floatArray)
+                .transferToDevice(DataTransferMode.FIRST_EXECUTION,intermediateReduceThree,
+                        weights.rms_final_weight_as_floatArray,  weights.wclsByteArray)
                 .task("reduceRMS", TornadoVMCompute::reduceSquareSums, context, state.wrapX, intermediateReduceThree, localSizeRMS)
                 .task("sum", TornadoVMCompute::finalSum, intermediateReduceThree, dim, config.rmsNormEps)
                 .task("normalize", TornadoVMCompute::normalizeAndScaleInNout, context, state.wrapX, weights.rms_final_weight_as_floatArray, intermediateReduceThree, dim, state.positionAndLayer)
-                .task("forcePropagationFinalRMS", TornadoVMCompute::forcePropagationTwoArrays, state.wrapX, state.positionAndLayer)
-                .persistOnDevice( weights.rms_final_weight_as_floatArray)
-                .persistOnDevice(state.wrapX, state.positionAndLayer, context);
-        taskGraphs.add(finalRmsNormGraph.snapshot());
-
-
-        // Taskgraph 6 & 7 can be merged into one !!!!
-
-        // ================ TASK GRAPH 7: FINAL PROJECTION TO LOGITS ================
-        TaskGraph logitsGraph = new TaskGraph("logits")
-                .consumeFromDevice(finalRmsNormGraph.getTaskGraphName(), state.wrapX, state.positionAndLayer, context)
-                .transferToDevice(DataTransferMode.FIRST_EXECUTION, weights.wclsByteArray)
                 .task("projection", TornadoVMCompute::matmulTornadoQ8, context, weights.wclsByteArray, state.wrapX, state.wrapLogits, dim)
-                .persistOnDevice(weights.wclsByteArray)
+                .persistOnDevice(weights.rms_final_weight_as_floatArray, weights.wclsByteArray, intermediateReduceThree, state.positionAndLayer)
                 .transferToHost(DataTransferMode.EVERY_EXECUTION, state.wrapLogits);
-        taskGraphs.add(logitsGraph.snapshot());
+        taskGraphs.add(finalRmsAndLogitsGraph.snapshot());
+
         // @formatter:on
 
         return new Tuple2<>(taskGraphs, setupGridSchedulers());
