@@ -418,6 +418,7 @@ public record Llama(Configuration configuration, Tokenizer tokenizer, Weights we
         for (int position = startPosition; position < maxTokens; ++position) {
             if (TornadoVMCompute.TORNADOVM) {
                 forwardTornadoVM(model, state, token, position, tornadoVMPlan);
+                System.exit(0);
             } else {
                 forwardJava(model, state, token, position);
             }

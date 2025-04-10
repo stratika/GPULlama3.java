@@ -13,7 +13,7 @@ import uk.ac.manchester.tornado.api.types.arrays.IntArray;
 import java.util.stream.IntStream;
 
 public class TornadoVMCompute {
-    public static final boolean TORNADOVM = Boolean.parseBoolean(System.getProperty("use.tornadovm", "false"));
+    public static final boolean TORNADOVM = Boolean.parseBoolean(System.getProperty("use.tornadovm", "true"));
 
     public TornadoVMCompute() {
     }
@@ -40,6 +40,42 @@ public class TornadoVMCompute {
             float result = value / (1.0f + TornadoMath.exp(-value));
             input.set(idx, result);
         }
+    }
+
+    /** Reductions launched in a single thread-block
+     *
+     * @param context
+     * @param output
+     * @param x
+     * @param weights
+     */
+    private static void reductionOneBlock(KernelContext context, FloatArray output, FloatArray x, FloatArray weights) {
+        int gid = context.globalIdx;
+        int lid = context.localIdx;
+        int groupSize = context.localGroupSizeX;
+        float[] localX = context.allocateFloatLocalArray(1024);
+        localX[lid] = x.get(gid);
+        localX[lid] = localX[lid] * localX[lid];
+        for (int stride = (groupSize / 2); stride > 0; stride /= 2) {
+            context.localBarrier();
+            if (lid < stride) {
+                localX[lid] += localX[lid + stride];
+            }
+        }
+
+        if (lid == 0) {
+            float ss = localX[0];
+            ss /= x.getSize();
+            ss += 1e-5f;
+            ss = 1.0f / TornadoMath.sqrt(ss);
+            output.set(0, ss);
+        }
+    }
+
+    private static void reductionOneBlock2(KernelContext context, FloatArray output, FloatArray x, FloatArray weights, FloatArray temp) {
+        int gid = context.globalIdx;
+        float ss = temp.get(0);
+        output.set(gid, weights.get(gid) * (ss * x.get(gid)));
     }
 
     /**

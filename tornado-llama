@@ -66,10 +66,10 @@ CMD+=("-Dtornado.threadInfo=false")
 CMD+=("-Dtornado.debug=false")
 CMD+=("-Dtornado.fullDebug=false")
 CMD+=("-Dtornado.print.kernel=false")
-CMD+=("-Dtornado.print.bytecodes=false")
+CMD+=("-Dtornado.print.bytecodes=true")
 CMD+=("-Dtornado.device.memory=7GB")
 CMD+=("-Dtornado.profiler=false")
-CMD+=("-Dtornado.deallocate.buffers=false")
+#CMD+=("-Dtornado.deallocate.buffers=false")
 #CMD+=("-Dgraal.Dump=*:5")
 #CMD+=("-Dgraal.PrintGraph=Network")
 #CMD+=("-Dgraal.PrintBackendCFG=true")
@@ -91,6 +91,7 @@ CMD+=("--stream" "$STREAM")
 CMD+=("--echo" "$ECHO")
 [ "$INTERACTIVE" = true ] && CMD+=("--interactive")
 [ "$INSTRUCT" = true ] && CMD+=("--instruct")
-
+echo "Executing command:"
+printf "  %s\n" "${CMD[@]}"
 # Execute command
 "${CMD[@]}"

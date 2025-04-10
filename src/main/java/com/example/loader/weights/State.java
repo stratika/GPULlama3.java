@@ -70,7 +70,6 @@ public final class State {
         this.wrapHb2 = new FloatArray(config.hiddenDim);
 
         this.wrapLogits = new FloatArray(config.vocabularySize);
-
         this.wrapQ = new FloatArray(config.dim);
         this.wrapK = new FloatArray(config.dim);
         this.wrapV = new FloatArray(config.dim);

@@ -53,12 +53,7 @@ public class TornadoVMMasterPlan {
 
         executionPlan.withGraph(0).withGridScheduler(scheduler).execute();
 
-//        executionPlan.forceCopyIn(state.x);
-
         for (int l = 0; l < config.numberOfLayers; l++) {
-            //                System.out.println("");
-            //                System.out.println("====== Start of layer ====== " + l);
-
 
             int layerOffset = l * config.contextLength * kvDim + position * kvDim;
 
@@ -68,26 +63,11 @@ public class TornadoVMMasterPlan {
             // Step 1: RMSNorm for attention
             executionPlan.withGraph(1).withGridScheduler(scheduler).execute();
 
-            // Step 2: QKV Matmuls
-            executionPlan.withGraph(2).withGridScheduler(scheduler).execute();
-
-            // Step 3: RoPE rotation
-            executionPlan.withGraph(3).withGridScheduler(scheduler).execute();
-
-            // Update Cache value and key
-            executionPlan.withGraph(4).execute();
-
-            // Step 4: Multi-head Attention (scores, softmax, weighted sum)
-            executionPlan.withGraph(5).withGridScheduler(scheduler).execute();
-
-            // Step 5: Feed-forward neural network
-            executionPlan.withGraph(6).withGridScheduler(scheduler).execute();
-
             //                System.out.println("====== End of layer ====== " + l);
         }
 
         // Final RMSNorm and Logits
-        executionPlan.withGraph(7).withGridScheduler(scheduler).execute();
+        executionPlan.withGraph(2).withGridScheduler(scheduler).execute();
 
         // Copy results from TornadoVM buffers to state.logits
     }
