@@ -49,11 +49,11 @@ public class TornadoVMCompute {
      * @param x
      * @param weights
      */
-    private static void reductionOneBlock(KernelContext context, FloatArray output, FloatArray x, FloatArray weights) {
+    public static void reductionOneBlock(KernelContext context, FloatArray output, FloatArray x, FloatArray weights, int localRMS) {
         int gid = context.globalIdx;
         int lid = context.localIdx;
         int groupSize = context.localGroupSizeX;
-        float[] localX = context.allocateFloatLocalArray(1024);
+        float[] localX = context.allocateFloatLocalArray(localRMS);
         localX[lid] = x.get(gid);
         localX[lid] = localX[lid] * localX[lid];
         for (int stride = (groupSize / 2); stride > 0; stride /= 2) {
@@ -72,11 +72,24 @@ public class TornadoVMCompute {
         }
     }
 
-    private static void reductionOneBlock2(KernelContext context, FloatArray output, FloatArray x, FloatArray weights, FloatArray temp) {
+    public static void reductionOneBlock2(KernelContext context, FloatArray output,
+            FloatArray x, FloatArray weights, FloatArray temp, IntArray positioNlayer, int size) {
         int gid = context.globalIdx;
         float ss = temp.get(0);
-        output.set(gid, weights.get(gid) * (ss * x.get(gid)));
+        int layerOffset = positioNlayer.get(1) * size;
+
+        output.set(gid, weights.get(layerOffset + gid) * (ss * x.get(gid)));
     }
+
+    public static void reductionOneBlock2InNout(KernelContext context,
+            FloatArray x, FloatArray weights, FloatArray temp, IntArray positioNlayer, int size) {
+        int gid = context.globalIdx;
+        float ss = temp.get(0);
+        int layerOffset = positioNlayer.get(1) * size;
+
+        x.set(gid, weights.get(layerOffset + gid) * (ss * x.get(gid)));
+    }
+
 
     /**
      * Element-wise multiplication using KernelContext
@@ -95,6 +108,7 @@ public class TornadoVMCompute {
             buffer.set(0, dummy);
         }
     }
+
 
     public static void matmulTornadoQ4Pure(ByteArray thisx, FloatArray that, FloatArray out, int dim1, int vocabSize) {
         final int BLOCK_SIZE = GGMLType.Q4_0.getBlockSize(); // Q4 block size

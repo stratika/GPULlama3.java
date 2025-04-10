@@ -63,8 +63,11 @@ public class TornadoVMLayerPlanner {
         tornadoForwardScheduler.addWorkerGrid("lookUpBufferX.forceUpdateXperToken", singleWorker);
 
         // Scheduler 1: RMSNorm
-        tornadoForwardScheduler.addWorkerGrid("layer.reduce", dimWorker);
-        tornadoForwardScheduler.addWorkerGrid("layer.sum", singleWorker);
+//        tornadoForwardScheduler.addWorkerGrid("layer.reduce", dimWorker);
+//        tornadoForwardScheduler.addWorkerGrid("layer.sum", singleWorker);
+//        tornadoForwardScheduler.addWorkerGrid("layer.normalize1", dimWorker);
+
+        tornadoForwardScheduler.addWorkerGrid("layer.reductionOneBlock", dimWorker);
         tornadoForwardScheduler.addWorkerGrid("layer.normalize1", dimWorker);
 
         // Scheduler 2: QKV
@@ -96,8 +99,7 @@ public class TornadoVMLayerPlanner {
         tornadoForwardScheduler.addWorkerGrid("layer.residual2", dimWorker);
 
         // Scheduler 6: Final RMSNorm
-        tornadoForwardScheduler.addWorkerGrid("finalrms_and_logits.reduceRMS", dimWorker);
-        tornadoForwardScheduler.addWorkerGrid("finalrms_and_logits.sum", singleWorker);
+        tornadoForwardScheduler.addWorkerGrid("finalrms_and_logits.reductionOneBlock", dimWorker);
         tornadoForwardScheduler.addWorkerGrid("finalrms_and_logits.normalize", dimWorker);
 
         // Scheduler 7: Logits
@@ -178,10 +180,8 @@ public class TornadoVMLayerPlanner {
                 .transferToDevice(DataTransferMode.EVERY_EXECUTION, state.positionAndLayer)
 
                 // -------- RMS NORM --------
-                .task("reduce", TornadoVMCompute::reduceSquareSums, context, state.wrapX, intermediateReduceFirst, localSizeRMS)
-                .task("sum", TornadoVMCompute::finalSum, intermediateReduceFirst, dim, config.rmsNormEps)
-                .task("normalize1", TornadoVMCompute::normalizeAndScale, context, state.wrapXb, state.wrapX, weights.rms_att_weightFlat, intermediateReduceFirst, dim, state.positionAndLayer)
-
+                .task("reductionOneBlock", TornadoVMCompute::reductionOneBlock, context, intermediateReduceFirst, state.wrapX, weights.rms_att_weightFlat, localSizeRMS)
+                .task("normalize1", TornadoVMCompute::reductionOneBlock2, context, state.wrapXb, state.wrapX, weights.rms_att_weightFlat, intermediateReduceFirst, state.positionAndLayer, dim)
                 // -------- QKV MATMULS --------
                 .task("qmatmul", TornadoVMCompute::matrixVectorSimple, context, state.wrapXb, state.wrapQ, weights.wqFlat, dim, dim, state.positionAndLayer)
                 .task("kmatmul", TornadoVMCompute::matrixVectorSimple, context, state.wrapXb, state.wrapK, weights.wkFlat, dim, kvDim, state.positionAndLayer)
@@ -225,9 +225,8 @@ public class TornadoVMLayerPlanner {
                         state.wrapX, state.positionAndLayer, context
                 )
                 .transferToDevice(DataTransferMode.FIRST_EXECUTION, state.wrapLogits, intermediateReduceThree,  weights.rms_final_weight_as_floatArray,  weights.wclsByteArray)
-                .task("reduceRMS", TornadoVMCompute::reduceSquareSums, context, state.wrapX, intermediateReduceThree, localSizeRMS)
-                .task("sum", TornadoVMCompute::finalSum, intermediateReduceThree, dim, config.rmsNormEps)
-                .task("normalize", TornadoVMCompute::normalizeAndScaleInNout, context, state.wrapX, weights.rms_final_weight_as_floatArray, intermediateReduceThree, dim, state.positionAndLayer)
+                .task("reductionOneBlock", TornadoVMCompute::reductionOneBlock, context, intermediateReduceThree, state.wrapX, weights.rms_final_weight_as_floatArray, localSizeRMS)
+                .task("normalize", TornadoVMCompute::reductionOneBlock2InNout, context, state.wrapX, weights.rms_final_weight_as_floatArray, intermediateReduceThree, state.positionAndLayer, dim)
                 .task("projection", TornadoVMCompute::matmulTornadoQ8, context, weights.wclsByteArray, state.wrapX, state.wrapLogits, dim)
                 .transferToHost(DataTransferMode.EVERY_EXECUTION, state.wrapLogits);
         taskGraphs.add(finalRmsAndLogitsGraph.snapshot());
