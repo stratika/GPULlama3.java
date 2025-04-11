@@ -21,24 +21,21 @@ public class TornadoVMCompute {
     /**
      * In-place addition using KernelContext
      */
-    public static void addInPlace(KernelContext context, FloatArray input, FloatArray output) {
-        int idx = context.globalIdx;
-
-        if (idx < Math.min(input.getSize(), output.getSize())) {
-            output.set(idx, output.get(idx) + input.get(idx));
+    public static void addInPlace(FloatArray output, FloatArray input) {
+        for (@Parallel int i = 0; i < input.getSize(); i++) {
+            output.set(i, input.get(i) + output.get(i));
         }
     }
 
     /**
-     * SiLU activation function using KernelContext
+     * SiLU activation function
      */
-    public static void siluActivation(KernelContext context, FloatArray input) {
-        int idx = context.globalIdx;
-
-        if (idx < input.getSize()) {
-            float value = input.get(idx);
-            float result = value / (1.0f + TornadoMath.exp(-value));
-            input.set(idx, result);
+    public static void siluElemWiseMulActivation(int hidenDimSize, FloatArray hb, FloatArray hb2) {
+        for (@Parallel int i = 0; i < hidenDimSize; i++) {
+            float val = hb.get(i);
+            val *= (1.0f / (1.0f + TornadoMath.exp(-val)));
+            val *= hb2.get(i);
+            hb2.set(i, val);
         }
     }
 
@@ -47,9 +44,8 @@ public class TornadoVMCompute {
      * @param context
      * @param output
      * @param x
-     * @param weights
      */
-    public static void reductionOneBlock(KernelContext context, FloatArray output, FloatArray x, FloatArray weights, int localRMS) {
+    public static void reductionOneBlock(KernelContext context, FloatArray output, FloatArray x, int localRMS, float rmsNormEps) {
         int gid = context.globalIdx;
         int lid = context.localIdx;
         int groupSize = context.localGroupSizeX;
@@ -66,7 +62,7 @@ public class TornadoVMCompute {
         if (lid == 0) {
             float ss = localX[0];
             ss /= x.getSize();
-            ss += 1e-5f;
+            ss += rmsNormEps;
             ss = 1.0f / TornadoMath.sqrt(ss);
             output.set(0, ss);
         }
@@ -390,17 +386,6 @@ public class TornadoVMCompute {
         return decodeFloat16(float16Value);
     }
 
-    public static void matmudl(ByteArray thisx, FloatArray that, FloatArray out, int dim0, int dim1) {
-        IntStream.range(0, dim0).parallel().forEach(i -> {
-            float result = 0f;
-            int thisOffset = i * dim1;
-            for (int j = 0; j < dim1; j++) {
-                //                result += thisx.get(thisOffset + j) * that.get(j);
-                result += getFloatFromByteArray(thisOffset + j, thisx) * that.get(j);
-            }
-            out.set(i, result);
-        });
-    }
 
     public static void normalizeAndScale(KernelContext context, FloatArray x, FloatArray weight, FloatArray scalingFactorBuffer, int size) {
 
@@ -434,70 +419,8 @@ public class TornadoVMCompute {
         }
     }
 
-    public static void matrixVectorSimpleF15(FloatArray x, FloatArray xout, HalfFloatArray w, int n, int d) {
-        for (@Parallel int i = 0; i < x.getSize(); i++) {
-            float val = 0f;
-            for (int j = 0; j < xout.getSize(); j++) {
-                val += w.get(i * n + j).getFloat32() * x.get(j);
-            }
-            xout.set(i, val);
-        }
-    }
-
     // < --------------------------------------------------- >
 
-    public static void reduceSquareSums(KernelContext context, FloatArray a, FloatArray reduce, int localWorkGroupSize) {
-        int globalIdx = context.globalIdx;
-        int localIdx = context.localIdx;
-        int localGroupSize = context.localGroupSizeX;
-        int groupID = context.groupIdx; // Expose Group ID
-
-        float[] localA = context.allocateFloatLocalArray(localWorkGroupSize);
-        localA[localIdx] = a.get(globalIdx) * a.get(globalIdx);
-
-        for (int stride = (localGroupSize / 2); stride > 0; stride /= 2) {
-            context.localBarrier();
-            if (localIdx < stride) {
-                localA[localIdx] += localA[localIdx + stride];
-            }
-        }
-        if (localIdx == 0) {
-            reduce.set(groupID, localA[0]);
-        }
-    }
-
-    public static void finalSum(FloatArray reduce, int size, float eps) {
-
-        float sum = 0.0f;
-
-        for (int i = 0; i < reduce.getSize(); i++) {
-            sum += reduce.get(i);
-        }
-
-        float ss = sum / (float) size;  // Keep dividing by the original size
-        ss += eps;
-        ss = 1.0f / TornadoMath.sqrt(ss);
-        reduce.set(0, ss);
-    }
-
-    public static void normalizeAndScale(KernelContext context, FloatArray out, FloatArray input, FloatArray weight, FloatArray scalingFactorBuffer, int size, IntArray positionNlayer) {
-
-        int globalIdx = context.globalIdx;
-
-        int layerOffset = positionNlayer.get(1) * size;
-
-        float scaledValue = weight.get(layerOffset + globalIdx) * (scalingFactorBuffer.get(0) * input.get(globalIdx));
-        out.set(globalIdx, scaledValue);
-    }
-
-    public static void normalizeAndScaleInNout(KernelContext context, FloatArray inputNoUT, FloatArray weight, FloatArray scalingFactorBuffer, int size, IntArray positionNlayer) {
-        int globalIdx = context.globalIdx;
-
-        int layerOffset = positionNlayer.get(1) * size;
-
-        float scaledValue = weight.get(layerOffset + globalIdx) * (scalingFactorBuffer.get(0) * inputNoUT.get(globalIdx));
-        inputNoUT.set(globalIdx, scaledValue);
-    }
 
     public static void matrixVectorSimple(KernelContext context, FloatArray x, FloatArray output, FloatArray weights, int n, int d) {
         int idx = context.globalIdx;
@@ -530,66 +453,12 @@ public class TornadoVMCompute {
         }
     }
 
-    public static void forcePropagationOneArray(FloatArray x) {
-        x.set(0, x.get(0));
-    }
-
-    public static void forcePropagationOneArray(IntArray x) {
-        x.set(0, x.get(0));
-    }
-
-    public static void forcePropagationTwoArrays(FloatArray x, FloatArray y) {
-        x.set(0, x.get(0));
-        y.set(0, y.get(0));
-    }
-
-    public static void forcePropagationTwoArrays(FloatArray x, IntArray y) {
-        x.set(0, x.get(0));
-        y.set(0, y.get(0));
-    }
-
-    public static void forcePropagationThreeArrays(FloatArray x, FloatArray y, FloatArray z) {
-        x.set(0, x.get(0));
-        y.set(0, y.get(0));
-        z.set(0, z.get(0));
-    }
-
-    public static void forcePropagationThreeArrays(FloatArray x, FloatArray y, IntArray z) {
-        x.set(0, x.get(0));
-        y.set(0, y.get(0));
-        z.set(0, z.get(0));
-    }
-
-    public static void forcePropagationFourArrays(FloatArray x, FloatArray y, FloatArray z, FloatArray w) {
-        x.set(0, x.get(0));
-        y.set(0, y.get(0));
-        z.set(0, z.get(0));
-        w.set(0, w.get(0));
-    }
-
-    public static void forcePropagationFiveArrays(FloatArray x, FloatArray y, FloatArray z, FloatArray w, FloatArray cv) {
-        x.set(0, x.get(0));
-        y.set(0, y.get(0));
-        z.set(0, z.get(0));
-        w.set(0, w.get(0));
-        cv.set(0, cv.get(0));
-    }
-
-    public static void forcePropagationSixArrays(FloatArray x, FloatArray y, FloatArray z, FloatArray w, FloatArray cv, FloatArray xyz) {
-        x.set(0, x.get(0));
-        y.set(0, y.get(0));
-        z.set(0, z.get(0));
-        w.set(0, w.get(0));
-        cv.set(0, cv.get(0));
-        xyz.set(0, xyz.get(0));
-    }
-
     /**
      * Calculate attention scores between query and key vectors
      */
 
     public static void calculateAttentionScores(KernelContext context, IntArray positionNlayer, int seqLen, FloatArray query, FloatArray keyCache, FloatArray attScores, int kvDim, int kvMul,
-            int headSize, int loff, int localWorkgourpSize) {
+            int headSize) {
         int h = context.groupIdx;         // Head index
         int threadId = context.localIdx;  // Thread ID within work group
         int blockDim = context.localGroupSizeX;  // Work group size
@@ -603,7 +472,7 @@ public class TornadoVMCompute {
 
         for (int t = threadId; t < position; t += blockDim) {
             // Get the key vector for this head and at this timestep
-            int keyOffset = loff + t * kvDim + (h / kvMul) * headSize;
+            int keyOffset = positionNlayer.get(1) + t * kvDim + (h / kvMul) * headSize;
 
             // Calculate the attention score as the dot product of query and key
             float score = 0.0f;
@@ -725,7 +594,7 @@ public class TornadoVMCompute {
     }
 
     public static void computeWeightedSum(KernelContext context, IntArray positionNlayer, int seqLen, FloatArray attScores, FloatArray valueCache, FloatArray output, int kvDim, int kvMul,
-            int headSize, int loff) {
+            int headSize) {
         int h = context.groupIdx;         // Head index
         int threadId = context.localIdx;  // Thread ID within work group
         int blockDim = context.localGroupSizeX;  // Work group size
@@ -742,7 +611,7 @@ public class TornadoVMCompute {
             float val = 0.0f;
             for (int t = 0; t < position; t++) {
                 // Get the value vector for this head and timestep
-                int valueOffset = loff + t * kvDim + (h / kvMul) * headSize;
+                int valueOffset = positionNlayer.get(1) + t * kvDim + (h / kvMul) * headSize;
 
                 // Get the attention weight for this timestep
                 float a = attScores.get(attOffset + t);
