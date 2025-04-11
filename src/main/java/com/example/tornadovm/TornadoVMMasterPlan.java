@@ -31,22 +31,10 @@ public class TornadoVMMasterPlan {
         this.executionPlan = new TornadoExecutionPlan(taskGraphs.toArray(new ImmutableTaskGraph[taskGraphs.size()]));
     }
 
-    private void checkMemoryUsage(String graphName) {
-        System.out.printf("Before graph %s: KeyCache size=%d, Position=%d, Layer=%d\n", graphName, state.wrapKeyCache.getSize(), state.positionAndLayer.get(0), state.positionAndLayer.get(1));
-    }
-
-    private void logMemoryUsage(TornadoExecutionPlan executionPlan, String stage, int layer) {
-        // Only log detailed memory usage in verbose mode or for critical operations
-        if (true) {
-            System.out.printf("Layer %d, %s: Memory usage = %.2f MB\n", layer, stage, executionPlan.getCurrentDeviceMemoryUsage() / (1024.0 * 1024.0));
-        }
-    }
-
 
     public void tornadoVMForwardExecute(int position) {
         int kvDim = (config.dim * config.numberOfKeyValueHeads) / config.numberOfHeads;
 
-        // @formatter:on
         state.positionAndLayer.set(0, position);
 
         // Update before execute (it an every copy in)
@@ -55,15 +43,11 @@ public class TornadoVMMasterPlan {
         for (int l = 0; l < config.numberOfLayers; l++) {
             state.positionAndLayer.set(1, l);
 
-            int layerOffset = l * config.contextLength * kvDim;
-            int positionOffset = position * kvDim;
-            int totalOffset = layerOffset + positionOffset;
-            state.positionAndLayer.set(2, totalOffset);
+            int layerOffsetForCaches = l * config.contextLength * kvDim + position * kvDim;
+            state.positionAndLayer.set(2, layerOffsetForCaches);
 
-
-            // Step 1: RMSNorm for attention
+            // Layer taskgraph
             executionPlan.withGraph(1).withGridScheduler(scheduler).execute();
-
         }
 
         // Final RMSNorm and Logits

@@ -59,8 +59,8 @@ public class TornadoVMLayerPlanner {
         ropeWorker.setLocalWork(128, 1, 1);
 
         // Create a scheduler for each task graph
-        // Scheduler 0: lookUpBufferX
-        tornadoForwardScheduler.addWorkerGrid("lookUpBufferX.forceUpdateXperToken", singleWorker);
+        // Scheduler 0: updX
+        tornadoForwardScheduler.addWorkerGrid("updX.copyinX", singleWorker);
 
         // Scheduler 1: RMSNorm
 
@@ -137,11 +137,11 @@ public class TornadoVMLayerPlanner {
 
         // @formatter:off
         // ================ TASK GRAPH 0: BUFFER INITIALIZATION ================
-        TaskGraph lookUpBufferX = new TaskGraph("lookUpBufferX")
+        TaskGraph updX = new TaskGraph("updX")
                 .transferToDevice(DataTransferMode.FIRST_EXECUTION, state.wrapX)
-                .task("forceUpdateXperToken", TornadoVMCompute::emptyTaskToForceCopyIn, state.wrapX)
+                .task("copyinX", TornadoVMCompute::emptyTaskToForceCopyIn, state.wrapX)
                 .persistOnDevice(state.wrapX);
-        taskGraphs.add(lookUpBufferX.snapshot());
+        taskGraphs.add(updX.snapshot());
 
         // =====================================================================================
         TaskGraph unifiedLayer = new TaskGraph("layer")
@@ -169,9 +169,9 @@ public class TornadoVMLayerPlanner {
                 .task("reductionOneBlock", TornadoVMCompute::reductionOneBlock, context, intermediateReduceFirst, state.wrapX, localSizeRMS, config.rmsNormEps)
                 .task("normalize1", TornadoVMCompute::reductionOneBlock2, context, state.wrapXb, state.wrapX, weights.rms_att_weightFlat, intermediateReduceFirst, state.positionAndLayer, dim)
                 // -------- QKV MATMULS --------
-                .task("qmatmul", TornadoVMCompute::matrixVectorSimple,  state.wrapQ, state.wrapXb, weights.wqFlat, dim, dim, state.positionAndLayer)
-                .task("kmatmul", TornadoVMCompute::matrixVectorSimple,  state.wrapK, state.wrapXb, weights.wkFlat, dim, kvDim, state.positionAndLayer)
-                .task("vmatmul", TornadoVMCompute::matrixVectorSimple,  state.wrapV, state.wrapXb, weights.wvFlat, dim, kvDim, state.positionAndLayer)
+                .task("qmatmul", TornadoVMCompute::matmul,  state.wrapQ, state.wrapXb, weights.wqFlat, dim, dim, state.positionAndLayer)
+                .task("kmatmul", TornadoVMCompute::matmul,  state.wrapK, state.wrapXb, weights.wkFlat, dim, kvDim, state.positionAndLayer)
+                .task("vmatmul", TornadoVMCompute::matmul,  state.wrapV, state.wrapXb, weights.wvFlat, dim, kvDim, state.positionAndLayer)
 
                 // -------- ROPE ROTATION --------
                 .task("rope", TornadoVMCompute::ropeRotation, context, state.positionAndLayer, state.wrapQ, state.wrapK, kvDim, headSize)
@@ -185,17 +185,18 @@ public class TornadoVMLayerPlanner {
                 .task("max", TornadoVMCompute::findMaxAttentionScoress, context, state.positionAndLayer, config.contextLength, state.wrapAtt, maxValues, localSizeHeads)
                 .task("expsum", TornadoVMCompute::calculateExpAndSum, context, state.positionAndLayer, config.contextLength, state.wrapAtt, maxValues, expValues, sumValues, localSizeHeads)
                 .task("normalize2", TornadoVMCompute::normalizeSoftmax, context, state.positionAndLayer, config.contextLength, expValues, sumValues, state.wrapAtt)
+
                 .task("weighted-sum", TornadoVMCompute::computeWeightedSum, context, state.positionAndLayer, config.contextLength, state.wrapAtt, state.wrapValueCache, state.wrapXb, kvDim, kvMul, headSize)
 
                 // -------- FFN --------
-                .task("matmul1", TornadoVMCompute::matrixVectorSimple, state.wrapXb2, state.wrapXb, weights.woFlat, dim, dim, state.positionAndLayer)
+                .task("matmul1", TornadoVMCompute::matmul, state.wrapXb2, state.wrapXb, weights.woFlat, dim, dim, state.positionAndLayer)
                 .task("residual1", TornadoVMCompute::addInPlace, state.wrapX, state.wrapXb2)
                 .task("reductionOneBlockFFN", TornadoVMCompute::reductionOneBlock, context, intermediateReduceTwo, state.wrapX, localSizeRMS, config.rmsNormEps)
                 .task("normalizeFFN", TornadoVMCompute::reductionOneBlock2, context, state.wrapXb, state.wrapX, weights.rms_ffn_weightFlat, intermediateReduceTwo, state.positionAndLayer, dim)
-                .task("projcectOne", TornadoVMCompute::matrixVectorSimple,   state.wrapHb,state.wrapXb, weights.w1Flat, dim, config.hiddenDim, state.positionAndLayer)
-                .task("projectionThree", TornadoVMCompute::matrixVectorSimple, state.wrapHb2,state.wrapXb, weights.w3Flat, dim, config.hiddenDim, state.positionAndLayer)
+                .task("projcectOne", TornadoVMCompute::matmul,   state.wrapHb,state.wrapXb, weights.w1Flat, dim, config.hiddenDim, state.positionAndLayer)
+                .task("projectionThree", TornadoVMCompute::matmul, state.wrapHb2,state.wrapXb, weights.w3Flat, dim, config.hiddenDim, state.positionAndLayer)
                 .task("silu_elementwise_mul", TornadoVMCompute::siluElemWiseMulActivation, config.hiddenDim, state.wrapHb, state.wrapHb2)
-                .task("projectionTwo", TornadoVMCompute::matrixVectorSimple,  state.wrapXb, state.wrapHb, weights.w2Flat, config.hiddenDim, dim, state.positionAndLayer)
+                .task("projectionTwo", TornadoVMCompute::matmul,  state.wrapXb, state.wrapHb, weights.w2Flat, config.hiddenDim, dim, state.positionAndLayer)
                 .task("residual2", TornadoVMCompute::addInPlace, state.wrapX, state.wrapXb)
                 .persistOnDevice(
                     state.wrapX,

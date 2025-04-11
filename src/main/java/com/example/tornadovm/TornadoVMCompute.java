@@ -7,7 +7,6 @@ import uk.ac.manchester.tornado.api.annotations.Parallel;
 import uk.ac.manchester.tornado.api.math.TornadoMath;
 import uk.ac.manchester.tornado.api.types.arrays.ByteArray;
 import uk.ac.manchester.tornado.api.types.arrays.FloatArray;
-import uk.ac.manchester.tornado.api.types.arrays.HalfFloatArray;
 import uk.ac.manchester.tornado.api.types.arrays.IntArray;
 
 import java.util.stream.IntStream;
@@ -30,19 +29,20 @@ public class TornadoVMCompute {
     /**
      * Matrix-vector multiplication for transformer attention computation
      *
-     * @param x Input vector (corresponds to xb in CUDA code)
-     * @param xout Output vector (corresponds to q, k, or v in CUDA code)
-     * @param w Weight matrix (flattened, containing all layers)
-     * @param n Input dimension
-     * @param d Output dimension
-     * @param positionAndLayer Combined position and layer information for weight offset calculation
+     * @param x
+     *         Input vector (corresponds to xb in CUDA code)
+     * @param xout
+     *         Output vector (corresponds to q, k, or v in CUDA code)
+     * @param w
+     *         Weight matrix (flattened, containing all layers)
+     * @param n
+     *         Input dimension
+     * @param d
+     *         Output dimension
+     * @param positionAndLayer
+     *         Combined position and layer information for weight offset calculation
      */
-    public static void matrixVectorSimple(
-            FloatArray xout,
-            FloatArray x,
-            FloatArray w,
-            int n, int d,
-            IntArray positionAndLayer) {
+    public static void matmul(FloatArray xout, FloatArray x, FloatArray w, int n, int d, IntArray positionAndLayer) {
 
         int layerOffset = positionAndLayer.get(1) * d * n;  // l * dim * dim for example
 
@@ -67,7 +67,8 @@ public class TornadoVMCompute {
         }
     }
 
-    /** Reductions launched in a single thread-block
+    /**
+     * Reductions launched in a single thread-block
      *
      * @param context
      * @param output
@@ -96,8 +97,7 @@ public class TornadoVMCompute {
         }
     }
 
-    public static void reductionOneBlock2(KernelContext context, FloatArray output,
-            FloatArray x, FloatArray weights, FloatArray temp, IntArray positioNlayer, int size) {
+    public static void reductionOneBlock2(KernelContext context, FloatArray output, FloatArray x, FloatArray weights, FloatArray temp, IntArray positioNlayer, int size) {
         int gid = context.globalIdx;
         float ss = temp.get(0);
         int layerOffset = positioNlayer.get(1) * size;
@@ -105,8 +105,7 @@ public class TornadoVMCompute {
         output.set(gid, weights.get(layerOffset + gid) * (ss * x.get(gid)));
     }
 
-    public static void reductionOneBlock2InNout(KernelContext context,
-            FloatArray x, FloatArray weights, FloatArray temp, IntArray positioNlayer, int size) {
+    public static void reductionOneBlock2InNout(KernelContext context, FloatArray x, FloatArray weights, FloatArray temp, IntArray positioNlayer, int size) {
         int gid = context.globalIdx;
         float ss = temp.get(0);
         int layerOffset = positioNlayer.get(1) * size;
@@ -114,15 +113,12 @@ public class TornadoVMCompute {
         x.set(gid, weights.get(layerOffset + gid) * (ss * x.get(gid)));
     }
 
-
-
     public static void emptyTaskToForceCopyIn(FloatArray buffer) {
         float dummy = buffer.get(0);
         if (dummy > Float.MAX_VALUE) {
             buffer.set(0, dummy);
         }
     }
-
 
     public static void matmulTornadoQ4Pure(ByteArray thisx, FloatArray that, FloatArray out, int dim1, int vocabSize) {
         final int BLOCK_SIZE = GGMLType.Q4_0.getBlockSize(); // Q4 block size
@@ -157,30 +153,28 @@ public class TornadoVMCompute {
     public static void ropeRotation(KernelContext context, IntArray positionNlayer, FloatArray sq, FloatArray sk, int kv_dim, int head_size) {
         int i = context.globalIdx * 2;
 
-        // Ensure we're within bounds and handle the even indices properly
-        if (i < sq.getSize() && i % 2 == 0) {
-            int head_dim = i % head_size;
-            float freq = 1.0f / TornadoMath.pow(10000.0f, head_dim / (float) head_size);
-            float val = positionNlayer.get(0) * freq;
-            float fcr = TornadoMath.cos(val);
-            float fci = TornadoMath.sin(val);
+        int head_dim = i % head_size;
+        float freq = 1.0f / TornadoMath.pow(10000.0f, head_dim / (float) head_size);
+        float val = positionNlayer.get(0) * freq;
+        float fcr = TornadoMath.cos(val);
+        float fci = TornadoMath.sin(val);
 
-            int rotn = i < kv_dim ? 2 : 1; // how many vectors? 2 = q & k, 1 = q only
+        int rotn = i < kv_dim ? 2 : 1; // how many vectors? 2 = q & k, 1 = q only
 
-            // Rotate query vector
-            float v0q = sq.get(i);
-            float v1q = sq.get(i + 1);
-            sq.set(i, v0q * fcr - v1q * fci);
-            sq.set(i + 1, v0q * fci + v1q * fcr);
+        // Rotate query vector
+        float v0q = sq.get(i);
+        float v1q = sq.get(i + 1);
+        sq.set(i, v0q * fcr - v1q * fci);
+        sq.set(i + 1, v0q * fci + v1q * fcr);
 
-            // Rotate key vector if needed
-            if (rotn > 1 && i < sk.getSize()) {
-                float v0k = sk.get(i);
-                float v1k = sk.get(i + 1);
-                sk.set(i, v0k * fcr - v1k * fci);
-                sk.set(i + 1, v0k * fci + v1k * fcr);
-            }
+        // Rotate key vector if needed
+        if (rotn > 1 && i < sk.getSize()) {
+            float v0k = sk.get(i);
+            float v1k = sk.get(i + 1);
+            sk.set(i, v0k * fcr - v1k * fci);
+            sk.set(i + 1, v0k * fci + v1k * fcr);
         }
+
     }
 
     public static void matmulTornadoQ4(KernelContext context, ByteArray thisx, FloatArray that, FloatArray out, int dim1) {
@@ -405,36 +399,114 @@ public class TornadoVMCompute {
     }
 
 
+//    private static void findMax(
+//            KernelContext context,
+//            IntArray positionNlayer,
+//            FloatArray maxVal,
+//            FloatArray att,
+//            int localSize
+//    ) {
+//        int position = positionNlayer.get(0);
+//        int gid = context.globalIdx;
+//        int lid = context.localIdx;
+//        int groupSize = context.localGroupSizeX;
+//        float[] localX = context.allocateFloatLocalArray(localSize);
+//        localX[lid] = att.get(gid);
+//        // Step 2: Reduce to find global maximum across all threads
+//        float[] localMaxes = context.allocateFloatLocalArray(blockDim);
+//        localMaxes[tid] = maxVal;
+//
+//        // Parallel reduction to find global maximum
+//        for (int stride = blockDim / 2; stride > 0; stride /= 2) {
+//            context.localBarrier();
+//            if (tid < stride) {
+//                localMaxes[tid] = Math.max(localMaxes[tid], localMaxes[tid + stride]);
+//            }
+//        }
+//
+//
+//        if (lid == 0) {
+//            // store max
+//            maxVal.set(0, localX[0]);
+//        }
+//
+//        int tid = context.localIdx;         // Thread ID within work group
+//        int blockDim = context.localGroupSizeX;  // Work group size
+//        int position = positionNlayer.get(0);
+//        int size = position + 1;  // Equivalent to size in CUDA version
+//
+//        int attOffset = headIdx * seqLen;  // Offset for this head
+//
+//        // Step 1: Each thread finds max in its assigned section
+//        float maxVal = Float.NEGATIVE_INFINITY;
+//
+//        // Initialize with thread's first assigned value
+//        if (tid < size) {
+//            maxVal = attScores.get(attOffset + tid);
+//        }
+//
+//        // Scan through remaining assigned values
+//        for (int i = tid + blockDim; i < size; i += blockDim) {
+//            float current = attScores.get(attOffset + i);
+//            maxVal = Math.max(maxVal, current);
+//        }
+//
+//
+//    }
+
+
+
+    private static void expSum(KernelContext context, FloatArray output, FloatArray x) {
+        int gid = context.globalIdx;
+        int lid = context.localIdx;
+        int groupSize = context.localGroupSizeX;
+        float[] localX = context.allocateFloatLocalArray(1024);
+        localX[lid] = x.get(gid);
+        float max = output.get(0);
+        localX[lid] = TornadoMath.exp(localX[lid] - max);
+        x.set(gid, localX[lid]);
+        for (int stride = (groupSize / 2); stride > 0; stride /= 2) {
+            context.localBarrier();
+            if (lid < stride) {
+                localX[lid] += localX[lid + stride];
+            }
+        }
+
+        if (lid == 0) {
+            // final sum stored in ID 0
+            output.set(0, localX[0]);
+        }
+    }
+
+    private static void norm(KernelContext context, FloatArray temp, FloatArray x) {
+        int gid = context.globalIdx;
+        float sum = temp.get(0);
+        x.set(gid, x.get(gid) / sum);
+    }
+
 
     /**
      * Calculate attention scores between query and key vectors
      */
-    public static void calculateAttentionScores(
-            KernelContext context,
-            FloatArray query,
-            FloatArray key,
-            FloatArray attentionScores,
-            IntArray positionAndLayer,
-            int headSize,
-            int numHeads,
+    public static void calculateAttentionScores(KernelContext context, FloatArray query, FloatArray key, FloatArray attentionScores, IntArray positionAndLayer, int headSize, int numHeads,
             int contextLength) {
         int pos = positionAndLayer.get(0);
         int layer = positionAndLayer.get(1);
         int kvOffset = positionAndLayer.get(2);
-        
+
         // Calculate head and position indices
         int head = context.globalIdx / contextLength;
         int targetPos = context.globalIdx % contextLength;
-        
+
         // Bounds checking
         if (head >= numHeads || targetPos >= contextLength) {
             return;
         }
-        
+
         // Calculate offsets for query and key
         int queryOffset = (layer * numHeads + head) * headSize;
         int keyOffset = kvOffset + (head * headSize);
-        
+
         // Compute dot product with bounds checking
         float score = 0.0f;
         for (int i = 0; i < headSize; i++) {
@@ -442,10 +514,10 @@ public class TornadoVMCompute {
                 score += query.get(queryOffset + i) * key.get(keyOffset + i);
             }
         }
-        
+
         // Scale the attention score
         score = score / (float) Math.sqrt(headSize);
-        
+
         // Store the result with bounds checking
         int scoreIndex = head * contextLength + targetPos;
         if (scoreIndex < attentionScores.getSize()) {
@@ -456,7 +528,10 @@ public class TornadoVMCompute {
     /**
      * Find maximum attention score for numerical stability in softmax
      */
-    public static void findMaxAttentionScoress(KernelContext context, IntArray positionNlayer, int seqLen, FloatArray attScores, FloatArray maxValues, int workGroupSize) {
+    public static void findMaxAttentionScoress(KernelContext context,
+            IntArray positionNlayer,
+            int seqLen, FloatArray attScores,
+            FloatArray maxValues, int workGroupSize) {
         int h = context.groupIdx;         // Head index
         int threadId = context.localIdx;  // Thread ID within work group
         int blockDim = context.localGroupSizeX;  // Work group size
