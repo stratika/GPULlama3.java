@@ -63,9 +63,6 @@ public class TornadoVMLayerPlanner {
         tornadoForwardScheduler.addWorkerGrid("lookUpBufferX.forceUpdateXperToken", singleWorker);
 
         // Scheduler 1: RMSNorm
-//        tornadoForwardScheduler.addWorkerGrid("layer.reduce", dimWorker);
-//        tornadoForwardScheduler.addWorkerGrid("layer.sum", singleWorker);
-//        tornadoForwardScheduler.addWorkerGrid("layer.normalize1", dimWorker);
 
         tornadoForwardScheduler.addWorkerGrid("layer.reductionOneBlock", dimWorker);
         tornadoForwardScheduler.addWorkerGrid("layer.normalize1", dimWorker);
@@ -88,9 +85,8 @@ public class TornadoVMLayerPlanner {
         // Scheduler 5: FFN
         tornadoForwardScheduler.addWorkerGrid("layer.matmul1", dimWorker);
         tornadoForwardScheduler.addWorkerGrid("layer.residual1", dimWorker);
-        tornadoForwardScheduler.addWorkerGrid("layer.reduceFFN", dimWorker);
-        tornadoForwardScheduler.addWorkerGrid("layer.sum", singleWorker);
-        tornadoForwardScheduler.addWorkerGrid("layer.ns", dimWorker);
+        tornadoForwardScheduler.addWorkerGrid("layer.reductionOneBlockFFN", dimWorker);
+        tornadoForwardScheduler.addWorkerGrid("layer.normalizeFNN", dimWorker);
         tornadoForwardScheduler.addWorkerGrid("layer.projcectOne", hiddenDimWorker);
         tornadoForwardScheduler.addWorkerGrid("layer.projectionThree", hiddenDimWorker);
         tornadoForwardScheduler.addWorkerGrid("layer.silu", hiddenDimWorker);
@@ -99,11 +95,11 @@ public class TornadoVMLayerPlanner {
         tornadoForwardScheduler.addWorkerGrid("layer.residual2", dimWorker);
 
         // Scheduler 6: Final RMSNorm
-        tornadoForwardScheduler.addWorkerGrid("finalrms_and_logits.reductionOneBlock", dimWorker);
-        tornadoForwardScheduler.addWorkerGrid("finalrms_and_logits.normalize", dimWorker);
+        tornadoForwardScheduler.addWorkerGrid("rms_logits.reductionOneBlock", dimWorker);
+        tornadoForwardScheduler.addWorkerGrid("rms_logits.normalize", dimWorker);
 
         // Scheduler 7: Logits
-        tornadoForwardScheduler.addWorkerGrid("finalrms_and_logits.projection", vocabWorker);
+        tornadoForwardScheduler.addWorkerGrid("rms_logits.projection", vocabWorker);
 
         return tornadoForwardScheduler;
     }
@@ -195,7 +191,8 @@ public class TornadoVMLayerPlanner {
                 .task("copyToValueCache", TornadoVMCompute::copyToCache, state.wrapValueCache, state.wrapV, state.positionAndLayer)
 
                 // -------- MULTI-HEAD ATTENTION --------
-                .task("scores", TornadoVMCompute::calculateAttentionScores, context, state.positionAndLayer, config.contextLength, state.wrapQ, state.wrapKeyCache, state.wrapAtt, kvDim, kvMul, headSize, 0, localSizeRMS)
+                .task("scores", TornadoVMCompute::calculateAttentionScores, context, state.positionAndLayer, config.contextLength, state.wrapQ, state.wrapKeyCache, state.wrapAtt,
+                        kvDim, kvMul, headSize, 0, localSizeRMS)
                 .task("max", TornadoVMCompute::findMaxAttentionScoress, context, state.positionAndLayer, config.contextLength, state.wrapAtt, maxValues, localSizeHeads)
                 .task("expsum", TornadoVMCompute::calculateExpAndSum, context, state.positionAndLayer, config.contextLength, state.wrapAtt, maxValues, expValues, sumValues, localSizeHeads)
                 .task("normalize2", TornadoVMCompute::normalizeSoftmax, context, state.positionAndLayer, config.contextLength, expValues, sumValues, state.wrapAtt)
@@ -204,9 +201,8 @@ public class TornadoVMLayerPlanner {
                 // -------- FFN --------
                 .task("matmul1", TornadoVMCompute::matrixVectorMultiply, context, state.wrapXb, state.wrapXb2, weights.woFlat, dim, dim, state.positionAndLayer)
                 .task("residual1", TornadoVMCompute::addInPlace, context, state.wrapX, state.wrapXb2)
-                .task("reduceFFN", TornadoVMCompute::reduceSquareSums, context, state.wrapX, intermediateReduceTwo, localSizeFFN)
-                .task("sumFFN", TornadoVMCompute::finalSum, intermediateReduceTwo, dim, config.rmsNormEps)
-                .task("ns", TornadoVMCompute::normalizeAndScale, context, state.wrapXb, state.wrapX, weights.rms_ffn_weightFlat, intermediateReduceTwo, dim, state.positionAndLayer)
+                .task("reductionOneBlockFFN", TornadoVMCompute::reductionOneBlock, context, intermediateReduceTwo, state.wrapX, weights.rms_ffn_weightFlat, localSizeRMS)
+                .task("normalizeFFN", TornadoVMCompute::reductionOneBlock2, context, state.wrapXb, state.wrapX, weights.rms_ffn_weightFlat, intermediateReduceTwo, state.positionAndLayer, dim)
                 .task("projcectOne", TornadoVMCompute::matrixVectorMultiply, context, state.wrapXb, state.wrapHb, weights.w1Flat, dim, config.hiddenDim, state.positionAndLayer)
                 .task("projectionThree", TornadoVMCompute::matrixVectorMultiply, context, state.wrapXb, state.wrapHb2, weights.w3Flat, dim, config.hiddenDim, state.positionAndLayer)
                 .task("silu", TornadoVMCompute::siluActivation, context, state.wrapHb)
@@ -220,7 +216,7 @@ public class TornadoVMLayerPlanner {
 
         taskGraphs.add(unifiedLayer.snapshot());
 //        // ================ TASK GRAPH 6+7: FINAL RMS NORM AND LOGITS PROJECTION ================
-            TaskGraph finalRmsAndLogitsGraph = new TaskGraph("finalrms_and_logits")
+            TaskGraph finalRmsAndLogitsGraph = new TaskGraph("rms_logits")
                 .consumeFromDevice(unifiedLayer.getTaskGraphName(),
                         state.wrapX, state.positionAndLayer, context
                 )

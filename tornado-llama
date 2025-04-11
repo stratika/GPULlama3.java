@@ -92,6 +92,6 @@ CMD+=("--echo" "$ECHO")
 [ "$INTERACTIVE" = true ] && CMD+=("--interactive")
 [ "$INSTRUCT" = true ] && CMD+=("--instruct")
 echo "Executing command:"
-printf "  %s\n" "${CMD[@]}"
+#printf "  %s\n" "${CMD[@]}"
 # Execute command
 "${CMD[@]}"
