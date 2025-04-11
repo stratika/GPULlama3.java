@@ -50,26 +50,25 @@ public class TornadoVMMasterPlan {
         state.positionAndLayer.set(0, position);
 
         // Update before execute (it an every copy in)
-
         executionPlan.withGraph(0).withGridScheduler(scheduler).execute();
 
         for (int l = 0; l < config.numberOfLayers; l++) {
-
-            int layerOffset = l * config.contextLength * kvDim + position * kvDim;
-
             state.positionAndLayer.set(1, l);
-            state.positionAndLayer.set(2, layerOffset);
+
+            int layerOffset = l * config.contextLength * kvDim;
+            int positionOffset = position * kvDim;
+            int totalOffset = layerOffset + positionOffset;
+            state.positionAndLayer.set(2, totalOffset);
+
 
             // Step 1: RMSNorm for attention
             executionPlan.withGraph(1).withGridScheduler(scheduler).execute();
 
-            //                System.out.println("====== End of layer ====== " + l);
         }
 
         // Final RMSNorm and Logits
         executionPlan.withGraph(2).withGridScheduler(scheduler).execute();
 
-        // Copy results from TornadoVM buffers to state.logits
     }
 
     private void logMemoryUsage(TornadoExecutionResult executionResult, String stage, int layer) {

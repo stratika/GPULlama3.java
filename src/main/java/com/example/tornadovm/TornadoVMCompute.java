@@ -28,6 +28,34 @@ public class TornadoVMCompute {
     }
 
     /**
+     * Matrix-vector multiplication for transformer attention computation
+     *
+     * @param x Input vector (corresponds to xb in CUDA code)
+     * @param xout Output vector (corresponds to q, k, or v in CUDA code)
+     * @param w Weight matrix (flattened, containing all layers)
+     * @param n Input dimension
+     * @param d Output dimension
+     * @param positionAndLayer Combined position and layer information for weight offset calculation
+     */
+    public static void matrixVectorSimple(
+            FloatArray xout,
+            FloatArray x,
+            FloatArray w,
+            int n, int d,
+            IntArray positionAndLayer) {
+
+        int layerOffset = positionAndLayer.get(1) * d * n;  // l * dim * dim for example
+
+        for (@Parallel int i = 0; i < d; i++) {
+            float sum = 0.0f;
+            for (int j = 0; j < n; j++) {
+                sum += w.get(layerOffset + i * n + j) * x.get(j);
+            }
+            xout.set(i, sum);
+        }
+    }
+
+    /**
      * SiLU activation function
      */
     public static void siluElemWiseMulActivation(int hidenDimSize, FloatArray hb, FloatArray hb2) {
@@ -87,16 +115,6 @@ public class TornadoVMCompute {
     }
 
 
-    /**
-     * Element-wise multiplication using KernelContext
-     */
-    public static void elementMultiply(KernelContext context, FloatArray input, FloatArray output) {
-        int idx = context.globalIdx;
-
-        if (idx < Math.min(input.getSize(), output.getSize())) {
-            output.set(idx, output.get(idx) * input.get(idx));
-        }
-    }
 
     public static void emptyTaskToForceCopyIn(FloatArray buffer) {
         float dummy = buffer.get(0);
@@ -387,104 +405,51 @@ public class TornadoVMCompute {
     }
 
 
-    public static void normalizeAndScale(KernelContext context, FloatArray x, FloatArray weight, FloatArray scalingFactorBuffer, int size) {
-
-        int globalIdx = context.globalIdx;
-
-        if (globalIdx < size) {
-            float scaledValue = weight.get(globalIdx) * (scalingFactorBuffer.get(0) * x.get(globalIdx));
-            x.set(globalIdx, scaledValue);
-        }
-    }
-
-    public static void matrixVectorSimple(FloatArray x, FloatArray xout, FloatArray w, int n, int d) {
-        for (@Parallel int i = 0; i < x.getSize(); i++) {
-            float val = 0f;
-            for (int j = 0; j < xout.getSize(); j++) {
-                val += w.get(i * n + j) * x.get(j);
-            }
-            xout.set(i, val);
-        }
-    }
-
-    public static void matrixVectorSimple(FloatArray x, FloatArray xout, FloatArray w, int n, int d, int layerShift) {
-        int wOffset = layerShift * d;  // Correctly locate the starting index for the desired layer
-
-        for (@Parallel int i = 0; i < xout.getSize(); i++) {
-            float val = 0f;
-            for (int j = 0; j < x.getSize(); j++) {
-                val += w.get(wOffset + i * n + j) * x.get(j); // Corrected access pattern
-            }
-            xout.set(i, val);
-        }
-    }
-
-    // < --------------------------------------------------- >
-
-
-    public static void matrixVectorSimple(KernelContext context, FloatArray x, FloatArray output, FloatArray weights, int n, int d) {
-        int idx = context.globalIdx;
-
-        if (idx < output.getSize()) {
-            float sum = 0.0f;
-            for (int j = 0; j < n; j++) {
-                sum += weights.get(idx * n + j) * x.get(j);
-            }
-            output.set(idx, sum);
-        }
-    }
-
-    public static void matrixVectorSimple(KernelContext context, FloatArray x, FloatArray output, FloatArray weights, int n, int d, IntArray posAndLayer) {
-        int idx = context.globalIdx;
-
-        if (idx < output.getSize()) {  // Ensure we don't go out of bounds
-            int layer = posAndLayer.get(1);
-            // Base offset for the current layer: layer * d * n
-            // Each layer has a full d×n matrix
-            int layerOffset = layer * d * n;
-
-            float sum = 0.0f;
-            for (int j = 0; j < n; j++) {
-                // For each output idx, we need to do a dot product of the row idx with vector x
-                // The weights are stored in row-major format
-                sum += weights.get(layerOffset + idx * n + j) * x.get(j);
-            }
-            output.set(idx, sum);
-        }
-    }
 
     /**
      * Calculate attention scores between query and key vectors
      */
-
-    public static void calculateAttentionScores(KernelContext context, IntArray positionNlayer, int seqLen, FloatArray query, FloatArray keyCache, FloatArray attScores, int kvDim, int kvMul,
-            int headSize) {
-        int h = context.groupIdx;         // Head index
-        int threadId = context.localIdx;  // Thread ID within work group
-        int blockDim = context.localGroupSizeX;  // Work group size
-
-        // Get the query vector offset for this head
-        int queryOffset = h * headSize;
-
-        // Attention scores offset for this head
-        int attOffset = h * seqLen;
-        int position = positionNlayer.get(0) + 1;
-
-        for (int t = threadId; t < position; t += blockDim) {
-            // Get the key vector for this head and at this timestep
-            int keyOffset = positionNlayer.get(1) + t * kvDim + (h / kvMul) * headSize;
-
-            // Calculate the attention score as the dot product of query and key
-            float score = 0.0f;
-            for (int i = 0; i < headSize; i++) {
-                score += query.get(queryOffset + i) * keyCache.get(keyOffset + i);
+    public static void calculateAttentionScores(
+            KernelContext context,
+            FloatArray query,
+            FloatArray key,
+            FloatArray attentionScores,
+            IntArray positionAndLayer,
+            int headSize,
+            int numHeads,
+            int contextLength) {
+        int pos = positionAndLayer.get(0);
+        int layer = positionAndLayer.get(1);
+        int kvOffset = positionAndLayer.get(2);
+        
+        // Calculate head and position indices
+        int head = context.globalIdx / contextLength;
+        int targetPos = context.globalIdx % contextLength;
+        
+        // Bounds checking
+        if (head >= numHeads || targetPos >= contextLength) {
+            return;
+        }
+        
+        // Calculate offsets for query and key
+        int queryOffset = (layer * numHeads + head) * headSize;
+        int keyOffset = kvOffset + (head * headSize);
+        
+        // Compute dot product with bounds checking
+        float score = 0.0f;
+        for (int i = 0; i < headSize; i++) {
+            if (queryOffset + i < query.getSize() && keyOffset + i < key.getSize()) {
+                score += query.get(queryOffset + i) * key.get(keyOffset + i);
             }
-
-            // Scale by sqrt(head_size)
-            score /= TornadoMath.sqrt(headSize);
-
-            // Save the score to the attention buffer
-            attScores.set(attOffset + t, score);
+        }
+        
+        // Scale the attention score
+        score = score / (float) Math.sqrt(headSize);
+        
+        // Store the result with bounds checking
+        int scoreIndex = head * contextLength + targetPos;
+        if (scoreIndex < attentionScores.getSize()) {
+            attentionScores.set(scoreIndex, score);
         }
     }
 
@@ -623,24 +588,6 @@ public class TornadoVMCompute {
 
         // Make sure all threads finish writing their outputs
         context.localBarrier();
-    }
-
-    public static void matrixVectorMultiply(KernelContext context, FloatArray x, FloatArray output, FloatArray weights, int n, int d, IntArray positionNlayer) {
-        int idx = context.globalIdx;
-
-        // Calculate the layer offset correctly
-        int layer = positionNlayer.get(1);
-        int layerOffset = layer * d * n;  // The correct formula
-
-        float sum = 0.0f;
-        for (int j = 0; j < n; j++) {
-            if (j < x.getSize() && (layerOffset + idx * n + j) < weights.getSize()) {
-                // Use the correct index calculation
-                sum += weights.get(layerOffset + idx * n + j) * x.get(j);
-            }
-        }
-
-        output.set(idx, sum);
     }
 
     public static void copyToCache(FloatArray dest, FloatArray src, IntArray positioNlayer) {
