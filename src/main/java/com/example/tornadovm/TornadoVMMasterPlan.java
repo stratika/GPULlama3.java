@@ -43,7 +43,9 @@ public class TornadoVMMasterPlan {
         for (int l = 0; l < config.numberOfLayers; l++) {
             state.positionAndLayer.set(1, l);
 
-            int layerOffsetForCaches = l * config.contextLength * kvDim + position * kvDim;
+            int loff = l * config.contextLength * kvDim;
+            state.positionAndLayer.set(3, loff);
+            int layerOffsetForCaches =  loff + position * kvDim;
             state.positionAndLayer.set(2, layerOffsetForCaches);
 
             // Layer taskgraph

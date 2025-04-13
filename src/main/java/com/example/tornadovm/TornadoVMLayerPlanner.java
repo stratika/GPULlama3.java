@@ -73,11 +73,11 @@ public class TornadoVMLayerPlanner {
         tornadoForwardScheduler.addWorkerGrid("layer.rope", ropeWorker);
 
         // Scheduler 4: Attention
-        tornadoForwardScheduler.addWorkerGrid("layer.scores", headsWorker);
-        tornadoForwardScheduler.addWorkerGrid("layer.max", headsWorker);
-        tornadoForwardScheduler.addWorkerGrid("layer.expsum", headsWorker);
-        tornadoForwardScheduler.addWorkerGrid("layer.normalize2", headsWorker);
-        tornadoForwardScheduler.addWorkerGrid("layer.weighted-sum", headsWorker);
+//        tornadoForwardScheduler.addWorkerGrid("layer.scores", headsWorker);
+//        tornadoForwardScheduler.addWorkerGrid("layer.max", headsWorker);
+//        tornadoForwardScheduler.addWorkerGrid("layer.expsum", headsWorker);
+//        tornadoForwardScheduler.addWorkerGrid("layer.normalize2", headsWorker);
+//        tornadoForwardScheduler.addWorkerGrid("layer.weighted-sum", headsWorker);
 
         // Scheduler 5: FFN
         tornadoForwardScheduler.addWorkerGrid("layer.residual1", dimWorker);
@@ -181,16 +181,23 @@ public class TornadoVMLayerPlanner {
                 .task("copyToValueCache", TornadoVMCompute::copyToCache, state.wrapValueCache, state.wrapV, state.positionAndLayer)
 
                 // -------- MULTI-HEAD ATTENTION --------
-                .task("scores", TornadoVMCompute::calculateAttentionScores, context, state.wrapQ, state.wrapKeyCache, state.wrapAtt, state.positionAndLayer, headSize, numHeads, config.contextLength)
-                .task("max", TornadoVMCompute::findMaxAttentionScoress, context, state.positionAndLayer, config.contextLength, state.wrapAtt, maxValues, localSizeHeads)
-                .task("expsum", TornadoVMCompute::calculateExpAndSum, context, state.positionAndLayer, config.contextLength, state.wrapAtt, maxValues, expValues, sumValues, localSizeHeads)
-                .task("normalize2", TornadoVMCompute::normalizeSoftmax, context, state.positionAndLayer, config.contextLength, expValues, sumValues, state.wrapAtt)
+//                .task("scores", TornadoVMCompute::calculateAttentionScores, context, state.wrapQ, state.wrapKeyCache, state.wrapAtt, state.positionAndLayer, headSize, numHeads, config.contextLength)
+//                .task("max", TornadoVMCompute::findMaxAttentionScoress, context, state.positionAndLayer, config.contextLength, state.wrapAtt, maxValues, localSizeHeads)
+//                .task("expsum", TornadoVMCompute::calculateExpAndSum, context, state.positionAndLayer, config.contextLength, state.wrapAtt, maxValues, expValues, sumValues, localSizeHeads)
+//                .task("normalize2", TornadoVMCompute::normalizeSoftmax, context, state.positionAndLayer, config.contextLength, expValues, sumValues, state.wrapAtt)
+//
+//                .task("weighted-sum", TornadoVMCompute::computeWeightedSum, context, state.positionAndLayer, config.contextLength, state.wrapAtt, state.wrapValueCache, state.wrapXb, kvDim, kvMul, headSize)
 
-                .task("weighted-sum", TornadoVMCompute::computeWeightedSum, context, state.positionAndLayer, config.contextLength, state.wrapAtt, state.wrapValueCache, state.wrapXb, kvDim, kvMul, headSize)
+                .task("parallel-attention", TornadoVMCompute::processHeadsParallel,
+                        state.wrapQ, state.wrapKeyCache, state.wrapValueCache, state.wrapXb,
+                        config.numberOfHeads, config.headSize, kvDim, kvMul, config.contextLength,
+                        state.positionAndLayer, state.wrapAtt)
 
-                // -------- FFN --------
                 .task("matmul1", TornadoVMCompute::matmul, state.wrapXb2, state.wrapXb, weights.woFlat, dim, dim, state.positionAndLayer)
                 .task("residual1", TornadoVMCompute::addInPlace, state.wrapX, state.wrapXb2)
+
+                // -------- FFN --------
+
                 .task("reductionOneBlockFFN", TornadoVMCompute::reductionOneBlock, context, intermediateReduceTwo, state.wrapX, localSizeRMS, config.rmsNormEps)
                 .task("normalizeFFN", TornadoVMCompute::reductionOneBlock2, context, state.wrapXb, state.wrapX, weights.rms_ffn_weightFlat, intermediateReduceTwo, state.positionAndLayer, dim)
                 .task("projcectOne", TornadoVMCompute::matmul,   state.wrapHb,state.wrapXb, weights.w1Flat, dim, config.hiddenDim, state.positionAndLayer)
@@ -222,11 +229,11 @@ public class TornadoVMLayerPlanner {
 
     private int validateAndAdjustBufferSizes() {
         // Log dimensions
-        //        System.out.println("Model dimensions:");
-        //        System.out.println("dim = " + config.dim);
-        //        System.out.println("headSize = " + config.headSize);
-        //        System.out.println("numHeads = " + config.numberOfHeads);
-        //        System.out.println("numKVHeads = " + config.numberOfKeyValueHeads);
+                System.out.println("Model dimensions:");
+                System.out.println("dim = " + config.dim);
+                System.out.println("headSize = " + config.headSize);
+                System.out.println("numHeads = " + config.numberOfHeads);
+                System.out.println("numKVHeads = " + config.numberOfKeyValueHeads);
 
         // Validate localSizeRMS
         int localSizeRMS = 256;

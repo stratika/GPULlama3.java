@@ -79,7 +79,7 @@ public final class State {
         this.wrapValueCache = new FloatArray(config.contextLength * kvDim * config.numberOfLayers);
 
         this.wrapAtt = new FloatArray(config.numberOfHeads * config.contextLength);
-        this.positionAndLayer = new IntArray(3);
+        this.positionAndLayer = new IntArray(4);
         this.latestToken = -1;
         long totalCacheSize = config.contextLength * kvDim * config.numberOfLayers;
 

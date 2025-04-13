@@ -672,4 +672,229 @@ public class TornadoVMCompute {
         }
 
     }
+
+    public static void processHeadsParallel(
+            FloatArray q, FloatArray key_cache, FloatArray value_cache, FloatArray xb,
+            int nHeads, int headSize, int kvDim, int kvMul, int seqLen,
+            IntArray positionNlayer, FloatArray wrapAtt) {
+
+        int pos = positionNlayer.get(0);
+        int layer = positionNlayer.get(1);
+        long loff = layer * seqLen * kvDim; // layer offset into KV cache
+
+        // Parallelize computation across attention heads
+        for (@Parallel int h = 0; h < nHeads; h++) {
+            // Process each head in parallel
+            processHeadTornado(q, key_cache, value_cache, xb, h, headSize, kvDim, kvMul, loff, pos, wrapAtt);
+        }
+    }
+
+    private static void processHeadTornado(
+            FloatArray allQ, FloatArray key_cache, FloatArray value_cache, FloatArray allXb,
+            int h, int headSize, int kvDim, int kvMul, long loff, int pos, FloatArray wrapAtt) {
+
+        // Base index for this head's attention weights
+        int headOffset = h * (pos + 1);
+
+        // STEP 1: Calculate attention scores for all timesteps
+        for (int t = 0; t <= pos; t++) {
+            int kvHeadIdx = h / kvMul;
+            int keyOffset = (int)(loff + t * kvDim + kvHeadIdx * headSize);
+
+            float score = 0.0f;
+            for (int i = 0; i < headSize; i++) {
+                score += allQ.get(h * headSize + i) * key_cache.get(keyOffset + i);
+            }
+            score = score / (float)Math.sqrt(headSize);
+
+            // Store in attention buffer
+            wrapAtt.set(headOffset + t, score);
+        }
+
+        // STEP 2: Find max score for softmax stability
+        float maxScore = wrapAtt.get(headOffset);
+        for (int t = 1; t <= pos; t++) {
+            float val = wrapAtt.get(headOffset + t);
+            if (val > maxScore) {
+                maxScore = val;
+            }
+        }
+
+        // STEP 3: Compute exponentials and sum
+        float sum = 0.0f;
+        for (int t = 0; t <= pos; t++) {
+            int idx = headOffset + t;
+            float expScore = (float)Math.exp(wrapAtt.get(idx) - maxScore);
+            wrapAtt.set(idx, expScore);
+            sum += expScore;
+        }
+
+        // STEP 4: Normalize
+        float normFactor = (sum > 0.0f) ? (1.0f / sum) : (1.0f / (pos + 1));
+        for (int t = 0; t <= pos; t++) {
+            int idx = headOffset + t;
+            wrapAtt.set(idx, wrapAtt.get(idx) * normFactor);
+        }
+
+        // STEP 5: Compute weighted sum of values for each dimension
+        for (int i = 0; i < headSize; i++) {
+            float weightedSum = 0.0f;
+            for (int t = 0; t <= pos; t++) {
+                int kvHeadIdx = h / kvMul;
+                int valueOffset = (int)(loff + t * kvDim + kvHeadIdx * headSize);
+                weightedSum += wrapAtt.get(headOffset + t) * value_cache.get(valueOffset + i);
+            }
+            allXb.set(h * headSize + i, weightedSum);
+        }
+    }
+
+//    private static void processHeadTornado(
+//            FloatArray allQ, FloatArray key_cache, FloatArray value_cache, FloatArray allXb,
+//            int h, int headSize, int kvDim, int kvMul, long loff, int pos, FloatArray wrapAtt) {
+//
+//        // Base index for this head's attention weights
+//        int headOffset = h * (pos + 1);
+//
+//        // Local arrays for intermediate calculations
+//        FloatArray scores = new FloatArray(pos + 1);
+//
+//        // STEP 1: Calculate attention scores for all timesteps
+//        for (int t = 0; t <= pos; t++) {
+//            int kvHeadIdx = h / kvMul;
+//            int keyOffset = (int)(loff + t * kvDim + kvHeadIdx * headSize);
+//
+//            float score = 0.0f;
+//            for (int i = 0; i < headSize; i++) {
+//                score += allQ.get(h * headSize + i) * key_cache.get(keyOffset + i);
+//            }
+//            score /= (float)Math.sqrt(headSize);
+//
+//            // Store in local array
+//            scores.set(t ,score);
+//
+//            // Also store in attention buffer
+//            wrapAtt.set(headOffset + t, score);
+//        }
+//
+//        // STEP 2: Apply softmax to attention scores
+//        // Find maximum score for numerical stability
+//        float maxScore = scores.get(0);
+//        for (int t = 1; t <= pos; t++) {
+//            if (scores.get(t) > maxScore) {
+//                maxScore =  scores.get(t);
+//            }
+//        }
+//
+//        // Compute exponentials and sum
+//        float sum = 0.0f;
+//        for (int t = 0; t <= pos; t++) {
+//            scores.set (t, (float)Math.exp(scores.get(t) - maxScore));
+//            sum += scores.get(t);
+//        }
+//
+//        // Normalize and store back to global array
+//        for (int t = 0; t <= pos; t++) {
+//            float normalizedScore = (sum > 0.0f) ? (scores.get(t) / sum) : (1.0f / (pos + 1));
+//            wrapAtt.set(headOffset + t, normalizedScore);
+//        }
+//
+//        // STEP 3: Compute weighted sum of values
+//        float[] headOutput = new float[headSize];
+//        for (int i = 0; i < headSize; i++) {
+//            headOutput[i] = 0.0f;
+//        }
+//
+//        for (int t = 0; t <= pos; t++) {
+//            int kvHeadIdx = h / kvMul;
+//            int valueOffset = (int)(loff + t * kvDim + kvHeadIdx * headSize);
+//            float weight = wrapAtt.get(headOffset + t);
+//
+//            for (int i = 0; i < headSize; i++) {
+//                headOutput[i] += weight * value_cache.get(valueOffset + i);
+//            }
+//        }
+//
+//        // Store result in output
+//        for (int i = 0; i < headSize; i++) {
+//            allXb.set(h * headSize + i, headOutput[i]);
+//        }
+//    }
+
+//    /**
+//     * Process a single attention head - TornadoVM compatible version
+//     */
+//    private static void processHeadTornado(
+//            FloatArray allQ, FloatArray key_cache, FloatArray value_cache, FloatArray allXb,
+//            int h, int headSize, int kvDim, int kvMul, long loff, int pos, FloatArray wrapAtt) {
+//
+//        // Local attention scores
+////        float[] attScores = new float[pos + 1];
+//
+//        // Calculate attention scores for this head and all timesteps
+//        for (int t = 0; t <= pos; t++) {
+//            int kvHeadIdx = h / kvMul;
+//            int keyOffset = (int) (loff + t * kvDim + kvHeadIdx * headSize);
+//
+//            float score = 0.0f;
+//            for (int i = 0; i < headSize; i++) {
+//                score += allQ.get(h * headSize + i) * key_cache.get(keyOffset + i);
+//            }
+//            score /= TornadoMath.sqrt(headSize);
+//
+//            wrapAtt.set(h * (pos + 1) + t, score);
+////            attScores[t] = score;
+//        }
+//
+//        // Softmax on attention scores
+//        softmaxInPlace(wrapAtt, pos + 1);
+//
+//        // Initialize intermediate results
+//        FloatArray localXb = new FloatArray(64); //TODO:
+//        for (int i = 0; i < headSize; i++) {
+//            localXb.set(i, 0.0f);
+//        }
+//
+//        // Weighted sum of values
+//        for (int t = 0; t <= pos; t++) {
+//            int kvHeadIdx = h / kvMul;
+//            int valueOffset = (int) (loff + t * kvDim + kvHeadIdx * headSize);
+//
+//            float a = wrapAtt.get(h * (pos + 1) + t);
+////            float a = attScores[t];
+//
+//            for (int i = 0; i < headSize; i++) {
+//                localXb.set(i, localXb.get(i) + a * value_cache.get(valueOffset + i));
+//            }
+//        }
+//
+//        // Store back to global xb
+//        for (int i = 0; i < headSize; i++) {
+//            allXb.set(h * headSize + i, localXb.get(i));
+//        }
+//    }
+//
+//    /**
+//     * Softmax implementation that works in-place on a float array
+//     */
+//    private static void softmaxInPlace(FloatArray arr, int n) {
+//        // Find max for numerical stability
+//        float max = Float.NEGATIVE_INFINITY;
+//        for (int i = 0; i < n; i++) {
+//            if (arr.get(i) > max) {
+//                max = arr.get(i);
+//            }
+//        }
+//
+//        // Compute exp and sum
+//        float sum = 0.0f;
+//        for (int i = 0; i < n; i++) {
+//            arr.set(i, (float) TornadoMath.exp(arr.get(i) - max));
+//            sum += arr.get(i);
+//        }
+//
+//        // Normalize
+//        for (int i = 0; i < n; i++) {
+//            arr.set(i, arr.get(i) / sum);
+//        }
+//    }
 }
