@@ -5,12 +5,14 @@ import com.example.inference.engine.impl.Configuration;
 import com.example.inference.engine.impl.Llama;
 import com.example.loader.weights.State;
 import com.example.loader.weights.Weights;
+import uk.ac.manchester.tornado.api.AccessorParameters;
 import uk.ac.manchester.tornado.api.GridScheduler;
 import uk.ac.manchester.tornado.api.ImmutableTaskGraph;
 import uk.ac.manchester.tornado.api.KernelContext;
 import uk.ac.manchester.tornado.api.TaskGraph;
 import uk.ac.manchester.tornado.api.WorkerGrid;
 import uk.ac.manchester.tornado.api.WorkerGrid1D;
+import uk.ac.manchester.tornado.api.common.Access;
 import uk.ac.manchester.tornado.api.enums.DataTransferMode;
 import uk.ac.manchester.tornado.api.types.arrays.FloatArray;
 
@@ -132,6 +134,20 @@ public class TornadoVMLayerPlanner {
         FloatArray expValues = new FloatArray(headSize);
         FloatArray sumValues = new FloatArray(1);
 
+        // Define accessors for parallel-attention task
+        AccessorParameters attentionParameters = new AccessorParameters(11);
+        attentionParameters.set(0, state.wrapQ, Access.READ_ONLY);         // q is only read
+        attentionParameters.set(1, state.wrapKeyCache, Access.READ_ONLY);  // key_cache is only read
+        attentionParameters.set(2, state.wrapValueCache, Access.READ_ONLY); // value_cache is only read
+        attentionParameters.set(3, state.wrapXb, Access.READ_WRITE);       // xb is only written to
+        attentionParameters.set(4, config.numberOfHeads, Access.READ_ONLY); // nHeads is a constant
+        attentionParameters.set(5, config.headSize, Access.READ_ONLY);      // headSize is a constant
+        attentionParameters.set(6, kvDim, Access.READ_ONLY);               // kvDim is a constant
+        attentionParameters.set(7, kvMul, Access.READ_ONLY);               // kvMul is a constant
+        attentionParameters.set(8, config.contextLength, Access.READ_ONLY); // seqLen is a constant
+        attentionParameters.set(9, state.positionAndLayer, Access.READ_ONLY); // position and layer are only read
+        attentionParameters.set(10, state.wrapAtt, Access.READ_WRITE);      // wrapAtt is read and written
+
         // Create kernel context
         KernelContext context = new KernelContext();
 
@@ -181,17 +197,10 @@ public class TornadoVMLayerPlanner {
                 .task("copyToValueCache", TornadoVMCompute::copyToCache, state.wrapValueCache, state.wrapV, state.positionAndLayer)
 
                 // -------- MULTI-HEAD ATTENTION --------
-//                .task("scores", TornadoVMCompute::calculateAttentionScores, context, state.wrapQ, state.wrapKeyCache, state.wrapAtt, state.positionAndLayer, headSize, numHeads, config.contextLength)
-//                .task("max", TornadoVMCompute::findMaxAttentionScoress, context, state.positionAndLayer, config.contextLength, state.wrapAtt, maxValues, localSizeHeads)
-//                .task("expsum", TornadoVMCompute::calculateExpAndSum, context, state.positionAndLayer, config.contextLength, state.wrapAtt, maxValues, expValues, sumValues, localSizeHeads)
-//                .task("normalize2", TornadoVMCompute::normalizeSoftmax, context, state.positionAndLayer, config.contextLength, expValues, sumValues, state.wrapAtt)
-//
-//                .task("weighted-sum", TornadoVMCompute::computeWeightedSum, context, state.positionAndLayer, config.contextLength, state.wrapAtt, state.wrapValueCache, state.wrapXb, kvDim, kvMul, headSize)
-
                 .task("parallel-attention", TornadoVMCompute::processHeadsParallel,
-                        state.wrapQ, state.wrapKeyCache, state.wrapValueCache, state.wrapXb,
-                        config.numberOfHeads, config.headSize, kvDim, kvMul, config.contextLength,
-                        state.positionAndLayer, state.wrapAtt)
+                            state.wrapQ, state.wrapKeyCache, state.wrapValueCache, state.wrapXb,
+                            config.numberOfHeads, config.headSize, kvDim, kvMul, config.contextLength,
+                            state.positionAndLayer, state.wrapAtt)
 
                 .task("matmul1", TornadoVMCompute::matmul, state.wrapXb2, state.wrapXb, weights.woFlat, dim, dim, state.positionAndLayer)
                 .task("residual1", TornadoVMCompute::addInPlace, state.wrapX, state.wrapXb2)

@@ -686,6 +686,7 @@ public class TornadoVMCompute {
         for (@Parallel int h = 0; h < nHeads; h++) {
             // Process each head in parallel
             processHeadTornado(q, key_cache, value_cache, xb, h, headSize, kvDim, kvMul, loff, pos, wrapAtt);
+
         }
     }
 
@@ -696,56 +697,58 @@ public class TornadoVMCompute {
         // Base index for this head's attention weights
         int headOffset = h * (pos + 1);
 
-        // STEP 1: Calculate attention scores for all timesteps
-        for (int t = 0; t <= pos; t++) {
-            int kvHeadIdx = h / kvMul;
-            int keyOffset = (int)(loff + t * kvDim + kvHeadIdx * headSize);
 
-            float score = 0.0f;
-            for (int i = 0; i < headSize; i++) {
-                score += allQ.get(h * headSize + i) * key_cache.get(keyOffset + i);
-            }
-            score = score / (float)Math.sqrt(headSize);
 
-            // Store in attention buffer
-            wrapAtt.set(headOffset + t, score);
-        }
-
-        // STEP 2: Find max score for softmax stability
-        float maxScore = wrapAtt.get(headOffset);
-        for (int t = 1; t <= pos; t++) {
-            float val = wrapAtt.get(headOffset + t);
-            if (val > maxScore) {
-                maxScore = val;
-            }
-        }
-
-        // STEP 3: Compute exponentials and sum
-        float sum = 0.0f;
-        for (int t = 0; t <= pos; t++) {
-            int idx = headOffset + t;
-            float expScore = (float)Math.exp(wrapAtt.get(idx) - maxScore);
-            wrapAtt.set(idx, expScore);
-            sum += expScore;
-        }
-
-        // STEP 4: Normalize
-        float normFactor = (sum > 0.0f) ? (1.0f / sum) : (1.0f / (pos + 1));
-        for (int t = 0; t <= pos; t++) {
-            int idx = headOffset + t;
-            wrapAtt.set(idx, wrapAtt.get(idx) * normFactor);
-        }
-
-        // STEP 5: Compute weighted sum of values for each dimension
-        for (int i = 0; i < headSize; i++) {
-            float weightedSum = 0.0f;
+            // STEP 1: Calculate attention scores for all timesteps
             for (int t = 0; t <= pos; t++) {
                 int kvHeadIdx = h / kvMul;
-                int valueOffset = (int)(loff + t * kvDim + kvHeadIdx * headSize);
-                weightedSum += wrapAtt.get(headOffset + t) * value_cache.get(valueOffset + i);
+                int keyOffset = (int) (loff + t * kvDim + kvHeadIdx * headSize);
+
+                float score = 0.0f;
+                for (int i = 0; i < headSize; i++) {
+                    score += allQ.get(h * headSize + i) * key_cache.get(keyOffset + i);
+                }
+                score = score / (float) Math.sqrt(headSize);
+
+                // Store in attention buffer
+                wrapAtt.set(headOffset + t, score);
             }
-            allXb.set(h * headSize + i, weightedSum);
-        }
+
+            // STEP 2: Find max score for softmax stability
+            float maxScore = wrapAtt.get(headOffset);
+            for (int t = 1; t <= pos; t++) {
+                float val = wrapAtt.get(headOffset + t);
+                if (val > maxScore) {
+                    maxScore = val;
+                }
+            }
+
+            // STEP 3: Compute exponentials and sum
+            float sum = 0.0f;
+            for (int t = 0; t <= pos; t++) {
+                int idx = headOffset + t;
+                float expScore = (float) Math.exp(wrapAtt.get(idx) - maxScore);
+                wrapAtt.set(idx, expScore);
+                sum += expScore;
+            }
+
+            // STEP 4: Normalize
+            float normFactor = (sum > 0.0f) ? (1.0f / sum) : (1.0f / (pos + 1));
+            for (int t = 0; t <= pos; t++) {
+                int idx = headOffset + t;
+                wrapAtt.set(idx, wrapAtt.get(idx) * normFactor);
+            }
+
+            // STEP 5: Compute weighted sum of values for each dimension
+            for (int i = 0; i < headSize; i++) {
+                float weightedSum = 0.0f;
+                for (int t = 0; t <= pos; t++) {
+                    int kvHeadIdx = h / kvMul;
+                    int valueOffset = (int) (loff + t * kvDim + kvHeadIdx * headSize);
+                    weightedSum += wrapAtt.get(headOffset + t) * value_cache.get(valueOffset + i);
+                }
+                allXb.set(h * headSize + i, weightedSum);
+            }
     }
 
 //    private static void processHeadTornado(

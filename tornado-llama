@@ -64,7 +64,7 @@ CMD+=("-Dtornado.load.annotation.parallel=uk.ac.manchester.tornado.api.annotatio
 [ "$USE_GPU" = true ] && CMD+=("-Duse.tornadovm=true")
 [ "$DEBUG_GPU" = true ] && CMD+=("-Dtonado.debug=true") && CMD+=("-Dtonado.threadInfo=true")
 CMD+=("-Dtornado.threadInfo=false")
-CMD+=("-Dtornado.debug=true")
+CMD+=("-Dtornado.debug=false")
 CMD+=("-Dtornado.fullDebug=false")
 CMD+=("-Dtornado.print.kernel=false")
 CMD+=("-Dtornado.print.bytecodes=false")
