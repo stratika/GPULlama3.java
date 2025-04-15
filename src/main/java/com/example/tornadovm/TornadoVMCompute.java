@@ -683,7 +683,7 @@ public class TornadoVMCompute {
         long loff = layer * seqLen * kvDim; // layer offset into KV cache
 
         // Parallelize computation across attention heads
-        for (@Parallel int h = 0; h < nHeads; h++) {
+        for (int h = 0; h < nHeads; h++) {
             // Process each head in parallel
             processHeadTornado(q, key_cache, value_cache, xb, h, headSize, kvDim, kvMul, loff, pos, wrapAtt);
 
@@ -900,4 +900,107 @@ public class TornadoVMCompute {
 //            arr.set(i, arr.get(i) / sum);
 //        }
 //    }
+
+    /**
+     * Enhanced matrix multiplication for Q8 quantized weights with detailed debugging
+     */
+    public static void enhancedMatmulTornadoQ8(KernelContext context,
+            ByteArray weights,
+            FloatArray input,
+            FloatArray output,
+            int dim,
+            FloatArray debugBuffer) {
+        final int BLOCK_SIZE = 32; // Q8 block size
+        final int BYTES_PER_BLOCK = 2 + BLOCK_SIZE; // 2 bytes for scale + 32 bytes for values
+
+        int idx = context.globalIdx;
+
+        // Debug info
+        if (idx == 0) {
+            debugBuffer.set(0, weights.getSize());   // Size of weights array
+            debugBuffer.set(1, input.getSize());     // Size of input array
+            debugBuffer.set(2, output.getSize());    // Size of output array
+            debugBuffer.set(3, dim);                 // Dimension value
+
+            // Record some input values for verification
+            for (int i = 0; i < Math.min(5, input.getSize()); i++) {
+                debugBuffer.set(5 + i, input.get(i));
+            }
+        }
+
+        // Bounds check - crucial to avoid out-of-bounds access
+        if (idx >= output.getSize()) {
+            return;
+        }
+
+        float result = 0.0f;
+        int thisOffset = idx * dim;
+
+        // Compute the matrix multiplication with careful bounds checking
+        for (int j = 0; j < dim; j++) {
+            int index = thisOffset + j;
+
+            // Calculate block position and ensure we don't exceed array bounds
+            int blockIndex = index / BLOCK_SIZE;
+            int withinBlockIndex = index % BLOCK_SIZE;
+            int blockOffset = blockIndex * BYTES_PER_BLOCK;
+
+            // Check if we have enough bytes left to read
+            if (blockOffset + 1 >= weights.getSize()) {
+                continue; // Skip this calculation if out of bounds
+            }
+
+            // Read scale (float16) for this block
+            int scaleByte1 = weights.get(blockOffset) & 0xFF;
+            int scaleByte2 = weights.get(blockOffset + 1) & 0xFF;
+            short scaleFloat16 = (short) ((scaleByte2 << 8) | scaleByte1);
+            float scale = decodeFloat16(scaleFloat16);
+
+            // Check if we have enough bytes for the quantized value
+            if (blockOffset + 2 + withinBlockIndex >= weights.getSize()) {
+                continue; // Skip this calculation if out of bounds
+            }
+
+            // Read and dequantize the weight value
+            byte quantized = weights.get(blockOffset + 2 + withinBlockIndex);
+
+            // Check if input index is in bounds
+            if (j >= input.getSize()) {
+                continue; // Skip if input index is out of bounds
+            }
+
+            // Accumulate the result
+            result += (quantized * scale) * input.get(j);
+        }
+
+        // Store the result
+        output.set(idx, result);
+
+        // Record the first few computed values for debugging
+        if (idx < 5) {
+            debugBuffer.set(idx, result);
+        }
+    }
+
+    public static void checkLogitsValues(FloatArray logits, FloatArray debugBuffer) {
+        int nonZeroCount = 0;
+        float sum = 0.0f;
+        float maxVal = Float.NEGATIVE_INFINITY;
+
+        // Count non-zero values and compute basic stats
+        for (int i = 0; i < Math.min(1000, logits.getSize()); i++) {
+            float val = logits.get(i);
+            sum += TornadoMath.abs(val);
+            maxVal = TornadoMath.max(maxVal, val);
+
+            if (TornadoMath.abs(val) > 1e-6f) {
+                nonZeroCount++;
+            }
+        }
+
+        // Store debugging info
+        debugBuffer.set(0, nonZeroCount);
+        debugBuffer.set(1, sum);
+        debugBuffer.set(2, maxVal);
+    }
 }

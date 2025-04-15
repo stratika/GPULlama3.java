@@ -24,7 +24,7 @@ import java.util.function.IntConsumer;
 
 public record Llama(Configuration configuration, Tokenizer tokenizer, Weights weights) {
 
-    static void rmsnorm(FloatTensor out, FloatTensor x, FloatBuffer weight, int size, float rmsNormEps) {
+    public static void rmsnorm(FloatTensor out, FloatTensor x, FloatBuffer weight, int size, float rmsNormEps) {
         // calculate sum of squares
         float ss = x.reduce(0, size, 0f, (acc, xi) -> acc + xi * xi);
         ss /= size;
@@ -35,7 +35,7 @@ public record Llama(Configuration configuration, Tokenizer tokenizer, Weights we
         out.mapWithIndexInPlace(0, size, (value, index) -> weight.get(index) * (finalss * x.getFloat(index)));
     }
 
-    static FloatTensor forwardJava(Llama model, State state, int token, int position) {
+    public static FloatTensor forwardJava(Llama model, State state, int token, int position) {
         // a few convenience variables
         Configuration config = model.configuration();
         Weights weights = model.weights();
@@ -160,7 +160,7 @@ public record Llama(Configuration configuration, Tokenizer tokenizer, Weights we
         return state.logits;
     }
 
-    static FloatTensor forwardTornadoVM(Llama model, State state, int token, int position,  //
+    public static FloatTensor forwardTornadoVM(Llama model, State state, int token, int position,  //
             TornadoVMMasterPlan tornadoVMMasterPlan) { //
         Configuration config = model.configuration();
 

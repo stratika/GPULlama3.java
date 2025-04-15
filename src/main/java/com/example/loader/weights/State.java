@@ -89,4 +89,9 @@ public final class State {
 //        System.out.println("- Number of layers: " + config.numberOfLayers);
 //        System.out.println("- Total elements: " + totalCacheSize);
     }
+
+    @Override
+    public State clone() throws CloneNotSupportedException {
+        return (State) super.clone();
+    }
 }

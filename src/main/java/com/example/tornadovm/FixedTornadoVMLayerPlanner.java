@@ -12,6 +12,7 @@ import uk.ac.manchester.tornado.api.KernelContext;
 import uk.ac.manchester.tornado.api.TaskGraph;
 import uk.ac.manchester.tornado.api.WorkerGrid;
 import uk.ac.manchester.tornado.api.WorkerGrid1D;
+import uk.ac.manchester.tornado.api.WorkerGrid2D;
 import uk.ac.manchester.tornado.api.common.Access;
 import uk.ac.manchester.tornado.api.enums.DataTransferMode;
 import uk.ac.manchester.tornado.api.types.arrays.FloatArray;
@@ -19,17 +20,20 @@ import uk.ac.manchester.tornado.api.types.arrays.FloatArray;
 import java.util.ArrayList;
 import java.util.List;
 
-public class TornadoVMLayerPlanner {
+/**
+ * Fixed version of TornadoVMLayerPlanner with debugging for the logits projection
+ */
+public class FixedTornadoVMLayerPlanner {
 
     private final State state;
     private final Configuration config;
     private final Weights weights;
+    private static final boolean DEBUG_MODE = Boolean.parseBoolean(System.getProperty("tornado.debug.logits", "false"));
 
-    public TornadoVMLayerPlanner(State state, Llama model) {
+    public FixedTornadoVMLayerPlanner(State state, Llama model) {
         this.state = state;
         this.config = model.configuration();
         this.weights = model.weights();
-
     }
 
     private GridScheduler setupGridSchedulers() {
@@ -52,58 +56,49 @@ public class TornadoVMLayerPlanner {
         hiddenDimWorker.setGlobalWork(config.hiddenDim, 1, 1);
         hiddenDimWorker.setLocalWork(256, 1, 1);
 
+        // For the vocabulary projection, ensure we have enough parallelism
+        // but don't exceed hardware limits
+        int blockSize = 256;
+        int numBlocks = Math.min(256, (config.vocabularySize + blockSize - 1) / blockSize);
         WorkerGrid vocabWorker = new WorkerGrid1D(config.vocabularySize);
         vocabWorker.setGlobalWork(config.vocabularySize, 1, 1);
-        vocabWorker.setLocalWork(256, 1, 1);
+        vocabWorker.setLocalWork(blockSize, 1, 1);
+
+        // Create a 2D worker grid for the final projection matrix multiply
+        // This can significantly improve performance for large matrices
+        int BLOCK_SIZE = 16;
+        int blockWidth = (config.vocabularySize + BLOCK_SIZE - 1) / BLOCK_SIZE;
+        int blockHeight = (config.dim + BLOCK_SIZE - 1) / BLOCK_SIZE;
+        WorkerGrid matmulWorker = new WorkerGrid2D(blockWidth, blockHeight);
+        matmulWorker.setGlobalWork(blockWidth * BLOCK_SIZE, blockHeight * BLOCK_SIZE, 1);
+        matmulWorker.setLocalWork(BLOCK_SIZE, BLOCK_SIZE, 1);
 
         WorkerGrid ropeWorker = new WorkerGrid1D(config.dim / 2);
         ropeWorker.setGlobalWork(config.dim / 2, 1, 1);
         ropeWorker.setLocalWork(128, 1, 1);
 
         // Create a scheduler for each task graph
-        // Scheduler 0: updX
         tornadoForwardScheduler.addWorkerGrid("updX.copyinX", singleWorker);
-
-        // Scheduler 1: RMSNorm
-
         tornadoForwardScheduler.addWorkerGrid("layer.reductionOneBlock", dimWorker);
         tornadoForwardScheduler.addWorkerGrid("layer.normalize1", dimWorker);
-
-        // Scheduler 2: QKV
-
-        // Scheduler 3: RoPE
         tornadoForwardScheduler.addWorkerGrid("layer.rope", ropeWorker);
-
-        // Scheduler 4: Attention
-
-        // Scheduler 5: FFN
         tornadoForwardScheduler.addWorkerGrid("layer.residual1", dimWorker);
         tornadoForwardScheduler.addWorkerGrid("layer.reductionOneBlockFFN", dimWorker);
         tornadoForwardScheduler.addWorkerGrid("layer.normalizeFNN", dimWorker);
         tornadoForwardScheduler.addWorkerGrid("layer.residual2", dimWorker);
-
-        // Scheduler 6: Final RMSNorm
         tornadoForwardScheduler.addWorkerGrid("rms_logits.reductionOneBlock", dimWorker);
         tornadoForwardScheduler.addWorkerGrid("rms_logits.normalize", dimWorker);
-
-        // Scheduler 7: Logits
         tornadoForwardScheduler.addWorkerGrid("rms_logits.projection", vocabWorker);
+        tornadoForwardScheduler.addWorkerGrid("rms_logits.check", singleWorker);
 
         return tornadoForwardScheduler;
     }
 
     /**
-     * Sets up the forward plan for TornadoVM execution with buffer sharing fixes. This implementation avoids array index out of bounds errors by: 1. Explicitly using the same references throughout
-     * all task graphs 2. Avoiding consume operations on fields, using direct transfers instead
-     */
-
-    /**
-     * Sets up the forward plan for TornadoVM execution with buffer sharing fixes. This implementation preserves the memory mapping approach for KV cache while fixing other buffer sharing issues.
+     * Sets up the forward plan for TornadoVM execution with improved logits projection
      */
     public Tuple2<List<ImmutableTaskGraph>, GridScheduler> setupTornadoForwardPlan() {
         List<ImmutableTaskGraph> taskGraphs = new ArrayList<>();
-
-        // Use state arrays directly instead of storing local references
 
         int dim = config.dim;
         int headSize = config.headSize;
@@ -129,26 +124,13 @@ public class TornadoVMLayerPlanner {
         FloatArray expValues = new FloatArray(headSize);
         FloatArray sumValues = new FloatArray(1);
 
-        // Define accessors for parallel-attention task
-//        AccessorParameters attentionParameters = new AccessorParameters(11);
-//        attentionParameters.set(0, state.wrapQ, Access.READ_WRITE);         // q is only read
-//        attentionParameters.set(1, state.wrapKeyCache, Access.READ_WRITE);  // key_cache is only read
-//        attentionParameters.set(2, state.wrapValueCache, Access.READ_WRITE); // value_cache is only read
-//        attentionParameters.set(3, state.wrapXb, Access.READ_WRITE);       // xb is only written to
-//        attentionParameters.set(4, config.numberOfHeads, Access.READ_ONLY); // nHeads is a constant
-//        attentionParameters.set(5, config.headSize, Access.READ_ONLY);      // headSize is a constant
-//        attentionParameters.set(6, kvDim, Access.READ_ONLY);               // kvDim is a constant
-//        attentionParameters.set(7, kvMul, Access.READ_ONLY);               // kvMul is a constant
-//        attentionParameters.set(8, config.contextLength, Access.READ_ONLY); // seqLen is a constant
-//        attentionParameters.set(9, state.positionAndLayer, Access.READ_ONLY); // position and layer are only read
-//        attentionParameters.set(10, state.wrapAtt, Access.READ_WRITE);      // wrapAtt is read and written
-//
+        // Debug buffer for tracking issues
+        FloatArray debugBuffer = new FloatArray(10);
+        debugBuffer.init(0.0f);
 
         // Create kernel context
         KernelContext context = new KernelContext();
-        String ptxFilePath = "/home/mikepapadim/repos/gpu-llama3.java/processHead.cl";
 
-        // @formatter:off
         // ================ TASK GRAPH 0: BUFFER INITIALIZATION ================
         TaskGraph updX = new TaskGraph("updX")
                 .transferToDevice(DataTransferMode.FIRST_EXECUTION, state.wrapX)
@@ -171,11 +153,9 @@ public class TornadoVMLayerPlanner {
                         intermediateReduceTwo, state.wrapHb, state.wrapHb2, state.wrapXb2,
                         // Attention buffers
                         state.wrapAtt, maxValues, expValues, sumValues,
-                        // Final RMS and logits
-//                        intermediateReduceThree,
                         // Caches
                         state.wrapKeyCache, state.wrapValueCache, context
-                        )
+                )
                 .transferToDevice(DataTransferMode.EVERY_EXECUTION, state.positionAndLayer)
 
                 // -------- RMS NORM --------
@@ -195,19 +175,14 @@ public class TornadoVMLayerPlanner {
 
                 // -------- MULTI-HEAD ATTENTION --------
                 .task("parallel-attention", TornadoVMCompute::processHeadsParallel,
-                            state.wrapQ, state.wrapKeyCache, state.wrapValueCache, state.wrapXb,
-                            config.numberOfHeads, config.headSize, kvDim, kvMul, config.contextLength,
-                            state.positionAndLayer, state.wrapAtt)
-//
-//                .prebuiltTask("processHeadsParallel",      // task name
-//                        "processHeadsParallel",          // name of the low-level kernel to invoke
-//                        ptxFilePath,                     // file path to the PTX kernel
-//                        attentionParameters)             // accessor parameters
+                        state.wrapQ, state.wrapKeyCache, state.wrapValueCache, state.wrapXb,
+                        config.numberOfHeads, config.headSize, kvDim, kvMul, config.contextLength,
+                        state.positionAndLayer, state.wrapAtt)
+
                 .task("matmul1", TornadoVMCompute::matmul, state.wrapXb2, state.wrapXb, weights.woFlat, dim, dim, state.positionAndLayer)
                 .task("residual1", TornadoVMCompute::addInPlace, state.wrapX, state.wrapXb2)
 
                 // -------- FFN --------
-
                 .task("reductionOneBlockFFN", TornadoVMCompute::reductionOneBlock, context, intermediateReduceTwo, state.wrapX, localSizeRMS, config.rmsNormEps)
                 .task("normalizeFFN", TornadoVMCompute::reductionOneBlock2, context, state.wrapXb, state.wrapX, weights.rms_ffn_weightFlat, intermediateReduceTwo, state.positionAndLayer, dim)
                 .task("projcectOne", TornadoVMCompute::matmul,   state.wrapHb,state.wrapXb, weights.w1Flat, dim, config.hiddenDim, state.positionAndLayer)
@@ -216,43 +191,89 @@ public class TornadoVMLayerPlanner {
                 .task("projectionTwo", TornadoVMCompute::matmul,  state.wrapXb, state.wrapHb, weights.w2Flat, config.hiddenDim, dim, state.positionAndLayer)
                 .task("residual2", TornadoVMCompute::addInPlace, state.wrapX, state.wrapXb)
                 .persistOnDevice(
-                    state.wrapX,
-                    state.positionAndLayer,
-                        context
-        );
-
-
-        // Execute PTX implementation
+                        state.wrapX,
+                        state.positionAndLayer, context
+                );
 
         taskGraphs.add(unifiedLayer.snapshot());
-//        // ================ TASK GRAPH 6+7: FINAL RMS NORM AND LOGITS PROJECTION ================
-            TaskGraph finalRmsAndLogitsGraph = new TaskGraph("rms_logits")
-                .consumeFromDevice(unifiedLayer.getTaskGraphName(),
-                        state.wrapX, state.positionAndLayer, context
-                )
-                .transferToDevice(DataTransferMode.FIRST_EXECUTION, state.wrapLogits, intermediateReduceThree,  weights.rms_final_weight_as_floatArray,  weights.wclsByteArray)
-                .task("reductionOneBlock", TornadoVMCompute::reductionOneBlock, context, intermediateReduceThree, state.wrapX, localSizeRMS, config.rmsNormEps)
-                .task("normalize", TornadoVMCompute::reductionOneBlock2InNout, context, state.wrapX, weights.rms_final_weight_as_floatArray, intermediateReduceThree, state.positionAndLayer, dim)
-                .task("projection", TornadoVMCompute::matmulTornadoQ8, context, weights.wclsByteArray, state.wrapX, state.wrapLogits, dim)
-                .transferToHost(DataTransferMode.EVERY_EXECUTION, state.wrapLogits);
-        taskGraphs.add(finalRmsAndLogitsGraph.snapshot());
-        // @formatter:on
+
+        // ===== FIXED TASK GRAPH FOR RMS NORM AND LOGITS PROJECTION =====
+        TaskGraph fixedFinalRmsGraph = new TaskGraph("rms_logits")
+                // Consume from the layer task graph with explicit device objects
+                .consumeFromDevice(unifiedLayer.getTaskGraphName(), state.wrapX, state.positionAndLayer, context)
+
+                // Transfer all necessary buffers to device
+                .transferToDevice(DataTransferMode.FIRST_EXECUTION,
+                        state.wrapLogits,           // Output logits buffer
+                        intermediateReduceThree,     // Intermediate reduction buffer
+                        weights.rms_final_weight_as_floatArray,  // Final RMS norm weights
+                        weights.wclsByteArray,       // Weight matrix for logits projection
+                        debugBuffer)                 // Debug buffer
+
+                // First RMS norm to normalize the input
+                .task("reductionOneBlock",
+                        TornadoVMCompute::reductionOneBlock,
+                        context,
+                        intermediateReduceThree,
+                        state.wrapX,
+                        localSizeRMS,
+                        config.rmsNormEps)
+
+                // Apply the normalization in-place on X
+                .task("normalize",
+                        TornadoVMCompute::reductionOneBlock2InNout,
+                        context,
+                        state.wrapX,
+                        weights.rms_final_weight_as_floatArray,
+                        intermediateReduceThree,
+                        state.positionAndLayer,
+                        dim)
+
+                // Initialize logits buffer to avoid undefined values
+                .task("initLogits",
+                        (FloatArray output) -> {
+                            for (@uk.ac.manchester.tornado.api.annotations.Parallel int i = 0; i < output.getSize(); i++) {
+                                output.set(i, 0.0f);
+                            }
+                        },
+                        state.wrapLogits)
+
+                // Use the enhanced fixed matmul for Q8 weights with debugging
+                .task("projection",
+                        TornadoVMCompute::enhancedMatmulTornadoQ8,
+                        context,
+                        weights.wclsByteArray,
+                        state.wrapX,
+                        state.wrapLogits,
+                        dim,
+                        debugBuffer)
+
+                // If debug mode is enabled, add a task to verify values
+                .task("check",
+                        TornadoVMCompute::checkLogitsValues,
+                        state.wrapLogits,
+                        debugBuffer)
+
+                // Important: Explicitly transfer the result back to host after EVERY execution
+                .transferToHost(DataTransferMode.EVERY_EXECUTION, state.wrapLogits, debugBuffer);
+
+        taskGraphs.add(fixedFinalRmsGraph.snapshot());
 
         return new Tuple2<>(taskGraphs, setupGridSchedulers());
     }
 
     private int validateAndAdjustBufferSizes() {
         // Log dimensions
-                System.out.println("Model dimensions:");
-                System.out.println("dim = " + config.dim);
-                System.out.println("headSize = " + config.headSize);
-                System.out.println("numHeads = " + config.numberOfHeads);
-                System.out.println("numKVHeads = " + config.numberOfKeyValueHeads);
+        System.out.println("Model dimensions:");
+        System.out.println("dim = " + config.dim);
+        System.out.println("headSize = " + config.headSize);
+        System.out.println("numHeads = " + config.numberOfHeads);
+        System.out.println("numKVHeads = " + config.numberOfKeyValueHeads);
+        System.out.println("vocabularySize = " + config.vocabularySize);
 
         // Validate localSizeRMS
         int localSizeRMS = 256;
         if (config.dim % localSizeRMS != 0) {
-            //            System.out.println("WARNING: dim (" + config.dim + ") is not divisible by localSizeRMS (" + localSizeRMS + ")");
             // Find a divisor close to original localSizeRMS
             for (int i = localSizeRMS; i > 0; i--) {
                 if (config.dim % i == 0) {
@@ -260,18 +281,9 @@ public class TornadoVMLayerPlanner {
                     break;
                 }
             }
-            //            System.out.println("Adjusted localSizeRMS to " + localSizeRMS);
         }
-        int kvDim = (config.dim * config.numberOfKeyValueHeads) / config.numberOfHeads;
 
-        // Check intermediate array sizes
-        int expectedReduceSize = config.dim / localSizeRMS;
-        //        System.out.println("Expected intermediate reduce size = " + expectedReduceSize);
-        //        System.out.println("wrapX size = " + state.wrapX.getSize());
-        //        // Add validation in validateAndAdjustBufferSizes()
-        //        System.out.println("Key cache size: " + state.wrapKeyCache.getSize());
-        //        System.out.println("Expected key cache size: " + (config.numberOfLayers * config.contextLength * kvDim));
-        // Similar checks for value cache
-        return expectedReduceSize;
+        // Return the expected reduction size
+        return config.dim / localSizeRMS;
     }
 }
