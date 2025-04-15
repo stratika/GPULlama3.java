@@ -129,24 +129,9 @@ public class TornadoVMLayerPlanner {
         FloatArray expValues = new FloatArray(headSize);
         FloatArray sumValues = new FloatArray(1);
 
-        // Define accessors for parallel-attention task
-//        AccessorParameters attentionParameters = new AccessorParameters(11);
-//        attentionParameters.set(0, state.wrapQ, Access.READ_WRITE);         // q is only read
-//        attentionParameters.set(1, state.wrapKeyCache, Access.READ_WRITE);  // key_cache is only read
-//        attentionParameters.set(2, state.wrapValueCache, Access.READ_WRITE); // value_cache is only read
-//        attentionParameters.set(3, state.wrapXb, Access.READ_WRITE);       // xb is only written to
-//        attentionParameters.set(4, config.numberOfHeads, Access.READ_ONLY); // nHeads is a constant
-//        attentionParameters.set(5, config.headSize, Access.READ_ONLY);      // headSize is a constant
-//        attentionParameters.set(6, kvDim, Access.READ_ONLY);               // kvDim is a constant
-//        attentionParameters.set(7, kvMul, Access.READ_ONLY);               // kvMul is a constant
-//        attentionParameters.set(8, config.contextLength, Access.READ_ONLY); // seqLen is a constant
-//        attentionParameters.set(9, state.positionAndLayer, Access.READ_ONLY); // position and layer are only read
-//        attentionParameters.set(10, state.wrapAtt, Access.READ_WRITE);      // wrapAtt is read and written
-//
 
         // Create kernel context
         KernelContext context = new KernelContext();
-        String ptxFilePath = "/home/mikepapadim/repos/gpu-llama3.java/processHead.cl";
 
         // @formatter:off
         // ================ TASK GRAPH 0: BUFFER INITIALIZATION ================
@@ -198,11 +183,7 @@ public class TornadoVMLayerPlanner {
                             state.wrapQ, state.wrapKeyCache, state.wrapValueCache, state.wrapXb,
                             config.numberOfHeads, config.headSize, kvDim, kvMul, config.contextLength,
                             state.positionAndLayer, state.wrapAtt)
-//
-//                .prebuiltTask("processHeadsParallel",      // task name
-//                        "processHeadsParallel",          // name of the low-level kernel to invoke
-//                        ptxFilePath,                     // file path to the PTX kernel
-//                        attentionParameters)             // accessor parameters
+
                 .task("matmul1", TornadoVMCompute::matmul, state.wrapXb2, state.wrapXb, weights.woFlat, dim, dim, state.positionAndLayer)
                 .task("residual1", TornadoVMCompute::addInPlace, state.wrapX, state.wrapXb2)
 
