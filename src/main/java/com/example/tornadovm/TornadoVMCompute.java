@@ -16,6 +16,79 @@ public class TornadoVMCompute {
 
     public TornadoVMCompute() {
     }
+    /**
+     * First step: Compute square sums in parallel and store results per work group
+     */
+    public static void reduceSquareSums(KernelContext context, FloatArray partialSums, FloatArray input, int localSize) {
+        int globalIdx = context.globalIdx;
+        int localIdx = context.localIdx;
+        int localGroupSize = context.localGroupSizeX;
+        int groupID = context.groupIdx;
+
+        // Allocate local memory for reduction
+        float[] localData = context.allocateFloatLocalArray(localSize);
+
+        // Compute squares and store in local memory
+        if (globalIdx < input.getSize()) {
+            float val = input.get(globalIdx);
+            localData[localIdx] = val * val;
+        } else {
+            localData[localIdx] = 0.0f;
+        }
+
+        // Perform parallel reduction within work group
+        for (int stride = (localGroupSize / 2); stride > 0; stride /= 2) {
+            context.localBarrier();
+            if (localIdx < stride) {
+                localData[localIdx] += localData[localIdx + stride];
+            }
+        }
+
+        // Store partial sum for this work group
+        if (localIdx == 0) {
+            partialSums.set(groupID, localData[0]);
+        }
+    }
+
+
+    public static void finalSum(FloatArray reduce, int size, float eps) {
+        float sum = 0.0f;
+
+        for (int i = 0; i < reduce.getSize(); i++) {
+            sum += reduce.get(i);
+        }
+
+        float ss = sum / (float) size;
+        ss += eps;
+        ss = 1.0f / TornadoMath.sqrt(ss);
+        reduce.set(0, ss);
+    }
+
+
+
+    /**
+     * Third step: Apply normalization and scaling using the computed scale factor
+     */
+    public static void normalizeAndScale(KernelContext context, FloatArray output, FloatArray input,
+            FloatArray weights, FloatArray scaleFactorBuffer,
+            IntArray positionAndLayer, int size) {
+        int globalIdx = context.globalIdx;
+
+        if (globalIdx < size) {
+            // Get the layer offset for weights
+            int layerOffset = positionAndLayer.get(1) * size;
+
+            // Get the scale factor computed in the second step
+            float scaleFactor = scaleFactorBuffer.get(0);
+
+            // Apply normalization and scaling
+            float inputVal = input.get(globalIdx);
+            float weightVal = weights.get(layerOffset + globalIdx);
+            float normalizedVal = weightVal * (scaleFactor * inputVal);
+
+            output.set(globalIdx, normalizedVal);
+        }
+    }
 
     /**
      * In-place addition using KernelContext

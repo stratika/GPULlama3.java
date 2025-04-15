@@ -52,9 +52,9 @@ public abstract class FloatTensor {
 
     public abstract void setFloat(int index, float value);
 
-    abstract FloatVector getFloatVector(VectorSpecies<Float> species, int offset);
+    protected abstract FloatVector getFloatVector(VectorSpecies<Float> species, int offset);
 
-    abstract GGMLType type();
+    protected abstract GGMLType type();
 
     public abstract MemorySegment asMemorySegment();
 

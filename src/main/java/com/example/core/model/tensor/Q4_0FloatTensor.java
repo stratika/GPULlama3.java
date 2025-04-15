@@ -39,7 +39,7 @@ public final class Q4_0FloatTensor extends FloatTensor {
     }
 
     @Override
-    FloatVector getFloatVector(VectorSpecies<Float> species, int index) {
+    protected FloatVector getFloatVector(VectorSpecies<Float> species, int index) {
         throw new UnsupportedOperationException("getFloatVector");
     }
 
