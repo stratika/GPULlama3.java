@@ -300,15 +300,20 @@ public class LlamaDebugApp {
         State javaState = model.createNewState();
         int token = javaState.latestToken;
         int position = 0;
-
+        int layerUpTo=2;
         // Create debug master plan
         TornadoVMMasterPlanDebug debugPlan = new TornadoVMMasterPlanDebug(javaState, model);
+        int kvDim = (model.configuration().dim * model.configuration().numberOfKeyValueHeads) / model.configuration().numberOfHeads;
+        int kvMul = model.configuration().numberOfHeads / model.configuration().numberOfKeyValueHeads; // integer multiplier of the kv sharing in multiquery
+        System.out.println("Configuration values:");
+        System.out.println("dim: " + model.configuration().dim + ", headSize: " + model.configuration().headSize + ", kvDim: " + kvDim + ", kvMul: " + kvMul);
+        System.out.println("hiddenDim: " + model.configuration().hiddenDim);
 
         // Perform the Java version for baseline comparison
         System.out.println("==== Running Java reference implementation ====");
         FloatTensor javaLogits;
         try (var timer = Timer.log("Java forward")) {
-            javaLogits = Llama.forwardJavaDebug(model, javaState, token, position, 1);
+            javaLogits = Llama.forwardJavaDebug(model, javaState, token, position, layerUpTo);
         }
 
         // Reset state for TornadoVM run
@@ -317,7 +322,7 @@ public class LlamaDebugApp {
         // Run TornadoVM implementation for a single layer
         System.out.println("\n==== Running TornadoVM Debug implementation (Layer 0 only) ====");
         try (var timer = Timer.log("TornadoVM forward")) {
-            debugPlan.tornadoVMForwardExecuteLayerWithValidation(position, 1, token, model);
+            debugPlan.tornadoVMForwardExecuteLayerWithValidation(position, layerUpTo, token, model);
         } finally {
 //            debugPlan.freeTornadoExecutionPlan();
         }

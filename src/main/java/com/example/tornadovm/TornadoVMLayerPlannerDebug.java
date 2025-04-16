@@ -354,9 +354,6 @@ public class TornadoVMLayerPlannerDebug {
         intermediateReduceFirst.init(0.0f);
         intermediateReduceTwo.init(0.0f);
         intermediateReduceThree.init(0.0f);
-        FloatArray maxValues = new FloatArray(1);
-        FloatArray expValues = new FloatArray(headSize);
-        FloatArray sumValues = new FloatArray(1);
 
         // Create kernel context
         KernelContext context = new KernelContext();
@@ -371,28 +368,18 @@ public class TornadoVMLayerPlannerDebug {
         taskGraphs.add(updX.snapshot());
 
         // ================ TASK GRAPH 1: RMS NORM ================
-//        TaskGraph rmsNormGraph = new TaskGraph("rmsNorm")
-//                .consumeFromDevice(state.wrapX)
-//                .transferToDevice(DataTransferMode.FIRST_EXECUTION,
-//                        weights.rms_att_weightFlat,
-//                        intermediateReduceFirst)
-//                .transferToDevice(DataTransferMode.EVERY_EXECUTION, state.positionAndLayer)
-//                .task("reductionOneBlock", TornadoVMCompute::reductionOneBlock,
-//                        context, intermediateReduceFirst, state.wrapX, localSizeRMS, config.rmsNormEps)
-//                .task("normalize1", TornadoVMCompute::reductionOneBlock2,
-//                        context, state.wrapXb, state.wrapX, weights.rms_att_weightFlat,
-//                        intermediateReduceFirst, state.positionAndLayer, dim)
-//                .persistOnDevice(state.wrapXb)
-//                .transferToHost(DataTransferMode.EVERY_EXECUTION,
-//                        state.wrapXb,
-//                        intermediateReduceFirst);
-//        taskGraphs.add(rmsNormGraph.snapshot());
 
         TaskGraph rmsNormGraph = new TaskGraph("rmsNorm")
                 .consumeFromDevice(state.wrapX)
                 .transferToDevice(DataTransferMode.FIRST_EXECUTION,
                         weights.rms_att_weightFlat,
-                        intermediateReduceFirst)
+                        intermediateReduceFirst,
+//                        state.wrapXb, state.wrapAtt,
+//                        state.wrapKeyCache, state.wrapValueCache,
+//                        state.wrapQ, state.wrapK, state.wrapV,
+//                        state.wrapXb2
+
+                )
                 .transferToDevice(DataTransferMode.EVERY_EXECUTION, state.positionAndLayer)
                 .task("reduceSquareSums", TornadoVMCompute::reduceSquareSums, context,
                         intermediateReduceFirst, state.wrapX, localSizeRMS)
@@ -402,16 +389,15 @@ public class TornadoVMLayerPlannerDebug {
                         state.wrapXb, state.wrapX, weights.rms_att_weightFlat, intermediateReduceFirst, state.positionAndLayer, dim)
                 .transferToHost(DataTransferMode.EVERY_EXECUTION,
                         state.wrapXb,
-                        intermediateReduceFirst);
-//                .persistOnDevice(state.wrapXb);
+                        intermediateReduceFirst)
+                .persistOnDevice(state.wrapXb, state.positionAndLayer);
         taskGraphs.add(rmsNormGraph.snapshot());
 
         // ================ TASK GRAPH 2: QKV MATMULS ================
         TaskGraph qkvMatmulGraph = new TaskGraph("qkvMatmul")
                 .consumeFromDevice(state.wrapXb)
                 .transferToDevice(DataTransferMode.FIRST_EXECUTION,
-                        weights.wqFlat, weights.wkFlat, weights.wvFlat, state.positionAndLayer)
-//                .transferToDevice(DataTransferMode.EVERY_EXECUTION, state.positionAndLayer)
+                        weights.wqFlat, weights.wkFlat, weights.wvFlat)
                 .task("qmatmul", TornadoVMCompute::matmul,
                         state.wrapQ, state.wrapXb, weights.wqFlat, dim, dim, state.positionAndLayer)
                 .task("kmatmul", TornadoVMCompute::matmul,

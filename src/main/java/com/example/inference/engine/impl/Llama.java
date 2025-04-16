@@ -326,10 +326,6 @@ public record Llama(Configuration configuration, Tokenizer tokenizer, Weights we
         float sqrtHeadSize = (float) Math.sqrt(headSize);
 
         System.out.println("\n======== JAVA DEBUG START ========");
-        System.out.println("Configuration values:");
-        System.out.println("dim: " + dim + ", headSize: " + headSize + ", kvDim: " + kvDim + ", kvMul: " + kvMul);
-        System.out.println("sqrtHeadSize: " + sqrtHeadSize);
-        System.out.println("hiddenDim: " + config.hiddenDim);
 
         // copy the token embedding into x
         weights.token_embedding_table.copyTo(token * dim, state.x, 0, dim);
@@ -342,7 +338,7 @@ public record Llama(Configuration configuration, Tokenizer tokenizer, Weights we
 
         // forward all the layers
         for (int l = 0; l < ll; l++) {
-            System.out.println("\n=========== LAYER " + l + " ===========");
+            System.out.println("\n=========== Processing LAYER " + l + " ===========");
 
             // attention rmsnorm
             System.out.println("\n-- Attention RMS Norm --");
@@ -517,7 +513,6 @@ public record Llama(Configuration configuration, Tokenizer tokenizer, Weights we
             for (int i = 0; i < 15; i++) {
                 System.out.printf("xb[%d] = %f%n", i, state.xb.getFloat(i));
             }
-            System.out.println("\n=========== LAYER " + l + " ===========");
 
             // FFN forward pass
             System.out.println("\n-- FFN Forward Pass --");
@@ -561,25 +556,9 @@ public record Llama(Configuration configuration, Tokenizer tokenizer, Weights we
                 System.out.printf("x[%d] = %f, xb[%d] = %f%n", i, state.x.getFloat(i), i, state.xb.getFloat(i));
             }
 
-            System.out.println("\n========= END OF LAYER " + l + " =========");
+            System.out.println("\n========= END PROCESSING LAYER " + l + " =========");
         }
 
-
-
-
-
-
-
-
-
-
-            //        }
-            //
-            //        System.out.println("\n======== FINAL OUTPUT TENSOR ========");
-            //        System.out.println("First 15 values of final x tensor:");
-            //        for (int i = 0; i < 15; i++) {
-            //            System.out.printf("x[%d] = %f%n", i, state.x.getFloat(i));
-            //        }
         System.out.println("\n======== JAVA DEBUG END ========");
             return state.x;
         }

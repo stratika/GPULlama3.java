@@ -146,6 +146,7 @@ public class TornadoVMMasterPlanDebug {
 //        for (int i = 0; i < 5; i++) {
 //            System.out.printf("x[%d] = %f%n", i, state.wrapX.get(i));
 //        }
+        System.out.println("\n==== Tornado Debug Start ====");
 
         state.positionAndLayer.set(0, position);
 
@@ -153,10 +154,6 @@ public class TornadoVMMasterPlanDebug {
         System.out.println("\n==== EXECUTING GRAPH 0: Buffer Initialization ====");
         executionPlan.withGraph(0).withGridScheduler(scheduler).execute();
 
-//        System.out.println("After Graph 0 - First 5 values of x tensor:");
-//        for (int i = 0; i < 5; i++) {
-//            System.out.printf("wrapX[%d] = %f%n", i, state.wrapX.get(i));
-//        }
 
         for (int l = 0; l < ll; l++) {
             System.out.println("\n==== PROCESSING LAYER " + l + " ====");
@@ -263,8 +260,12 @@ public class TornadoVMMasterPlanDebug {
             for (int i = 0; i < 15; i++) {
                 System.out.printf("wrapX[%d] = %f, wrapXb[%d] = %f%n", i, state.wrapX.get(i), i, state.wrapXb.get(i));
             }
+
+            System.out.println("\n==== End PROCESSING LAYER " + l + " ====");
+
         }
 
+        System.out.println("\n==== Tornado Debug End ====");
 
     }
 
