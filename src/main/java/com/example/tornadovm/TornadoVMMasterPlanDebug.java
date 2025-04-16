@@ -165,96 +165,96 @@ public class TornadoVMMasterPlanDebug {
             state.positionAndLayer.set(2, layerOffsetForCaches);
 
             // Execute Graph 1: RMS Norm
-            System.out.println("\n==== EXECUTING GRAPH 1: RMS Norm ====");
+            System.out.println("\n==== EXECUTING GRAPH 1: unified ====");
             executionPlan.withGraph(1).withGridScheduler(scheduler).execute();
 
-            System.out.println("After RMS Norm - First 5 values of xb tensor:");
-            for (int i = 0; i < 10; i++) {
-                System.out.printf("wrapXb[%d] = %f%n", i, state.wrapXb.get(i));
-            }
-
-            // Execute Graph 2: QKV Matmuls
-            System.out.println("\n==== EXECUTING GRAPH 2: QKV Matmuls ====");
-            executionPlan.withGraph(2).withGridScheduler(scheduler).execute();
-
-            System.out.println("After QKV Matmuls - First 15 values of q, k, v tensors:");
-            for (int i = 0; i < 15; i++) {
-                System.out.printf("wrapQ[%d] = %f, wrapK[%d] = %f, wrapV[%d] = %f%n", i, state.wrapQ.get(i), i, state.wrapK.get(i), i, state.wrapV.get(i));
-            }
-//            }
-//
-            // Execute Graph 3: RoPE Rotation
-            System.out.println("\n==== EXECUTING GRAPH 3: RoPE Rotation ====");
-            executionPlan.withGraph(3).withGridScheduler(scheduler).execute();
-//
-            System.out.println("After RoPE - First 5 values of q, k tensors (rotated):");
-            for (int i = 0; i < 15; i++) {
-                System.out.printf("wrapQ[%d] = %f, wrapK[%d] = %f%n", i, state.wrapQ.get(i), i, state.wrapK.get(i));
-            }
-
-            // Execute Graph 4: Copy to Caches
-            System.out.println("\n==== EXECUTING GRAPH 4: Copy to Caches ====");
-            executionPlan.withGraph(4).withGridScheduler(scheduler).execute();
-
-            System.out.println("After Copy to Caches - First 5 values of key/value caches:");
-            int cacheOffset = layerOffsetForCaches;
-            for (int i = 0; i < 15; i++) {
-                System.out.printf("keyCache[%d] = %f, valueCache[%d] = %f%n",
-                        cacheOffset + i, state.wrapKeyCache.get(cacheOffset + i),
-                        cacheOffset + i, state.wrapValueCache.get(cacheOffset + i));
-            }
-//
-//            // Execute Graph 5: Multi-head Attention
-            System.out.println("\n==== EXECUTING GRAPH 5: Multi-head Attention ====");
-            executionPlan.withGraph(5).withGridScheduler(scheduler).execute();
-
-            System.out.println("After Attention - First 5 values of xb tensor (attention output):");
-            for (int i = 0; i < 15; i++) {
-                System.out.printf("wrapXb[%d] = %f%n", i, state.wrapXb.get(i));
-            }
-//
-            // Execute Graph 6: Attention Output Processing
-            System.out.println("\n==== EXECUTING GRAPH 6: Attention Output Processing ====");
-            executionPlan.withGraph(6).withGridScheduler(scheduler).execute();
-
-            System.out.println("After Attention Output - First 5 values of x tensor (after residual):");
-            for (int i = 0; i < 15; i++) {
-                System.out.printf("wrapX[%d] = %f, wrapXb2[%d] = %f%n", i, state.wrapX.get(i),  i , state.wrapXb2.get(i));
-            }
-//
-            // Execute Graph 7: FFN Part 1 (Norm)
-            System.out.println("\n==== EXECUTING GRAPH 7: FFN Norm ====");
-            executionPlan.withGraph(7).withGridScheduler(scheduler).execute();
-
-            System.out.println("After FFN Norm - First 5 values of xb tensor:");
-            for (int i = 0; i < 15; i++) {
-                System.out.printf("wrapXb[%d] = %f%n", i, state.wrapXb.get(i));
-//                rmsnorm(s->xb, x, w->rms_ffn_weight + l*dim, dim);
-
-            }
-//
-            // Execute Graph 8: FFN Part 2 (Projections)
-            System.out.println("\n==== EXECUTING GRAPH 8: FFN Projections ====");
-            executionPlan.withGraph(8).withGridScheduler(scheduler).execute();
-
-            System.out.println("After FFN Projections - First 5 values of hb, hb2 tensors:");
-            for (int i = 0; i < 15; i++) {
-                System.out.printf("wrapHb[%d] = %f, wrapHb2[%d] = %f%n",
-                        i, state.wrapHb.get(i), i, state.wrapHb2.get(i));
-            }
-//
-            // Execute Graph 9: FFN Part 3 (Activation)
-            System.out.println("\n==== EXECUTING GRAPH 9: FFN Activation ====");
-            executionPlan.withGraph(9).withGridScheduler(scheduler).execute();
-
-            System.out.println("After FFN Activation - First 5 values of hb tensor (after SiLU):");
-            for (int i = 0; i < 15; i++) {
-                System.out.printf("wrapHb[%d] = %f%n", i, state.wrapHb.get(i));
-            }
+    //            System.out.println("After RMS Norm - First 5 values of xb tensor:");
+    //            for (int i = 0; i < 10; i++) {
+    //                System.out.printf("wrapXb[%d] = %f%n", i, state.wrapXb.get(i));
+    //            }
+    //
+    //            // Execute Graph 2: QKV Matmuls
+    //            System.out.println("\n==== EXECUTING GRAPH 2: QKV Matmuls ====");
+    //            executionPlan.withGraph(2).withGridScheduler(scheduler).execute();
+    //
+    //            System.out.println("After QKV Matmuls - First 15 values of q, k, v tensors:");
+    //            for (int i = 0; i < 15; i++) {
+    //                System.out.printf("wrapQ[%d] = %f, wrapK[%d] = %f, wrapV[%d] = %f%n", i, state.wrapQ.get(i), i, state.wrapK.get(i), i, state.wrapV.get(i));
+    //            }
+    ////            }
+    ////
+    //            // Execute Graph 3: RoPE Rotation
+    //            System.out.println("\n==== EXECUTING GRAPH 3: RoPE Rotation ====");
+    //            executionPlan.withGraph(3).withGridScheduler(scheduler).execute();
+    ////
+    //            System.out.println("After RoPE - First 5 values of q, k tensors (rotated):");
+    //            for (int i = 0; i < 15; i++) {
+    //                System.out.printf("wrapQ[%d] = %f, wrapK[%d] = %f%n", i, state.wrapQ.get(i), i, state.wrapK.get(i));
+    //            }
+    //
+    //            // Execute Graph 4: Copy to Caches
+    //            System.out.println("\n==== EXECUTING GRAPH 4: Copy to Caches ====");
+    //            executionPlan.withGraph(4).withGridScheduler(scheduler).execute();
+    //
+    //            System.out.println("After Copy to Caches - First 5 values of key/value caches:");
+    //            int cacheOffset = layerOffsetForCaches;
+    //            for (int i = 0; i < 15; i++) {
+    //                System.out.printf("keyCache[%d] = %f, valueCache[%d] = %f%n",
+    //                        cacheOffset + i, state.wrapKeyCache.get(cacheOffset + i),
+    //                        cacheOffset + i, state.wrapValueCache.get(cacheOffset + i));
+    //            }
+    ////
+    ////            // Execute Graph 5: Multi-head Attention
+    //            System.out.println("\n==== EXECUTING GRAPH 5: Multi-head Attention ====");
+    //            executionPlan.withGraph(5).withGridScheduler(scheduler).execute();
+    //
+    //            System.out.println("After Attention - First 5 values of xb tensor (attention output):");
+    //            for (int i = 0; i < 15; i++) {
+    //                System.out.printf("wrapXb[%d] = %f%n", i, state.wrapXb.get(i));
+    //            }
+    ////
+    //            // Execute Graph 6: Attention Output Processing
+    //            System.out.println("\n==== EXECUTING GRAPH 6: Attention Output Processing ====");
+    //            executionPlan.withGraph(6).withGridScheduler(scheduler).execute();
+    //
+    //            System.out.println("After Attention Output - First 5 values of x tensor (after residual):");
+    //            for (int i = 0; i < 15; i++) {
+    //                System.out.printf("wrapX[%d] = %f, wrapXb2[%d] = %f%n", i, state.wrapX.get(i),  i , state.wrapXb2.get(i));
+    //            }
+    ////
+    //            // Execute Graph 7: FFN Part 1 (Norm)
+    //            System.out.println("\n==== EXECUTING GRAPH 7: FFN Norm ====");
+    //            executionPlan.withGraph(7).withGridScheduler(scheduler).execute();
+    //
+    //            System.out.println("After FFN Norm - First 5 values of xb tensor:");
+    //            for (int i = 0; i < 15; i++) {
+    //                System.out.printf("wrapXb[%d] = %f%n", i, state.wrapXb.get(i));
+    ////                rmsnorm(s->xb, x, w->rms_ffn_weight + l*dim, dim);
+    //
+    //            }
+    ////
+    //            // Execute Graph 8: FFN Part 2 (Projections)
+    //            System.out.println("\n==== EXECUTING GRAPH 8: FFN Projections ====");
+    //            executionPlan.withGraph(8).withGridScheduler(scheduler).execute();
+    //
+    //            System.out.println("After FFN Projections - First 5 values of hb, hb2 tensors:");
+    //            for (int i = 0; i < 15; i++) {
+    //                System.out.printf("wrapHb[%d] = %f, wrapHb2[%d] = %f%n",
+    //                        i, state.wrapHb.get(i), i, state.wrapHb2.get(i));
+    //            }
+    ////
+    //            // Execute Graph 9: FFN Part 3 (Activation)
+    //            System.out.println("\n==== EXECUTING GRAPH 9: FFN Activation ====");
+    //            executionPlan.withGraph(9).withGridScheduler(scheduler).execute();
+    //
+    //            System.out.println("After FFN Activation - First 5 values of hb tensor (after SiLU):");
+    //            for (int i = 0; i < 15; i++) {
+    //                System.out.printf("wrapHb[%d] = %f%n", i, state.wrapHb.get(i));
+    //            }
 //
             // Execute Graph 10: FFN Part 4 (Final Projections)
-            System.out.println("\n==== EXECUTING GRAPH 10: FFN Final ====");
-            executionPlan.withGraph(10).withGridScheduler(scheduler).execute();
+//            System.out.println("\n==== EXECUTING GRAPH 10: FFN Final ====");
+//            executionPlan.withGraph(10).withGridScheduler(scheduler).execute();
 
             System.out.println("After FFN Final - First 5 values of x tensor (after residual):");
             for (int i = 0; i < 15; i++) {

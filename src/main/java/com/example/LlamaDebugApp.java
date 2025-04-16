@@ -298,11 +298,14 @@ public class LlamaDebugApp {
      */
     static void runSingleForwardOperation(Llama model, Options options) {
         State javaState = model.createNewState();
+        State tornadoState = model.createNewState();
+
         int token = javaState.latestToken;
         int position = 0;
-        int layerUpTo=2;
+//        int layerUpTo=model.configuration().numberOfLayers;
+        int layerUpTo=6;
         // Create debug master plan
-        TornadoVMMasterPlanDebug debugPlan = new TornadoVMMasterPlanDebug(javaState, model);
+        TornadoVMMasterPlanDebug debugPlan = new TornadoVMMasterPlanDebug(tornadoState, model);
         int kvDim = (model.configuration().dim * model.configuration().numberOfKeyValueHeads) / model.configuration().numberOfHeads;
         int kvMul = model.configuration().numberOfHeads / model.configuration().numberOfKeyValueHeads; // integer multiplier of the kv sharing in multiquery
         System.out.println("Configuration values:");
@@ -317,7 +320,6 @@ public class LlamaDebugApp {
         }
 
         // Reset state for TornadoVM run
-        State tornadoState = model.createNewState();
 
         // Run TornadoVM implementation for a single layer
         System.out.println("\n==== Running TornadoVM Debug implementation (Layer 0 only) ====");
@@ -327,9 +329,6 @@ public class LlamaDebugApp {
 //            debugPlan.freeTornadoExecutionPlan();
         }
 
-        // Compare outputs - for a complete run we would compare logits
-        // For a partial run (layer 0 only), we need to check intermediate states
-//
     }
 
     public static void main(String[] args) throws IOException {

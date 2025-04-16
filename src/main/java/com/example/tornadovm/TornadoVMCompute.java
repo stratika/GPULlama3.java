@@ -802,7 +802,7 @@ public class TornadoVMCompute {
                 for (int i = 0; i < headSize; i++) {
                     score += allQ.get(h * headSize + i) * key_cache.get(keyOffset + i);
                 }
-                score = score / (float) Math.sqrt(headSize);
+                score = score / TornadoMath.sqrt(headSize);
 
                 // Store in attention buffer
                 wrapAtt.set(headOffset + t, score);
@@ -821,7 +821,7 @@ public class TornadoVMCompute {
             float sum = 0.0f;
             for (int t = 0; t <= pos; t++) {
                 int idx = headOffset + t;
-                float expScore = (float) Math.exp(wrapAtt.get(idx) - maxScore);
+                float expScore =  TornadoMath.exp(wrapAtt.get(idx) - maxScore);
                 wrapAtt.set(idx, expScore);
                 sum += expScore;
             }
