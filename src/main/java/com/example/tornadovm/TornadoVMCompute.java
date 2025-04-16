@@ -1,6 +1,7 @@
 package com.example.tornadovm;
 
 import com.example.core.model.GGMLType;
+import com.example.core.model.tensor.FloatTensor;
 import com.example.core.types.Float16;
 import uk.ac.manchester.tornado.api.KernelContext;
 import uk.ac.manchester.tornado.api.annotations.Parallel;
@@ -90,6 +91,26 @@ public class TornadoVMCompute {
         }
     }
 
+    public static void rmsnorm(FloatArray output, FloatArray input, FloatArray weights, IntArray positionAndLayer,
+            int size, float ermsNorm) {
+        // Calculate layer offset - weights for this layer start at this offset
+        int layerOffset = positionAndLayer.get(1) * size;
+
+        // Calculate sum of squares
+        float sumSquares = 0.0f;
+        for (int j = 0; j < size; j++) {
+            sumSquares += input.get(j) * input.get(j);
+        }
+        sumSquares /= size;
+        sumSquares += ermsNorm; // Add epsilon for numerical stability
+        float scale = 1.0f / (float)TornadoMath.sqrt(sumSquares);
+
+        // Normalize and scale with weights from the correct layer
+        for (int j = 0; j < size; j++) {
+            output.set(j,weights.get(layerOffset + j) * (scale * input.get(j)));
+        }
+    }
+
     /**
      * In-place addition using KernelContext
      */
@@ -136,7 +157,7 @@ public class TornadoVMCompute {
             float val = hb.get(i);
             val *= (1.0f / (1.0f + TornadoMath.exp(-val)));
             val *= hb2.get(i);
-            hb2.set(i, val);
+            hb.set(i, val);
         }
     }
 

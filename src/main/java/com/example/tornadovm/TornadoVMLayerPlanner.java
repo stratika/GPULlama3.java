@@ -203,7 +203,6 @@ public class TornadoVMLayerPlanner {
         );
 
 
-        // Execute PTX implementation
 
         taskGraphs.add(unifiedLayer.snapshot());
 //        // ================ TASK GRAPH 6+7: FINAL RMS NORM AND LOGITS PROJECTION ================

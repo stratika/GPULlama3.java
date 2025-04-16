@@ -232,42 +232,40 @@ public class TornadoVMMasterPlanDebug {
             System.out.println("After FFN Norm - First 5 values of xb tensor:");
             for (int i = 0; i < 15; i++) {
                 System.out.printf("wrapXb[%d] = %f%n", i, state.wrapXb.get(i));
+//                rmsnorm(s->xb, x, w->rms_ffn_weight + l*dim, dim);
+
             }
 //
-//            // Execute Graph 8: FFN Part 2 (Projections)
-//            System.out.println("\n==== EXECUTING GRAPH 8: FFN Projections ====");
-//            executionPlan.withGraph(8).withGridScheduler(scheduler).execute();
+            // Execute Graph 8: FFN Part 2 (Projections)
+            System.out.println("\n==== EXECUTING GRAPH 8: FFN Projections ====");
+            executionPlan.withGraph(8).withGridScheduler(scheduler).execute();
+
+            System.out.println("After FFN Projections - First 5 values of hb, hb2 tensors:");
+            for (int i = 0; i < 15; i++) {
+                System.out.printf("wrapHb[%d] = %f, wrapHb2[%d] = %f%n",
+                        i, state.wrapHb.get(i), i, state.wrapHb2.get(i));
+            }
 //
-//            System.out.println("After FFN Projections - First 5 values of hb, hb2 tensors:");
-//            for (int i = 0; i < 5; i++) {
-//                System.out.printf("wrapHb[%d] = %f, wrapHb2[%d] = %f%n",
-//                        i, state.wrapHb.get(i), i, state.wrapHb2.get(i));
-//            }
+            // Execute Graph 9: FFN Part 3 (Activation)
+            System.out.println("\n==== EXECUTING GRAPH 9: FFN Activation ====");
+            executionPlan.withGraph(9).withGridScheduler(scheduler).execute();
+
+            System.out.println("After FFN Activation - First 5 values of hb tensor (after SiLU):");
+            for (int i = 0; i < 15; i++) {
+                System.out.printf("wrapHb[%d] = %f%n", i, state.wrapHb.get(i));
+            }
 //
-//            // Execute Graph 9: FFN Part 3 (Activation)
-//            System.out.println("\n==== EXECUTING GRAPH 9: FFN Activation ====");
-//            executionPlan.withGraph(9).withGridScheduler(scheduler).execute();
-//
-//            System.out.println("After FFN Activation - First 5 values of hb tensor (after SiLU):");
-//            for (int i = 0; i < 5; i++) {
-//                System.out.printf("wrapHb[%d] = %f%n", i, state.wrapHb.get(i));
-//            }
-//
-//            // Execute Graph 10: FFN Part 4 (Final Projections)
-//            System.out.println("\n==== EXECUTING GRAPH 10: FFN Final ====");
-//            executionPlan.withGraph(10).withGridScheduler(scheduler).execute();
-//
-//            System.out.println("After FFN Final - First 5 values of x tensor (after residual):");
-//            for (int i = 0; i < 5; i++) {
-//                System.out.printf("wrapX[%d] = %f%n", i, state.wrapX.get(i));
-//            }
+            // Execute Graph 10: FFN Part 4 (Final Projections)
+            System.out.println("\n==== EXECUTING GRAPH 10: FFN Final ====");
+            executionPlan.withGraph(10).withGridScheduler(scheduler).execute();
+
+            System.out.println("After FFN Final - First 5 values of x tensor (after residual):");
+            for (int i = 0; i < 15; i++) {
+                System.out.printf("wrapX[%d] = %f, wrapXb[%d] = %f%n", i, state.wrapX.get(i), i, state.wrapXb.get(i));
+            }
         }
 
-//        System.out.println("\n==== FINAL STATE ====");
-//        System.out.println("First 5 values of x tensor:");
-//        for (int i = 0; i < 5; i++) {
-//            System.out.printf("wrapX[%d] = %f%n", i, state.wrapX.get(i));
-//        }
+
     }
 
 

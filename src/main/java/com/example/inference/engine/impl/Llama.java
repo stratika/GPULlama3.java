@@ -329,6 +329,7 @@ public record Llama(Configuration configuration, Tokenizer tokenizer, Weights we
         System.out.println("Configuration values:");
         System.out.println("dim: " + dim + ", headSize: " + headSize + ", kvDim: " + kvDim + ", kvMul: " + kvMul);
         System.out.println("sqrtHeadSize: " + sqrtHeadSize);
+        System.out.println("hiddenDim: " + config.hiddenDim);
 
         // copy the token embedding into x
         weights.token_embedding_table.copyTo(token * dim, state.x, 0, dim);
@@ -518,6 +519,49 @@ public record Llama(Configuration configuration, Tokenizer tokenizer, Weights we
             }
             System.out.println("\n=========== LAYER " + l + " ===========");
 
+            // FFN forward pass
+            System.out.println("\n-- FFN Forward Pass --");
+            weights.w1[l].matmul(state.xb, state.hb, config.hiddenDim, dim);
+            weights.w3[l].matmul(state.xb, state.hb2, config.hiddenDim, dim);
+
+            System.out.println("First 10 values after w1 matmul (hb):");
+            for (int i = 0; i < 15; i++) {
+                System.out.printf("hb[%d] = %f, hb2[%d] = %f%n", i, state.hb.getFloat(i), i, state.hb2.getFloat(i));
+            }
+
+
+
+            // SwiGLU non-linearity
+            System.out.println("\n-- SwiGLU Activation --");
+
+            state.hb.mapInPlace(value -> value / (float) (1.0 + Math.exp(-value)));
+
+
+            // elementwise multiply with w3(x)
+            System.out.println("\n-- Elementwise Multiply  --");
+            state.hb.multiplyInPlace(state.hb2);
+
+            System.out.println("First 14 values after silu_elementwise_mul:");
+            for (int i = 0; i < 15; i++) {
+                System.out.printf("hb[%d] = %f%n", i, state.hb.getFloat(i));
+            }
+
+
+            // final matmul to get FFN output
+            weights.w2[l].matmul(state.hb, state.xb, dim, config.hiddenDim);
+
+            // residual connection
+//            System.out.println("\n-- Second Residual Connection --");
+            System.out.println("\n-- FFN Output Projection --");
+
+            state.x.addInPlace(state.xb);
+
+            System.out.println("\nFirst 10 values of x after residual:");
+            for (int i = 0; i < 15; i++) {
+                System.out.printf("x[%d] = %f, xb[%d] = %f%n", i, state.x.getFloat(i), i, state.xb.getFloat(i));
+            }
+
+            System.out.println("\n========= END OF LAYER " + l + " =========");
         }
 
 
@@ -526,69 +570,9 @@ public record Llama(Configuration configuration, Tokenizer tokenizer, Weights we
 
 
 
-            //
-            //            // FFN forward pass
-            //            System.out.println("\n-- FFN Forward Pass --");
-            //            weights.w1[l].matmul(state.xb, state.hb, config.hiddenDim, dim);
-            //            weights.w3[l].matmul(state.xb, state.hb2, config.hiddenDim, dim);
-            //
-            //            System.out.println("First 10 values after w1 matmul (hb):");
-            //            for (int i = 0; i < 10; i++) {
-            //                System.out.printf("hb[%d] = %f%n", i, state.hb.getFloat(i));
-            //            }
-            //
-            //            System.out.println("\nFirst 10 values after w3 matmul (hb2):");
-            //            for (int i = 0; i < 10; i++) {
-            //                System.out.printf("hb2[%d] = %f%n", i, state.hb2.getFloat(i));
-            //            }
-            //
-            //            // SwiGLU non-linearity
-            //            System.out.println("\n-- SwiGLU Activation --");
-            //            System.out.println("First 10 values before SiLU:");
-            //            for (int i = 0; i < 10; i++) {
-            //                System.out.printf("hb[%d] = %f%n", i, state.hb.getFloat(i));
-            //            }
-            //
-            //            state.hb.mapInPlace(value -> value / (float) (1.0 + Math.exp(-value)));
-            //
-            //            System.out.println("\nFirst 10 values after SiLU:");
-            //            for (int i = 0; i < 10; i++) {
-            //                System.out.printf("hb[%d] = %f%n", i, state.hb.getFloat(i));
-            //            }
-            //
-            //            // elementwise multiply with w3(x)
-            //            System.out.println("\n-- Elementwise Multiply --");
-            //            state.hb.multiplyInPlace(state.hb2);
-            //
-            //            System.out.println("First 10 values after elementwise multiply:");
-            //            for (int i = 0; i < 10; i++) {
-            //                System.out.printf("hb[%d] = %f%n", i, state.hb.getFloat(i));
-            //            }
-            //
-            //            // final matmul to get FFN output
-            //            System.out.println("\n-- FFN Output Projection --");
-            //            weights.w2[l].matmul(state.hb, state.xb, dim, config.hiddenDim);
-            //
-            //            System.out.println("First 10 values after w2 matmul:");
-            //            for (int i = 0; i < 10; i++) {
-            //                System.out.printf("xb[%d] = %f%n", i, state.xb.getFloat(i));
-            //            }
-            //
-            //            // residual connection
-            //            System.out.println("\n-- Second Residual Connection --");
-            //            System.out.println("First 10 values of x before residual:");
-            //            for (int i = 0; i < 10; i++) {
-            //                System.out.printf("x[%d] = %f%n", i, state.x.getFloat(i));
-            //            }
-            //
-            //            state.x.addInPlace(state.xb);
-            //
-            //            System.out.println("\nFirst 10 values of x after residual:");
-            //            for (int i = 0; i < 10; i++) {
-            //                System.out.printf("x[%d] = %f%n", i, state.x.getFloat(i));
-            //            }
-            //
-            //            System.out.println("\n========= END OF LAYER " + l + " =========");
+
+
+
             //        }
             //
             //        System.out.println("\n======== FINAL OUTPUT TENSOR ========");

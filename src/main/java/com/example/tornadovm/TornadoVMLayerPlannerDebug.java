@@ -93,9 +93,10 @@ public class TornadoVMLayerPlannerDebug {
 
         // Scheduler 7: FFN Part 1 (Norm)
 
-        tornadoForwardScheduler.addWorkerGrid("rmsNorm.reduceSquareSumsFFN", dimWorker);
-        tornadoForwardScheduler.addWorkerGrid("rmsNorm.finalizeReductionFFN", singleWorker);
-        tornadoForwardScheduler.addWorkerGrid("rmsNorm.normalizeAndScaleFFN", dimWorker);
+        tornadoForwardScheduler.addWorkerGrid("rmsNormFFN.rms", singleWorker);
+        //        tornadoForwardScheduler.addWorkerGrid("rmsNorm.reduceSquareSumsFFN", dimWorker);
+//        tornadoForwardScheduler.addWorkerGrid("rmsNorm.finalizeReductionFFN", singleWorker);
+//        tornadoForwardScheduler.addWorkerGrid("rmsNorm.normalizeAndScaleFFN", dimWorker);
 
         // Scheduler 8: FFN Part 2 (Projections)
         tornadoForwardScheduler.addWorkerGrid("ffnProj.projectOne", hiddenDimWorker);
@@ -476,59 +477,80 @@ public class TornadoVMLayerPlannerDebug {
                 .transferToHost(DataTransferMode.EVERY_EXECUTION, state.wrapX, state.wrapXb2);
         taskGraphs.add(attOutGraph.snapshot());
 
+
+        // ADD A SERIAL VERSION OF THE ONE BELLOW JUST TO GO FURTHER
+        // todo; llama.c
+
         // ================ TASK GRAPH 7: FFN PART 1 (NORM) ================
-        TaskGraph ffnNormGraph = new TaskGraph("ffnNorm")
+//        TaskGraph ffnNormGraph = new TaskGraph("ffnNorm")
+//                .consumeFromDevice(state.wrapXb, state.wrapAtt, state.wrapKeyCache,
+//                        state.wrapValueCache, state.wrapQ, state.wrapK, state.positionAndLayer,  state.wrapX, state.wrapXb2)
+//
+//                .transferToDevice(DataTransferMode.FIRST_EXECUTION,
+//                        weights.rms_ffn_weightFlat, intermediateReduceTwo)
+//
+//                .task("reduceSquareSumsFFN", TornadoVMCompute::reduceSquareSums, context,
+//                        intermediateReduceTwo, state.wrapX, localSizeRMS)
+//                .task("finalizeReductionFFN", TornadoVMCompute::finalSum,
+//                        intermediateReduceTwo, dim, config.rmsNormEps)
+//                .task("normalizeAndScaleFFN", TornadoVMCompute::normalizeAndScale, context,
+//                        state.wrapXb, state.wrapX, weights.rms_ffn_weightFlat, intermediateReduceTwo, state.positionAndLayer, dim)
+//                .persistOnDevice(state.wrapXb,  state.wrapAtt, state.wrapKeyCache,
+//                        state.wrapValueCache, state.wrapQ, state.wrapK, state.positionAndLayer,  state.wrapX, state.wrapXb2)
+//                .transferToHost(DataTransferMode.EVERY_EXECUTION, state.wrapXb, intermediateReduceTwo);
+//        taskGraphs.add(ffnNormGraph.snapshot());
+        TaskGraph ffnNormGraph = new TaskGraph("rmsNormFFN")
                 .consumeFromDevice(state.wrapXb, state.wrapAtt, state.wrapKeyCache,
                         state.wrapValueCache, state.wrapQ, state.wrapK, state.positionAndLayer,  state.wrapX, state.wrapXb2)
 
                 .transferToDevice(DataTransferMode.FIRST_EXECUTION,
-                        weights.rms_ffn_weightFlat, intermediateReduceTwo)
+                        weights.rms_ffn_weightFlat)
 
-                .task("reduceSquareSumsFFN", TornadoVMCompute::reduceSquareSums, context,
-                        intermediateReduceTwo, state.wrapX, localSizeRMS)
-                .task("finalizeReductionFFN", TornadoVMCompute::finalSum,
-                        intermediateReduceTwo, dim, config.rmsNormEps)
-                .task("normalizeAndScaleFFN", TornadoVMCompute::normalizeAndScale, context,
-                        state.wrapXb, state.wrapX, weights.rms_ffn_weightFlat, intermediateReduceTwo, state.positionAndLayer, dim)
+                .task("rms", TornadoVMCompute::rmsnorm,
+                        state.wrapXb, state.wrapX, weights.rms_ffn_weightFlat, state.positionAndLayer, dim, config.rmsNormEps)
+
                 .persistOnDevice(state.wrapXb,  state.wrapAtt, state.wrapKeyCache,
                         state.wrapValueCache, state.wrapQ, state.wrapK, state.positionAndLayer,  state.wrapX, state.wrapXb2)
-                .transferToHost(DataTransferMode.EVERY_EXECUTION, state.wrapXb, intermediateReduceTwo);
-        taskGraphs.add(ffnNormGraph.snapshot());
+                .transferToHost(DataTransferMode.EVERY_EXECUTION, state.wrapXb);
+                taskGraphs.add(ffnNormGraph.snapshot());
 
 
         // ================ TASK GRAPH 8: FFN PART 2 (PROJECTIONS) ================
         TaskGraph ffnProjGraph = new TaskGraph("ffnProj")
-                .consumeFromDevice(state.wrapXb)
+                .consumeFromDevice(state.wrapXb,  state.wrapAtt, state.wrapKeyCache,
+                        state.wrapValueCache, state.wrapQ, state.wrapK, state.positionAndLayer,  state.wrapX, state.wrapXb2)
                 .transferToDevice(DataTransferMode.FIRST_EXECUTION,
                         weights.w1Flat, weights.w3Flat)
-                .transferToDevice(DataTransferMode.EVERY_EXECUTION, state.positionAndLayer)
                 .task("projectOne", TornadoVMCompute::matmul,
                         state.wrapHb, state.wrapXb, weights.w1Flat, dim, config.hiddenDim, state.positionAndLayer)
                 .task("projectionThree", TornadoVMCompute::matmul,
                         state.wrapHb2, state.wrapXb, weights.w3Flat, dim, config.hiddenDim, state.positionAndLayer)
-                .persistOnDevice(state.wrapHb, state.wrapHb2)
+                .persistOnDevice(state.wrapHb, state.wrapHb2, state.wrapXb,  state.wrapAtt, state.wrapKeyCache,
+                        state.wrapValueCache, state.wrapQ, state.wrapK, state.positionAndLayer,  state.wrapX, state.wrapXb2)
                 .transferToHost(DataTransferMode.EVERY_EXECUTION, state.wrapHb, state.wrapHb2);
         taskGraphs.add(ffnProjGraph.snapshot());
 
         // ================ TASK GRAPH 9: FFN PART 3 (ACTIVATION) ================
         TaskGraph ffnActivationGraph = new TaskGraph("ffnActivation")
-                .consumeFromDevice(state.wrapHb, state.wrapHb2)
+                .consumeFromDevice( state.wrapXb,  state.wrapAtt, state.wrapKeyCache,
+                        state.wrapValueCache, state.wrapQ, state.wrapK, state.positionAndLayer,  state.wrapX, state.wrapXb2)
                 .task("silu_elementwise_mul", TornadoVMCompute::siluElemWiseMulActivation,
                         config.hiddenDim, state.wrapHb, state.wrapHb2)
-                .persistOnDevice(state.wrapHb)
+                .persistOnDevice(state.wrapHb, state.wrapHb2, state.wrapXb,  state.wrapAtt, state.wrapKeyCache,
+                        state.wrapValueCache, state.wrapQ, state.wrapK, state.positionAndLayer,  state.wrapX, state.wrapXb2)
                 .transferToHost(DataTransferMode.EVERY_EXECUTION, state.wrapHb);
         taskGraphs.add(ffnActivationGraph.snapshot());
 
         // ================ TASK GRAPH 10: FFN PART 4 (FINAL PROJECTIONS) ================
         TaskGraph ffnFinalGraph = new TaskGraph("ffnFinal")
-                .consumeFromDevice(state.wrapHb)
+                .consumeFromDevice(state.wrapHb, state.wrapHb2, state.wrapXb,  state.wrapAtt, state.wrapKeyCache,
+                        state.wrapValueCache, state.wrapQ, state.wrapK, state.positionAndLayer,  state.wrapX, state.wrapXb2)
                 .transferToDevice(DataTransferMode.FIRST_EXECUTION, weights.w2Flat)
-                .transferToDevice(DataTransferMode.EVERY_EXECUTION,
-                        state.positionAndLayer, state.wrapX)
                 .task("projectionTwo", TornadoVMCompute::matmul,
                         state.wrapXb, state.wrapHb, weights.w2Flat, config.hiddenDim, dim, state.positionAndLayer)
                 .task("residual2", TornadoVMCompute::addInPlace, state.wrapX, state.wrapXb)
-                .persistOnDevice(state.wrapX, state.wrapXb)
+                .persistOnDevice(state.wrapX, state.wrapXb,state.wrapHb, state.wrapHb2, state.wrapXb,  state.wrapAtt, state.wrapKeyCache,
+                        state.wrapValueCache, state.wrapQ, state.wrapK, state.positionAndLayer,  state.wrapX, state.wrapXb2 )
                 .transferToHost(DataTransferMode.EVERY_EXECUTION, state.wrapX, state.wrapXb);
         taskGraphs.add(ffnFinalGraph.snapshot());
 
