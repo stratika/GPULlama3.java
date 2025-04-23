@@ -303,7 +303,7 @@ public class LlamaDebugApp {
         int token = javaState.latestToken;
         int position = 0;
 //        int layerUpTo=model.configuration().numberOfLayers;
-        int layerUpTo=6;
+        int layerUpTo=16;
         // Create debug master plan
         TornadoVMMasterPlanDebug debugPlan = new TornadoVMMasterPlanDebug(tornadoState, model);
         int kvDim = (model.configuration().dim * model.configuration().numberOfKeyValueHeads) / model.configuration().numberOfHeads;

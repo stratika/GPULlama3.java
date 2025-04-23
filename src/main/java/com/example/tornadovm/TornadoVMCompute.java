@@ -137,8 +137,9 @@ public class TornadoVMCompute {
      *         Combined position and layer information for weight offset calculation
      */
     public static void matmul(FloatArray xout, FloatArray x, FloatArray w, int n, int d, IntArray positionAndLayer) {
+        int layer = positionAndLayer.get(1);
+        int layerOffset = layer * n * d;  // Correctly calculates offset based on dimensions
 
-        int layerOffset = positionAndLayer.get(1) * d * n;  // l * dim * dim for example
 
         for (@Parallel int i = 0; i < d; i++) {
             float sum = 0.0f;
@@ -148,6 +149,24 @@ public class TornadoVMCompute {
             xout.set(i, sum);
         }
     }
+
+    public static void matmulKV(FloatArray xout, FloatArray x, FloatArray w, int dim, int kvdim, IntArray positionAndLayer) {
+        int layer = positionAndLayer.get(1);
+        int layerOffset = layer * dim * kvdim;
+
+        // Loop over each output element (kvdim outputs)
+        for (@Parallel int i = 0; i < kvdim; i++) {
+            float sum = 0.0f;
+            // Multiply with each input element (dim inputs)
+            for (int j = 0; j < dim; j++) {
+                // w is organized as [layer, dim, kvdim]
+                // For column i, row j, the index is layerOffset + j*dim + i
+                sum += w.get(layerOffset + j * dim + i) * x.get(j);
+            }
+            xout.set(i, sum);
+        }
+    }
+
 
     /**
      * SiLU activation function
@@ -242,6 +261,60 @@ public class TornadoVMCompute {
             // Store the result in the output array
             out.set(idx, result);
         }
+    }
+
+    public static void forcePropagationOneArray(FloatArray x) {
+        x.set(0, x.get(0));
+    }
+
+    public static void forcePropagationOneArray(IntArray x) {
+        x.set(0, x.get(0));
+    }
+
+    public static void forcePropagationTwoArrays(FloatArray x, FloatArray y) {
+        x.set(0, x.get(0));
+        y.set(0, y.get(0));
+    }
+
+    public static void forcePropagationTwoArrays(FloatArray x, IntArray y) {
+        x.set(0, x.get(0));
+        y.set(0, y.get(0));
+    }
+
+    public static void forcePropagationThreeArrays(FloatArray x, FloatArray y, FloatArray z) {
+        x.set(0, x.get(0));
+        y.set(0, y.get(0));
+        z.set(0, z.get(0));
+    }
+
+    public static void forcePropagationThreeArrays(FloatArray x, FloatArray y, IntArray z) {
+        x.set(0, x.get(0));
+        y.set(0, y.get(0));
+        z.set(0, z.get(0));
+    }
+
+    public static void forcePropagationFourArrays(FloatArray x, FloatArray y, FloatArray z, FloatArray w) {
+        x.set(0, x.get(0));
+        y.set(0, y.get(0));
+        z.set(0, z.get(0));
+        w.set(0, w.get(0));
+    }
+
+    public static void forcePropagationFiveArrays(FloatArray x, FloatArray y, FloatArray z, FloatArray w, FloatArray cv) {
+        x.set(0, x.get(0));
+        y.set(0, y.get(0));
+        z.set(0, z.get(0));
+        w.set(0, w.get(0));
+        cv.set(0, cv.get(0));
+    }
+
+    public static void forcePropagationSixArrays(FloatArray x, FloatArray y, FloatArray z, FloatArray w, FloatArray cv, FloatArray xyz) {
+        x.set(0, x.get(0));
+        y.set(0, y.get(0));
+        z.set(0, z.get(0));
+        w.set(0, w.get(0));
+        cv.set(0, cv.get(0));
+        xyz.set(0, xyz.get(0));
     }
 
     public static void ropeRotation(KernelContext context, IntArray positionNlayer, FloatArray sq, FloatArray sk, int kv_dim, int head_size) {

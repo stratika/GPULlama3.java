@@ -85,10 +85,10 @@ public final class Weights {
         this.rms_att_weightFlat = loadToSingleFloatArray(rms_att_weight); // (layer, dim) rmsnorm weights
         this.rms_ffn_weightFlat = loadToSingleFloatArray(rms_ffn_weight); // (layer, dim)
 
-        this.wqFlat = loadToContinuesFloatArray(wq); // (layer, n_heads * head_size)
-        this.wkFlat = loadToContinuesFloatArray(wk); // (layer, n_kv_heads, head_size)
-        this.wvFlat = loadToContinuesFloatArray(wv);; // (layer, n_kv_heads * head_size)
-        this.woFlat = loadToContinuesFloatArray(wo);; // (layer, n_heads * head_size, dim)
+        this.wqFlat = loadToContinuesFloatArray(wq); // [layer * dim * dim] - (layer, dim, dim)
+        this.wkFlat = loadToContinuesFloatArray(wk); // [layer * dim * kvDim] - (layer, dim, kvDim)
+        this.wvFlat = loadToContinuesFloatArray(wv); // [layer * dim * kvDim] - (layer, dim, kvDim)
+        this.woFlat = loadToContinuesFloatArray(wo); // [layer * dim * dim] - (layer, dim, dim)
 
         this.w1Flat = loadToContinuesFloatArray(w1); // (layer, hidden_dim, dim)
         this.w2Flat = loadToContinuesFloatArray(w2); // (layer, dim, hidden_dim)
@@ -108,6 +108,7 @@ public final class Weights {
         this.w3AFloatArray = loadToFloatArray(w3);
 
         this.halfFloat = loadToHalfFloatArray(wcls);
+        // For each layer's weights
     }
 
     private static FloatArray loadToContinuesFloatArray(FloatTensor[] input) {

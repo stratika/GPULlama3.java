@@ -47,7 +47,8 @@ public class TornadoVMMasterPlan {
             state.positionAndLayer.set(3, loff);
             int layerOffsetForCaches =  loff + position * kvDim;
             state.positionAndLayer.set(2, layerOffsetForCaches);
-
+            // key and value point to the kv cache
+            System.out.println("Layer off cachers " + layerOffsetForCaches);
             // Layer taskgraph
             executionPlan.withGraph(1).withGridScheduler(scheduler).execute();
         }
