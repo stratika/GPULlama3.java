@@ -365,10 +365,6 @@ public record Llama(Configuration configuration, Tokenizer tokenizer, Weights we
                 float fcr = weights.freq_cis_real.get(position * (headSize / 2) + (head_dim / 2));
                 float fci = weights.freq_cis_imag.get(position * (headSize / 2) + (head_dim / 2));
 
-                //                            if (i < 10) {
-                //                                System.out.printf("Position %d, i=%d: fcr=%f, fci=%f%n", position, i, fcr, fci);
-                //                            }
-
                 int rotn = i < kvDim ? 2 : 1; // how many vectors? 2 = q & k, 1 = q only
                 for (int v = 0; v < rotn; v++) {
                     FloatTensor vec = v == 0 ? state.q : state.k; // the vector to rotate (query or key)
@@ -463,14 +459,6 @@ public record Llama(Configuration configuration, Tokenizer tokenizer, Weights we
                 }
             });
 
-            // Print attention pattern summary
-            //            System.out.println("\nAttention Pattern Summary (first 2 heads):");
-            //            for (int h = 0; h < Math.min(2, config.numberOfHeads); h++) {
-            //                System.out.println("Head " + h + ":");
-            //                for (int t = 0; t <= Math.min(5, position); t++) {
-            //                    System.out.printf("  Pos %d: Score=%.4f, Weight=%.4f%n", t, attScores[h][t], attWeights[h][t]);
-            //                }
-            //            }
 
             for (int i = 0; i < 15; i++) {
                 System.out.printf("  xb[%d] = %f%n", i, state.xb.getFloat(i));
@@ -564,16 +552,19 @@ public record Llama(Configuration configuration, Tokenizer tokenizer, Weights we
         return state.x;
     }
 
-    public static FloatTensor forwardTornadoVM(Llama model, State state, int token, int position,  //
+    public static FloatTensor forwardTornadoVM( //
+            Llama model,  //
+            State state,  //
+            int token,    //
+            int position,   //
             TornadoVMMasterPlan tornadoVMMasterPlan) { //
-        Configuration config = model.configuration();
 
-        Weights weights = model.weights();
 
-        // copy the token embedding into x
-        weights.token_embedding_table.copyTo(token * config.dim, state.x, 0, config.dim);
+        model.weights.token_embedding_table.copyTo(token * model.configuration.dim, state.x, 0, model.configuration.dim);
 
-        MemorySegment.copy(state.x.asMemorySegment(), 0, state.wrapX.getSegment(), 0, config.dim * 4);
+        MemorySegment.copy(state.x.asMemorySegment(), 0,
+                state.wrapX.getSegment(), 0,
+                model.configuration.dim * Float.BYTES);
 
 
         return tornadoVMMasterPlan.tornadoVMForwardExecute(position);
@@ -719,11 +710,11 @@ public record Llama(Configuration configuration, Tokenizer tokenizer, Weights we
         int token = state.latestToken; // BOS?
         int nextToken;
         int promptIndex = 0;
-
+        int counter = 0;
         for (int position = startPosition; position < maxTokens; ++position) {
             if (TornadoVMCompute.TORNADOVM) {
                 forwardTornadoVM(model, state, token, position, tornadoVMPlan);
-                //                System.exit(0);
+                counter++;
             } else {
                 forwardJava(model, state, token, position);
             }
@@ -750,6 +741,9 @@ public record Llama(Configuration configuration, Tokenizer tokenizer, Weights we
                 }
             }
             state.latestToken = token = nextToken;
+            if (counter == 2) {
+                System.exit(0);
+            }
         }
 
         long elapsedNanos = System.nanoTime() - startNanos;

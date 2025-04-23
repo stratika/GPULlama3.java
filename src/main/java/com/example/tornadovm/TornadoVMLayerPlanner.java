@@ -459,8 +459,7 @@ public class TornadoVMLayerPlanner {
                         weights.w1Flat, weights.w2Flat, weights.w3Flat,
                         state.wrapHb, state.wrapHb2,
                         state.positionAndLayer
-                )
-                .transferToHost(DataTransferMode.EVERY_EXECUTION, state.wrapX);
+                );
         taskGraphs.add(unifiedLayer.snapshot());
 
 
@@ -475,7 +474,7 @@ public class TornadoVMLayerPlanner {
                 .task("rmsLogits", TornadoVMCompute::rmsnormInnOut,
                         state.wrapX, weights.rms_final_weight_as_floatArray, state.positionAndLayer, dim, config.rmsNormEps)
                 .task("projection", TornadoVMCompute::matmulTornadoQ8, context, weights.wclsByteArray, state.wrapX, state.wrapLogits, dim)
-                .transferToHost(DataTransferMode.EVERY_EXECUTION, state.wrapLogits);
+                .transferToHost(DataTransferMode.EVERY_EXECUTION, state.wrapLogits, state.wrapX);
         taskGraphs.add(logits.snapshot());
         // @formatter:on
 

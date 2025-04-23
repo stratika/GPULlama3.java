@@ -9,14 +9,12 @@ import com.example.loader.weights.Weights;
 import uk.ac.manchester.tornado.api.GridScheduler;
 import uk.ac.manchester.tornado.api.ImmutableTaskGraph;
 import uk.ac.manchester.tornado.api.TornadoExecutionPlan;
-import uk.ac.manchester.tornado.api.TornadoExecutionResult;
 
 import java.util.List;
 
 public class TornadoVMMasterPlan {
     private final State state;
     private final Configuration config;
-    private final Weights weights;
     List<ImmutableTaskGraph> taskGraphs;
     private GridScheduler scheduler;
     private TornadoExecutionPlan executionPlan;
@@ -28,26 +26,21 @@ public class TornadoVMMasterPlan {
         this.scheduler = tornadoVMPlan.getSecond();
         this.state = state;
         this.config = model.configuration();
-        this.weights = model.weights();
         this.executionPlan = new TornadoExecutionPlan(taskGraphs.toArray(new ImmutableTaskGraph[taskGraphs.size()]));
     }
 
     public FloatTensor tornadoVMForwardExecute(int position) {
 
-        state.positionAndLayer.set(0, position);
-
-        // Execute Graph 0: Buffer Initialization
         executionPlan.withGraph(0).withGridScheduler(scheduler).execute();
 
-        for (int l = 0; l < config.numberOfLayers; l++) {
-            state.positionAndLayer.set(1, l);
-
-            int loff = l * config.contextLength * config.kvDim;
-
-            state.positionAndLayer.set(3, loff);
-
+        for (int layer = 0; layer < config.numberOfLayers; layer++) {
+            int loff = layer * config.contextLength * config.kvDim;
             int layerOffsetForCaches = loff + position * config.kvDim;
+
+            state.positionAndLayer.set(0, position);
+            state.positionAndLayer.set(1, layer);
             state.positionAndLayer.set(2, layerOffsetForCaches);
+            state.positionAndLayer.set(3, loff);
 
             executionPlan.withGraph(1).withGridScheduler(scheduler).execute();
 
@@ -56,70 +49,18 @@ public class TornadoVMMasterPlan {
         executionPlan.withGraph(2).withGridScheduler(scheduler).execute();
 
         state.logits.asMemorySegment().copyFrom(state.wrapLogits.getSegment());
+        for (int i = 0; i < 10; i++) {
+            System.out.printf("wrapX[%d] = %f%n", i, state.wrapX.get(i));
+        }
+
+        int totalSize = state.logits.size();
+        int step = Math.max(1, totalSize / 20);  // 1/20 = 5%
+
+        for (int i = 0; i < totalSize; i += step) {
+            System.out.printf("wrapLogits[%d] = %f%n", i, state.logits.getFloat(i));
+        }
 
         return state.logits;
-    }
-
-    public void tornadoVMForwardExecuteX(int position) {
-        int kvDim = (config.dim * config.numberOfKeyValueHeads) / config.numberOfHeads;
-
-        state.positionAndLayer.set(0, position);
-
-        // Update before execute (it an every copy in)
-        executionPlan.withGraph(0).withGridScheduler(scheduler).execute();
-
-        for (int l = 0; l < config.numberOfLayers; l++) {
-            state.positionAndLayer.set(1, l);
-
-            int loff = l * config.contextLength * kvDim;
-            state.positionAndLayer.set(3, loff);
-            int layerOffsetForCaches =  loff + position * kvDim;
-            state.positionAndLayer.set(2, layerOffsetForCaches);
-            // key and value point to the kv cache
-            System.out.println("Layer off cachers " + layerOffsetForCaches);
-            // Layer taskgraph
-            executionPlan.withGraph(1).withGridScheduler(scheduler).execute();
-        }
-
-        // Final RMSNorm and Logits
-        executionPlan.withGraph(2).withGridScheduler(scheduler).execute();
-
-    }
-
-    public void tornadoVMForwardExecuteLayer(int position, int ll) {
-        int kvDim = (config.dim * config.numberOfKeyValueHeads) / config.numberOfHeads;
-
-        state.positionAndLayer.set(0, position);
-
-        // Update before execute (it an every copy in)
-        executionPlan.withGraph(0).withGridScheduler(scheduler).execute();
-
-        for (int l = 0; l < ll; l++) {
-            state.positionAndLayer.set(1, l);
-
-            int loff = l * config.contextLength * kvDim;
-            state.positionAndLayer.set(3, loff);
-            int layerOffsetForCaches =  loff + position * kvDim;
-            state.positionAndLayer.set(2, layerOffsetForCaches);
-
-            // Layer taskgraph
-            executionPlan.withGraph(1).withGridScheduler(scheduler).execute();
-        }
-
-        // Final RMSNorm and Logits
-        executionPlan.withGraph(2).withGridScheduler(scheduler).execute();
-
-    }
-
-
-    private void logMemoryUsage(TornadoExecutionResult executionResult, String stage, int layer) {
-        long totalDeviceMemoryUsage = executionResult.getProfilerResult().getTotalDeviceMemoryUsage();
-        double memoryInMB = totalDeviceMemoryUsage / (1024.0 * 1024.0);
-        if (layer >= 0) {
-            System.out.printf("Layer %d, %s: Total memory usage = %.2f MB\n", layer, stage, memoryInMB);
-        } else {
-            System.out.printf("%s: Total memory usage = %.2f MB\n", stage, memoryInMB);
-        }
     }
 
     public void freeTornadoExecutionPlan() {
