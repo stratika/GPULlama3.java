@@ -272,7 +272,10 @@ public class TornadoVMMasterPlanDebug {
             System.out.printf("wrapX[%d] = %f%n", i, state.wrapX.get(i));
         }
 
-        for (int i = 0; i < state.wrapLogits.getSize(); i++) {
+        int totalSize = state.logits.size();
+        int step = Math.max(1, totalSize / 20);  // 1/20 = 5%
+
+        for (int i = 0; i < totalSize; i += step) {
             System.out.printf("wrapLogits[%d] = %f%n", i, state.wrapLogits.get(i));
         }
 

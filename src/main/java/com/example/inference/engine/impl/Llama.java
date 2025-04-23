@@ -567,7 +567,10 @@ public record Llama(Configuration configuration, Tokenizer tokenizer, Weights we
             System.out.printf("x[%d] = %f%n", i, state.x.getFloat(i));
         }
 
-        for (int i = 0; i < state.logits.size(); i++) {
+        int totalSize = state.logits.size();
+        int step = Math.max(1, totalSize / 20);  // 1/20 = 5%
+
+        for (int i = 0; i < totalSize; i += step) {
             System.out.printf("logits[%d] = %f%n", i, state.logits.getFloat(i));
         }
 
