@@ -302,14 +302,11 @@ public class LlamaDebugApp {
 
         int token = javaState.latestToken;
         int position = 0;
-//        int layerUpTo=model.configuration().numberOfLayers;
-        int layerUpTo=16;
+        int layerUpTo=model.configuration().numberOfLayers;
         // Create debug master plan
         TornadoVMMasterPlanDebug debugPlan = new TornadoVMMasterPlanDebug(tornadoState, model);
-        int kvDim = (model.configuration().dim * model.configuration().numberOfKeyValueHeads) / model.configuration().numberOfHeads;
-        int kvMul = model.configuration().numberOfHeads / model.configuration().numberOfKeyValueHeads; // integer multiplier of the kv sharing in multiquery
         System.out.println("Configuration values:");
-        System.out.println("dim: " + model.configuration().dim + ", headSize: " + model.configuration().headSize + ", kvDim: " + kvDim + ", kvMul: " + kvMul);
+        System.out.println("dim: " + model.configuration().dim + ", headSize: " + model.configuration().headSize + ", kvDim: " + model.configuration().kvDim + ", kvMul: " + model.configuration().kvMul);
         System.out.println("hiddenDim: " + model.configuration().hiddenDim);
 
         // Perform the Java version for baseline comparison

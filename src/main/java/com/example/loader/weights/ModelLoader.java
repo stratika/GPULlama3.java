@@ -105,11 +105,7 @@ public final class ModelLoader {
         );
         
         if (false) {
-            int headSize = config.headSize;
-            int numHeads = config.numberOfHeads;
-            int numKVHeads = config.numberOfKeyValueHeads; // n_kv_heads
-            int kvDim = (config.dim * numKVHeads) / numHeads;
-            WeightsValidator validator = new WeightsValidator(qw, config.dim, kvDim, config.hiddenDim, config.numberOfLayers);
+            WeightsValidator validator = new WeightsValidator(qw, config.dim, config.kvDim, config.hiddenDim, config.numberOfLayers);
             // Run validation
             boolean isValid = validator.validateAll();
             if (isValid) {

@@ -1,6 +1,7 @@
 package com.example.tornadovm;
 
 import com.example.aux.Tuple2;
+import com.example.core.model.tensor.FloatTensor;
 import com.example.inference.engine.impl.Configuration;
 import com.example.inference.engine.impl.Llama;
 import com.example.loader.weights.State;
@@ -31,8 +32,35 @@ public class TornadoVMMasterPlan {
         this.executionPlan = new TornadoExecutionPlan(taskGraphs.toArray(new ImmutableTaskGraph[taskGraphs.size()]));
     }
 
+    public FloatTensor tornadoVMForwardExecute(int position) {
 
-    public void tornadoVMForwardExecute(int position) {
+        state.positionAndLayer.set(0, position);
+
+        // Execute Graph 0: Buffer Initialization
+        executionPlan.withGraph(0).withGridScheduler(scheduler).execute();
+
+        for (int l = 0; l < config.numberOfLayers; l++) {
+            state.positionAndLayer.set(1, l);
+
+            int loff = l * config.contextLength * config.kvDim;
+
+            state.positionAndLayer.set(3, loff);
+
+            int layerOffsetForCaches = loff + position * config.kvDim;
+            state.positionAndLayer.set(2, layerOffsetForCaches);
+
+            executionPlan.withGraph(1).withGridScheduler(scheduler).execute();
+
+        }
+
+        executionPlan.withGraph(2).withGridScheduler(scheduler).execute();
+
+        state.logits.asMemorySegment().copyFrom(state.wrapLogits.getSegment());
+
+        return state.logits;
+    }
+
+    public void tornadoVMForwardExecuteX(int position) {
         int kvDim = (config.dim * config.numberOfKeyValueHeads) / config.numberOfHeads;
 
         state.positionAndLayer.set(0, position);

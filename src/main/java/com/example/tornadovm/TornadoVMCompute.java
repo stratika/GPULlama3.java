@@ -851,13 +851,12 @@ public class TornadoVMCompute {
         // Make sure all threads finish writing their outputs
         context.localBarrier();
     }
-
-    public static void copyToCache(FloatArray dest, FloatArray src, IntArray positioNlayer) {
+    public static void copyToCache(FloatArray destKeyCache, FloatArray srcKey, FloatArray destValueCache, FloatArray srcValue, IntArray positioNlayer) {
         int destOffset = positioNlayer.get(2);
-        for (@Parallel int i = 0; i < src.getSize(); i++) {
-            dest.set(destOffset + i, src.get(i));
+        for (@Parallel int i = 0; i < srcValue.getSize(); i++) {
+            destKeyCache.set(destOffset + i, srcKey.get(i));
+            destValueCache.set(destOffset + i, srcValue.get(i));
         }
-
     }
 
     public static void processHeadsParallel(

@@ -135,6 +135,60 @@ public class TornadoVMMasterPlanDebug {
     public void tornadoVMForwardExecuteLayerWithValidation(int position, int ll, int token, Llama model) {
         Configuration config = model.configuration();
         Weights weights = model.weights();
+
+        // Copy the token embedding into x
+        weights.token_embedding_table.copyTo(token *  config.dim, state.x, 0,  config.dim);
+        MemorySegment.copy(state.x.asMemorySegment(), 0, state.wrapX.getSegment(), 0,  config.dim * 4);
+
+
+        System.out.println("\n==== Tornado Debug Start ====");
+
+        state.positionAndLayer.set(0, position);
+
+        // Execute Graph 0: Buffer Initialization
+        System.out.println("\n==== EXECUTING GRAPH 0: Buffer Initialization ====");
+        executionPlan.withGraph(0).withGridScheduler(scheduler).execute();
+
+        for (int l = 0; l < ll; l++) {
+            System.out.println("\n==== Start PROCESSING LAYER " + l + " ====");
+            state.positionAndLayer.set(1, l);
+
+            int loff = l * config.contextLength * config.kvDim;
+
+            state.positionAndLayer.set(3, loff);
+
+            int layerOffsetForCaches = loff + position * config.kvDim;
+            state.positionAndLayer.set(2, layerOffsetForCaches);
+
+            executionPlan.withGraph(1).withGridScheduler(scheduler).execute();
+
+            System.out.println("\n==== End PROCESSING LAYER " + l + " ====");
+        }
+
+        System.out.println("\n==== LOGITS " + " ====");
+        System.out.println("\n==== EXECUTING GRAPH 10: FFN Final ====");
+        executionPlan.withGraph(2).withGridScheduler(scheduler).execute();
+
+        System.out.println("After TOKEN print logits first 45:");
+
+        for (int i = 0; i < 10; i++) {
+            System.out.printf("wrapX[%d] = %f%n", i, state.wrapX.get(i));
+        }
+
+        int totalSize = state.logits.size();
+        int step = Math.max(1, totalSize / 20);  // 1/20 = 5%
+
+        for (int i = 0; i < totalSize; i += step) {
+            System.out.printf("wrapLogits[%d] = %f%n", i, state.wrapLogits.get(i));
+        }
+
+        System.out.println("\n==== Tornado Debug End ====");
+
+    }
+
+    public void tornadoVMForwardExecuteLayerWithValidationX(int position, int ll, int token, Llama model) {
+        Configuration config = model.configuration();
+        Weights weights = model.weights();
         int dim = config.dim;
         int kvDim = (config.dim * config.numberOfKeyValueHeads) / config.numberOfHeads;
 
@@ -282,6 +336,7 @@ public class TornadoVMMasterPlanDebug {
         System.out.println("\n==== Tornado Debug End ====");
 
     }
+
 
     public void freeTornadoExecutionPlan() {
         executionPlan.freeDeviceMemory();
