@@ -270,7 +270,7 @@ public class TornadoVMLayerPlannerDebug {
 
         // Scheduler 10: FFN Part 4 (Final Projections)
 //        tornadoForwardScheduler.addWorkerGrid("ffnFinal.projectionTwo", dimWorker);
-//        tornadoForwardScheduler.addWorkerGrid("ffnFinal.residual2", dimWorker);
+        tornadoForwardScheduler.addWorkerGrid("logits.projection", vocabWorker);
 
         return tornadoForwardScheduler;
     }
@@ -660,6 +660,7 @@ public class TornadoVMLayerPlannerDebug {
                 .transferToDevice(DataTransferMode.EVERY_EXECUTION, state.positionAndLayer, state.wrapX)
                 .task("rmsAtt", TornadoVMCompute::rmsnorm,
                         state.wrapXb, state.wrapX, weights.rms_att_weightFlat, state.positionAndLayer, dim, config.rmsNormEps)
+                .task("forceProp", TornadoVMCompute::forcePropagationTwoArrays, state.wrapKeyCache, state.wrapValueCache)
                 .transferToHost(DataTransferMode.EVERY_EXECUTION,
                         state.wrapXb,
                         intermediateReduceFirst)
@@ -694,16 +695,15 @@ public class TornadoVMLayerPlannerDebug {
 //            .consumeFromDevice(state.wrapQ, state.wrapK, state.positionAndLayer, state.wrapXb, state.wrapX)
             .task("rope", TornadoVMCompute::ropeRotation,
                     context, state.positionAndLayer, state.wrapQ, state.wrapK, kvDim, headSize)
-            .persistOnDevice(state.wrapQ, state.wrapK, state.positionAndLayer, state.wrapXb, state.wrapX)
+            .persistOnDevice(state.wrapQ, state.wrapK, state.positionAndLayer, state.wrapXb, state.wrapX,  state.wrapKeyCache, state.wrapValueCache)
             .transferToHost(DataTransferMode.EVERY_EXECUTION, state.wrapQ, state.wrapK);
         taskGraphs.add(ropeGraph.snapshot());
 
         // ================ TASK GRAPH 4: COPY TO CACHES ================
         TaskGraph copyToCachesGraph = new TaskGraph("copyToCaches")
                 .consumeFromDevice(state.wrapQ, state.wrapK, state.positionAndLayer, state.wrapXb, state.wrapX)
-                .transferToDevice(DataTransferMode.FIRST_EXECUTION,
-                        state.wrapKeyCache, state.wrapValueCache)
-                //                .transferToDevice(DataTransferMode.EVERY_EXECUTION, state.positionAndLayer)
+//                .transferToDevice(DataTransferMode.FIRST_EXECUTION,
+//                       )
                 .task("copyToKeyCache", TornadoVMCompute::copyToCache,
                         state.wrapKeyCache, state.wrapK, state.positionAndLayer)
                 .task("copyToValueCache", TornadoVMCompute::copyToCache,
@@ -799,6 +799,28 @@ public class TornadoVMLayerPlannerDebug {
                 .transferToHost(DataTransferMode.EVERY_EXECUTION, state.wrapX, state.wrapXb);
         taskGraphs.add(ffnFinalGraph.snapshot());
 
+
+        TaskGraph finalRmsAndLogitsGraph = new TaskGraph("rms-final")
+                .consumeFromDevice(
+                        state.wrapX, state.positionAndLayer
+                )
+                .transferToDevice(DataTransferMode.FIRST_EXECUTION,
+                        weights.rms_final_weight_as_floatArray)
+                .task("rmsLogits", TornadoVMCompute::rmsnormInnOut,
+                        state.wrapX, weights.rms_final_weight_as_floatArray, state.positionAndLayer, dim, config.rmsNormEps)
+
+                .transferToHost(DataTransferMode.EVERY_EXECUTION,  state.wrapX);
+        taskGraphs.add(finalRmsAndLogitsGraph.snapshot());
+
+        TaskGraph logits = new TaskGraph("logits")
+                .consumeFromDevice(
+                        state.wrapX, state.positionAndLayer
+                )
+                .transferToDevice(DataTransferMode.FIRST_EXECUTION,
+                        state.wrapLogits, weights.wclsByteArray)
+                .task("projection", TornadoVMCompute::matmulTornadoQ8, context, weights.wclsByteArray, state.wrapX, state.wrapLogits, dim)
+                .transferToHost(DataTransferMode.EVERY_EXECUTION, state.wrapLogits);
+        taskGraphs.add(logits.snapshot());
         // @formatter:on
 
         return new Tuple2<>(taskGraphs, setupGridSchedulers());

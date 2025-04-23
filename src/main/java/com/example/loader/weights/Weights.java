@@ -100,15 +100,18 @@ public final class Weights {
 
         // Store read-only weight as a ByteArray in TornadoVM
         this.wclsByteArray = ByteArray.fromSegment(wcls.asMemorySegment());
-        this.rms_final_weight_as_floatArray = FloatArray.fromFloatBuffer(rms_final_weight);
+//        this.rms_final_weight_as_floatArray = FloatArray.fromFloatBuffer(rms_final_weight);
 
         this.woAsFloatArray = loadToFloatArray(wo);
         this.w1AsFloatArray = loadToFloatArray(w1);
         this.w2AFloatArray = loadToFloatArray(w2);
         this.w3AFloatArray = loadToFloatArray(w3);
+        this.rms_final_weight_as_floatArray = FloatArray.fromFloatBuffer(rms_final_weight);
 
         this.halfFloat = loadToHalfFloatArray(wcls);
         // For each layer's weights
+
+
     }
 
     private static FloatArray loadToContinuesFloatArray(FloatTensor[] input) {

@@ -558,6 +558,18 @@ public record Llama(Configuration configuration, Tokenizer tokenizer, Weights we
 
             System.out.println("\n========= END PROCESSING LAYER " + l + " =========");
         }
+        System.out.println("\n======== Logits ========");
+        rmsnorm(state.x, state.x, weights.rms_final_weight, dim, config.rmsNormEps);
+
+        weights.wcls.matmul(state.x, state.logits, config.vocabularySize, dim);
+
+        for (int i = 0; i < 10; i++) {
+            System.out.printf("x[%d] = %f%n", i, state.x.getFloat(i));
+        }
+
+        for (int i = 0; i < state.logits.size(); i++) {
+            System.out.printf("logits[%d] = %f%n", i, state.logits.getFloat(i));
+        }
 
         System.out.println("\n======== JAVA DEBUG END ========");
             return state.x;

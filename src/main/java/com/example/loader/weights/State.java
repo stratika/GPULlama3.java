@@ -77,7 +77,8 @@ public final class State {
         // dim vs kvdim
         this.wrapKeyCache = new FloatArray(config.contextLength * kvDim * config.numberOfLayers);
         this.wrapValueCache = new FloatArray(config.contextLength * kvDim * config.numberOfLayers);
-
+        this.wrapValueCache.init(0.f);
+        this.wrapKeyCache.init(0.f);
         this.wrapAtt = new FloatArray(config.numberOfHeads * config.contextLength);
         this.positionAndLayer = new IntArray(4);
         this.latestToken = -1;

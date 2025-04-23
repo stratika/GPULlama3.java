@@ -111,6 +111,26 @@ public class TornadoVMCompute {
         }
     }
 
+    public static void rmsnormInnOut(FloatArray output, FloatArray weights, IntArray positionAndLayer,
+            int size, float ermsNorm) {
+        // Calculate layer offset - weights for this layer start at this offset
+        int layerOffset = 0 * size;
+
+        // Calculate sum of squares
+        float sumSquares = 0.0f;
+        for (int j = 0; j < size; j++) {
+            sumSquares += output.get(j) * output.get(j);
+        }
+        sumSquares /= size;
+        sumSquares += ermsNorm; // Add epsilon for numerical stability
+        float scale = 1.0f / (float)TornadoMath.sqrt(sumSquares);
+
+        // Normalize and scale with weights from the correct layer
+        for (int j = 0; j < size; j++) {
+            output.set(j,weights.get(layerOffset + j) * (scale * output.get(j)));
+        }
+    }
+
     /**
      * In-place addition using KernelContext
      */

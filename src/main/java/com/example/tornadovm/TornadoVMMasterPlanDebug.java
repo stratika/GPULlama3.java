@@ -261,6 +261,20 @@ public class TornadoVMMasterPlanDebug {
             System.out.println("\n==== End PROCESSING LAYER " + l + " ====");
 
         }
+        System.out.println("\n==== LOGITS " + " ====");
+        System.out.println("\n==== EXECUTING GRAPH 10: FFN Final ====");
+        executionPlan.withGraph(11).withGridScheduler(scheduler).execute();
+        executionPlan.withGraph(12).withGridScheduler(scheduler).execute();
+
+        System.out.println("After TOKEN print logits first 45:");
+
+        for (int i = 0; i < 10; i++) {
+            System.out.printf("wrapX[%d] = %f%n", i, state.wrapX.get(i));
+        }
+
+        for (int i = 0; i < state.wrapLogits.getSize(); i++) {
+            System.out.printf("wrapLogits[%d] = %f%n", i, state.wrapLogits.get(i));
+        }
 
         System.out.println("\n==== Tornado Debug End ====");
 
