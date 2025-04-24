@@ -111,7 +111,7 @@ public class TornadoVMCompute {
         }
     }
 
-    public static void rmsnormInnOut(FloatArray output, FloatArray weights, IntArray positionAndLayer,
+    public static void rmsnormInnOut(FloatArray output, FloatArray weights,
             int size, float ermsNorm) {
         // Calculate layer offset - weights for this layer start at this offset
         int layerOffset = 0 * size;
@@ -862,17 +862,32 @@ public class TornadoVMCompute {
     public static void processHeadsParallel(
             FloatArray q, FloatArray key_cache, FloatArray value_cache, FloatArray xb,
             int nHeads, int headSize, int kvDim, int kvMul, int seqLen,
-            IntArray positionNlayer, FloatArray wrapAtt) {
+             FloatArray wrapAtt, int pos, int layer) {
 
-        int pos = positionNlayer.get(0);
-        int layer = positionNlayer.get(1);
+//        int pos = positionNlayer.get(0);
+//        int layer = positionNlayer.get(1);
         long loff = layer * seqLen * kvDim; // layer offset into KV cache
 
         // Parallelize computation across attention heads
         for (int h = 0; h < nHeads; h++) {
             // Process each head in parallel
             processHeadTornado(q, key_cache, value_cache, xb, h, headSize, kvDim, kvMul, loff, pos, wrapAtt);
+        }
+    }
 
+    public static void processHeadsParallel(
+            FloatArray q, FloatArray key_cache, FloatArray value_cache, FloatArray xb,
+            int nHeads, int headSize, int kvDim, int kvMul, int seqLen,
+            IntArray positionNlayer, FloatArray wrapAtt) {
+
+                int pos = positionNlayer.get(0);
+                int layer = positionNlayer.get(1);
+        long loff = layer * seqLen * kvDim; // layer offset into KV cache
+
+        // Parallelize computation across attention heads
+        for (int h = 0; h < nHeads; h++) {
+            // Process each head in parallel
+            processHeadTornado(q, key_cache, value_cache, xb, h, headSize, kvDim, kvMul, loff, pos, wrapAtt);
         }
     }
 

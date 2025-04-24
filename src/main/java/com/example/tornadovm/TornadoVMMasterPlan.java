@@ -16,8 +16,8 @@ public class TornadoVMMasterPlan {
     private final State state;
     private final Configuration config;
     List<ImmutableTaskGraph> taskGraphs;
-    private GridScheduler scheduler;
-    private TornadoExecutionPlan executionPlan;
+    public GridScheduler scheduler;
+    public TornadoExecutionPlan executionPlan;
 
     public TornadoVMMasterPlan(State state, Llama model) {
         TornadoVMLayerPlanner tornadoVMLayerPlanner = new TornadoVMLayerPlanner(state, model);

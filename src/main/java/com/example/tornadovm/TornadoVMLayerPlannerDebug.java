@@ -738,7 +738,7 @@ public class TornadoVMLayerPlannerDebug {
                     weights.rms_final_weight_as_floatArray
             )
             .task("rmsLogits", TornadoVMCompute::rmsnormInnOut,
-                    state.wrapX, weights.rms_final_weight_as_floatArray, state.positionAndLayer, config.dim, config.rmsNormEps)
+                    state.wrapX, weights.rms_final_weight_as_floatArray,  config.dim, config.rmsNormEps)
             .task("projection", TornadoVMCompute::matmulTornadoQ8, context, weights.wclsByteArray, state.wrapX, state.wrapLogits, config.dim)
             .persistOnDevice(
                     context,
@@ -939,7 +939,7 @@ public class TornadoVMLayerPlannerDebug {
                 .transferToDevice(DataTransferMode.FIRST_EXECUTION,
                         weights.rms_final_weight_as_floatArray)
                 .task("rmsLogits", TornadoVMCompute::rmsnormInnOut,
-                        state.wrapX, weights.rms_final_weight_as_floatArray, state.positionAndLayer, dim, config.rmsNormEps)
+                        state.wrapX, weights.rms_final_weight_as_floatArray,  dim, config.rmsNormEps)
 
                 .transferToHost(DataTransferMode.EVERY_EXECUTION,  state.wrapX);
         taskGraphs.add(finalRmsAndLogitsGraph.snapshot());

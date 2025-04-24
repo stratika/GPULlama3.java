@@ -12,6 +12,7 @@ import com.example.tornadovm.TornadoVMMasterPlan;
 import uk.ac.manchester.tornado.api.GridScheduler;
 import uk.ac.manchester.tornado.api.ImmutableTaskGraph;
 import uk.ac.manchester.tornado.api.TornadoExecutionPlan;
+import uk.ac.manchester.tornado.api.TornadoExecutionResult;
 import uk.ac.manchester.tornado.api.exceptions.TornadoExecutionPlanException;
 
 import java.lang.foreign.MemorySegment;
@@ -47,10 +48,9 @@ public record Llama(Configuration configuration, Tokenizer tokenizer, Weights we
         // copy the token embedding into x
         weights.token_embedding_table.copyTo(token * dim, state.x, 0, dim);
 
-        System.out.println("\n==== Java State ====");
-        System.out.println("First 15 values of x tensor:");
-        for (int i = 0; i < 15; i++) {
-            System.out.printf("x[%d] = %f%n", i, state.x.getFloat(i));
+        System.out.println("\n==== Java State ==== + Position " + position + " Token " + token);
+        for (int i = 0; i < 10; i++) {
+            System.out.printf("input x[%d] = %f%n", i, state.x.getFloat(i));
         }
 
         // forward all the layers
@@ -162,6 +162,16 @@ public record Llama(Configuration configuration, Tokenizer tokenizer, Weights we
 
         weights.wcls.matmul(state.x, state.logits, config.vocabularySize, dim);
 
+        for (int i = 0; i < 10; i++) {
+            System.out.printf("output x[%d] = %f%n", i, state.x.getFloat(i));
+        }
+
+        int totalSize = state.logits.size();
+        int step = Math.max(1, totalSize / 20);  // 1/20 = 5%
+
+        for (int i = 0; i < totalSize; i += step) {
+            System.out.printf("logits[%d] = %f%n", i, state.logits.getFloat(i));
+        }
         return state.logits;
     }
 
@@ -559,16 +569,88 @@ public record Llama(Configuration configuration, Tokenizer tokenizer, Weights we
             int position,   //
             TornadoVMMasterPlan tornadoVMMasterPlan) { //
 
+        state.wrapXb.init(0.0f);
+        state.wrapXb2.init(0.0f);
+        state.wrapQ .init(0.0f);
+        state.wrapK .init(0.0f);
+        state.wrapV.init(0.0f);
+        state.wrapAtt.init(0.0f);
+        state.wrapHb .init(0.0f);
+        state.wrapHb2.init(0.0f);
+
+        System.out.println("\n==== TornadoVM State ==== + Position " + position + " Token " + token);
 
         model.weights.token_embedding_table.copyTo(token * model.configuration.dim, state.x, 0, model.configuration.dim);
 
-        MemorySegment.copy(state.x.asMemorySegment(), 0,
-                state.wrapX.getSegment(), 0,
-                model.configuration.dim * Float.BYTES);
+        MemorySegment.copy(state.x.asMemorySegment(), 0, state.wrapX.getSegment(), 0, model.configuration.dim * Float.BYTES);
+
+        tornadoVMMasterPlan.executionPlan.withGraph(0).withGridScheduler(tornadoVMMasterPlan.scheduler).execute();
+
+        for (int i = 0; i < 10; i++) {
+            System.out.printf("input wrapX[%d] = %f%n", i, state.wrapX.get(i));
+        }
+        TornadoExecutionResult layerResult = null;
+
+        for (int layer = 0; layer < model.configuration.numberOfLayers; layer++) {
+            int loff = layer * model.configuration.contextLength * model.configuration.kvDim;
+
+            int layerOffsetForCaches = loff + position * model.configuration.kvDim;
+
+            state.positionAndLayer.set(0, position);
+            state.positionAndLayer.set(1, layer);
+            state.positionAndLayer.set(2, layerOffsetForCaches);
+            state.positionAndLayer.set(3, loff);
+
+            //force copy - out
+           layerResult=tornadoVMMasterPlan.executionPlan.withGraph(1).withGridScheduler(tornadoVMMasterPlan.scheduler).execute();
+//            tornadoVMMasterPlan.executionPlan.withGraph(1).withGridScheduler(tornadoVMMasterPlan.scheduler).execute();
 
 
-        return tornadoVMMasterPlan.tornadoVMForwardExecute(position);
+        }
+        layerResult.transferToHost(state.wrapKeyCache, state.wrapValueCache, state.positionAndLayer);
+
+        System.out.println("Pos n layer ");
+        System.out.println("Position : " +state.positionAndLayer.get(0));
+        System.out.println("Layer " + state.positionAndLayer.get(1));
+        System.out.println("layerOffsetForCaches " + state.positionAndLayer.get(2));
+        System.out.println("loff " +  state.positionAndLayer.get(3));
+
+        tornadoVMMasterPlan.executionPlan.withGraph(2).withGridScheduler(tornadoVMMasterPlan.scheduler).execute();
+
+        state.logits.asMemorySegment().copyFrom(state.wrapLogits.getSegment());
+        for (int i = 0; i < 10; i++) {
+            System.out.printf("output wrapX[%d] = %f%n", i, state.wrapX.get(i));
+        }
+
+        int totalSize = state.logits.size();
+        int step = Math.max(1, totalSize / 20);  // 1/20 = 5%
+
+        for (int i = 0; i < totalSize; i += step) {
+            System.out.printf("wrapLogits[%d] = %f%n", i, state.logits.getFloat(i));
+        }
+
+        return state.logits;
     }
+
+
+//    public static FloatTensor forwardTornadoVM( //
+//            Llama model,  //
+//            State state,  //
+//            int token,    //
+//            int position,   //
+//            TornadoVMMasterPlan tornadoVMMasterPlan) { //
+//
+//
+//        model.weights.token_embedding_table.copyTo(token * model.configuration.dim, state.x, 0, model.configuration.dim);
+//
+//        MemorySegment.copy(state.x.asMemorySegment(), 0,
+//                state.wrapX.getSegment(), 0,
+//                model.configuration.dim * Float.BYTES);
+//
+//
+//        return tornadoVMMasterPlan.tornadoVMForwardExecute(position);
+//    }
+
 
 
     static FloatTensor forwardTornadoVMDebug(Llama model, State state, int token, int position, Tuple2<List<ImmutableTaskGraph>, GridScheduler> tornadoVMListOfPlan) {
@@ -714,9 +796,13 @@ public record Llama(Configuration configuration, Tokenizer tokenizer, Weights we
         for (int position = startPosition; position < maxTokens; ++position) {
             if (TornadoVMCompute.TORNADOVM) {
                 forwardTornadoVM(model, state, token, position, tornadoVMPlan);
+                tornadoVMPlan.freeTornadoExecutionPlan();
+
+                //                System.exit(0);
                 counter++;
             } else {
                 forwardJava(model, state, token, position);
+                counter++;
             }
             startGen = System.nanoTime();
             if (promptIndex < promptTokens.size()) {
@@ -741,7 +827,7 @@ public record Llama(Configuration configuration, Tokenizer tokenizer, Weights we
                 }
             }
             state.latestToken = token = nextToken;
-            if (counter == 2) {
+            if (counter == 5) {
                 System.exit(0);
             }
         }
