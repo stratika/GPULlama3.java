@@ -135,9 +135,6 @@ public class TornadoVMLayerPlanner {
                         state.wrapK, state.wrapXb, weights.wkFlat, config.dim, config.kvDim, state.positionAndLayer)
                 .task("vmatmul", TornadoVMCompute::matmul,
                         state.wrapV, state.wrapXb, weights.wvFlat, config.dim, config.kvDim, state.positionAndLayer)
-//                .task("rope", TornadoVMCompute::ropeRotationSerial,
-//                         state.positionAndLayer, state.wrapQ, state.wrapK,config.numberOfHeads, config.kvDim,
-//                        config.headSize, weights.freq_cis_realFlat, weights.freq_cis_imagFlat)
                 .task("rope", TornadoVMCompute::ropeRotation,context,
                         state.positionAndLayer, state.wrapQ, state.wrapK, config.kvDim,
                         config.headSize)
@@ -411,7 +408,7 @@ public class TornadoVMLayerPlanner {
 
         WorkerGrid vocabWorker = new WorkerGrid1D(config.vocabularySize);
         vocabWorker.setGlobalWork(config.vocabularySize, 1, 1);
-        vocabWorker.setLocalWork(256, 1, 1);
+        vocabWorker.setLocalWork(192, 1, 1);
 
         WorkerGrid ropeWorker = new WorkerGrid1D(config.dim / 2);
         ropeWorker.setGlobalWork(config.dim / 2, 1, 1);

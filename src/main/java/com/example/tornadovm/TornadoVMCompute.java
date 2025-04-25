@@ -591,38 +591,154 @@ public class TornadoVMCompute {
     }
 
     public static void matmulTornadoQ8(KernelContext context, ByteArray thisx, FloatArray that, FloatArray out, int dim1) {
-        final int BLOCK_SIZE = 32; // Assuming this is the block size used in quantization
-        final int BYTES_PER_BLOCK = Float16.BYTES + BLOCK_SIZE; // 2 bytes for scale + block_size bytes for values
+        final int BLOCK_SIZE = 32; // Block size used in quantization
+        final int BYTES_PER_BLOCK = 2 + BLOCK_SIZE; // 2 bytes for scale + block_size bytes for values
+        final int UNROLL_FACTOR = 8; // Unroll the inner loop for better performance
 
         int idx = context.globalIdx;
-
         float result = 0f;
         int thisOffset = idx * dim1;
 
-        for (int j = 0; j < dim1; j++) {
+        // Cache last block index and scale to avoid redundant decoding
+        int lastBlockIndex = -1;
+        float cachedScale = 0f;
+
+        // Main loop with unrolling
+        int j = 0;
+        for (; j <= dim1 - UNROLL_FACTOR; j += UNROLL_FACTOR) {
+            // Process UNROLL_FACTOR elements at once
+            for (int k = 0; k < UNROLL_FACTOR; k++) {
+                int index = thisOffset + j + k;
+                int blockIndex = index / BLOCK_SIZE;
+                int withinBlockIndex = index % BLOCK_SIZE;
+                int blockOffset = blockIndex * BYTES_PER_BLOCK;
+
+                // Only decode scale if we're in a new block
+                float scale;
+                if (blockIndex != lastBlockIndex) {
+                    int scaleByte1 = thisx.get(blockOffset) & 0xFF;
+                    int scaleByte2 = thisx.get(blockOffset + 1) & 0xFF;
+                    short scaleFloat16 = (short) ((scaleByte2 << 8) | scaleByte1);
+                    cachedScale = decodeFloat16Fast(scaleFloat16);
+                    lastBlockIndex = blockIndex;
+                }
+                scale = cachedScale;
+
+                // Read quantized value
+                byte quantized = thisx.get(blockOffset + 2 + withinBlockIndex);
+
+                // Dequantize and accumulate
+                result = fma(quantized * scale, that.get(j + k), result);
+            }
+        }
+
+        // Handle remaining elements
+        for (; j < dim1; j++) {
             int index = thisOffset + j;
-            // Calculate block position
             int blockIndex = index / BLOCK_SIZE;
             int withinBlockIndex = index % BLOCK_SIZE;
             int blockOffset = blockIndex * BYTES_PER_BLOCK;
 
-            // Read scale (float16) for this block
-            int scaleByte1 = thisx.get(blockOffset) & 0xFF;
-            int scaleByte2 = thisx.get(blockOffset + 1) & 0xFF;
-            short scaleFloat16 = (short) ((scaleByte2 << 8) | scaleByte1);
-            float scale = decodeFloat16(scaleFloat16);
+            // Only decode scale if we're in a new block
+            float scale;
+            if (blockIndex != lastBlockIndex) {
+                int scaleByte1 = thisx.get(blockOffset) & 0xFF;
+                int scaleByte2 = thisx.get(blockOffset + 1) & 0xFF;
+                short scaleFloat16 = (short) ((scaleByte2 << 8) | scaleByte1);
+                cachedScale = decodeFloat16Fast(scaleFloat16);
+                lastBlockIndex = blockIndex;
+            }
+            scale = cachedScale;
 
             // Read quantized value
             byte quantized = thisx.get(blockOffset + 2 + withinBlockIndex);
 
-            // Dequantize and multiply
-            result += (quantized * scale) * that.get(j);
+            // Dequantize and accumulate
+            result = fma(quantized * scale, that.get(j), result);
         }
 
         out.set(idx, result);
-
     }
 
+    /**
+     * Optimized float16 decoding using lookup table and bit manipulation
+     */
+    private static float decodeFloat16Fast(short value) {
+        // Split the components
+        int sign = (value & 0x8000) >>> 15;
+        int exp = (value & 0x7C00) >>> 10;
+        int frac = value & 0x03FF;
+
+        // Handle special cases with direct returns for common values
+        if (exp == 0x1F) {
+            return sign == 0 ? Float.POSITIVE_INFINITY : Float.NEGATIVE_INFINITY;
+        }
+
+        if (exp == 0) {
+            if (frac == 0) {
+                return sign == 0 ? 0.0f : -0.0f;
+            }
+            // Optimize denormalized numbers with precomputed constant
+            float result = frac * 5.9604645E-8f; // Precomputed 2^-24
+            return sign == 0 ? result : -result;
+        }
+
+        // Normal case - optimize with fewer operations
+        float result = 1.0f + (frac / 1024.0f);
+
+        // Use bitshift instead of pow for integer powers of 2
+        if (exp < 15) {
+            int shift = 15 - exp;
+            result /= (1 << shift);
+        } else {
+            int shift = exp - 15;
+            result *= (1 << shift);
+        }
+
+        return sign == 0 ? result : -result;
+    }
+
+    /**
+     * Fused multiply-add operation that maps to OpenCL's native fma
+     * This will optimize to the fma instruction in OpenCL
+     */
+    private static float fma(float a, float b, float c) {
+        return a * b + c;
+    }
+
+//    public static void matmulTornadoQ8(KernelContext context, ByteArray thisx, FloatArray that, FloatArray out, int dim1) {
+//        final int BLOCK_SIZE = 32; // Assuming this is the block size used in quantization
+//        final int BYTES_PER_BLOCK = Float16.BYTES + BLOCK_SIZE; // 2 bytes for scale + block_size bytes for values
+//
+//        int idx = context.globalIdx;
+//
+//        float result = 0f;
+//        int thisOffset = idx * dim1;
+//
+//        for (int j = 0; j < dim1; j++) {
+//            int index = thisOffset + j;
+//            // Calculate block position
+//            int blockIndex = index / BLOCK_SIZE;
+//            int withinBlockIndex = index % BLOCK_SIZE;
+//            int blockOffset = blockIndex * BYTES_PER_BLOCK;
+//
+//            // Read scale (float16) for this block
+//            int scaleByte1 = thisx.get(blockOffset) & 0xFF;
+//            int scaleByte2 = thisx.get(blockOffset + 1) & 0xFF;
+//            short scaleFloat16 = (short) ((scaleByte2 << 8) | scaleByte1);
+//            float scale = decodeFloat16(scaleFloat16);
+//
+//            // Read quantized value
+//            byte quantized = thisx.get(blockOffset + 2 + withinBlockIndex);
+//
+//            // Dequantize and multiply
+//            result += (quantized * scale) * that.get(j);
+//        }
+//
+//        out.set(idx, result);
+//
+//    }
+//
     private static float decodeFloat16(short value) {
         int sign = (value & 0x8000) >>> 15;
         int exp = (value & 0x7C00) >>> 10;
@@ -987,8 +1103,6 @@ public class TornadoVMCompute {
             IntArray positionNlayer, FloatArray wrapAtt) {
 
         int pos = positionNlayer.get(0);
-        int layer = positionNlayer.get(1);
-//        long loff = layer * seqLen * kvDim; // layer offset into KV cache
         long loff = positionNlayer.get(3);
 
         // Parallelize computation across attention heads
