@@ -48,11 +48,6 @@ public record Llama(Configuration configuration, Tokenizer tokenizer, Weights we
         // copy the token embedding into x
         weights.token_embedding_table.copyTo(token * dim, state.x, 0, dim);
 
-//        System.out.println("\n==== Java State ==== + Position " + position + " Token " + token);
-//        for (int i = 0; i < 10; i++) {
-//            System.out.printf("input x[%d] = %f%n", i, state.x.getFloat(i));
-//        }
-
         // forward all the layers
         for (int l = 0; l < config.numberOfLayers; l++) {
             // attention rmsnorm
@@ -162,16 +157,6 @@ public record Llama(Configuration configuration, Tokenizer tokenizer, Weights we
 
         weights.wcls.matmul(state.x, state.logits, config.vocabularySize, dim);
 
-//        for (int i = 0; i < 10; i++) {
-////            System.out.printf("output x[%d] = %f%n", i, state.x.getFloat(i));
-//        }
-//
-//        int totalSize = state.logits.size();
-//        int step = Math.max(1, totalSize / 20);  // 1/20 = 5%
-//
-//        for (int i = 0; i < totalSize; i += step) {
-////            System.out.printf("logits[%d] = %f%n", i, state.logits.getFloat(i));
-//        }
         return state.logits;
     }
 
@@ -979,15 +964,8 @@ public record Llama(Configuration configuration, Tokenizer tokenizer, Weights we
         for (int position = startPosition; position < maxTokens; ++position) {
             if (TornadoVMCompute.TORNADOVM) {
                 forwardTornadoVM(model, state, token, position, tornadoVMPlan);
-//                forwardTornadoVMX(model, state, token, position, tornadoVMPlan);
-//                tornadoVMPlan.freeTornadoExecutionPlan();
-
-                //                System.exit(0);
-                counter++;
             } else {
                 forwardJava(model, state, token, position);
-//                forwardJavaDebug(model, state, token, position, model.configuration.numberOfLayers);
-                counter++;
             }
             startGen = System.nanoTime();
             if (promptIndex < promptTokens.size()) {
@@ -1012,9 +990,6 @@ public record Llama(Configuration configuration, Tokenizer tokenizer, Weights we
                 }
             }
             state.latestToken = token = nextToken;
-            if (counter == 5) {
-//                System.exit(0);
-            }
         }
 
         long elapsedNanos = System.nanoTime() - startNanos;

@@ -1,7 +1,7 @@
 package com.example.tornadovm;
 
 import com.example.core.model.GGMLType;
-import com.example.core.model.tensor.FloatTensor;
+
 import com.example.core.types.Float16;
 import uk.ac.manchester.tornado.api.KernelContext;
 import uk.ac.manchester.tornado.api.annotations.Parallel;
@@ -283,65 +283,19 @@ public class TornadoVMCompute {
         }
     }
 
-    public static void forcePropagationOneArray(FloatArray x) {
-        x.set(0, x.get(0));
-    }
-
-    public static void forcePropagationOneArray(IntArray x) {
-        x.set(0, x.get(0));
-    }
 
     public static void forcePropagationTwoArrays(FloatArray x, FloatArray y) {
         x.set(0, x.get(0));
         y.set(0, y.get(0));
     }
 
-    public static void forcePropagationTwoArrays(FloatArray x, IntArray y) {
-        x.set(0, x.get(0));
-        y.set(0, y.get(0));
-    }
-
-    public static void forcePropagationThreeArrays(FloatArray x, FloatArray y, FloatArray z) {
-        x.set(0, x.get(0));
-        y.set(0, y.get(0));
-        z.set(0, z.get(0));
-    }
-
-    public static void forcePropagationThreeArrays(FloatArray x, FloatArray y, IntArray z) {
-        x.set(0, x.get(0));
-        y.set(0, y.get(0));
-        z.set(0, z.get(0));
-    }
-
-    public static void forcePropagationFourArrays(FloatArray x, FloatArray y, FloatArray z, FloatArray w) {
-        x.set(0, x.get(0));
-        y.set(0, y.get(0));
-        z.set(0, z.get(0));
-        w.set(0, w.get(0));
-    }
-
-    public static void forcePropagationFiveArrays(FloatArray x, FloatArray y, FloatArray z, FloatArray w, FloatArray cv) {
-        x.set(0, x.get(0));
-        y.set(0, y.get(0));
-        z.set(0, z.get(0));
-        w.set(0, w.get(0));
-        cv.set(0, cv.get(0));
-    }
-
-    public static void forcePropagationSixArrays(FloatArray x, FloatArray y, FloatArray z, FloatArray w, FloatArray cv, FloatArray xyz) {
-        x.set(0, x.get(0));
-        y.set(0, y.get(0));
-        z.set(0, z.get(0));
-        w.set(0, w.get(0));
-        cv.set(0, cv.get(0));
-        xyz.set(0, xyz.get(0));
-    }
 
     public static void ropeRotation(KernelContext context, IntArray positionNlayer, FloatArray sq, FloatArray sk, int kv_dim, int head_size) {
         int i = context.globalIdx * 2;
 
         int head_dim = i % head_size;
-        float freq = 1.0f / TornadoMath.pow(10000.0f, head_dim / (float) head_size);
+        // 50000.0f vs 10000.0f
+        float freq = 1.0f / TornadoMath.pow(50000.0f, head_dim / (float) head_size);
         float val = positionNlayer.get(0) * freq;
         float fcr = TornadoMath.cos(val);
         float fci = TornadoMath.sin(val);
@@ -1038,7 +992,7 @@ public class TornadoVMCompute {
         long loff = positionNlayer.get(3);
 
         // Parallelize computation across attention heads
-        for (int h = 0; h < nHeads; h++) {
+        for (@Parallel int h = 0; h < nHeads; h++) {
             // Process each head in parallel
             processHeadTornado(q, key_cache, value_cache, xb, h, headSize, kvDim, kvMul, loff, pos, wrapAtt);
         }

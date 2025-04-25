@@ -94,17 +94,11 @@ public class TornadoVMLayerPlanner {
     public Tuple2<List<ImmutableTaskGraph>, GridScheduler> setupTornadoForwardPlan() {
         List<ImmutableTaskGraph> taskGraphs = new ArrayList<>();
 
-        int dim = config.dim;
-        int headSize = config.headSize;
-        int numHeads = config.numberOfHeads;
-        int numKVHeads = config.numberOfKeyValueHeads; // n_kv_heads
-        int kvDim = (dim * numKVHeads) / numHeads;
-        int kvMul = numHeads / numKVHeads;
-
         // Create kernel context
         KernelContext context = new KernelContext();
 
         // @formatter:off
+
         // ================ TASK GRAPH 0: BUFFER INITIALIZATION ================
         TaskGraph updX = new TaskGraph("updX")
                 .transferToDevice(DataTransferMode.EVERY_EXECUTION, state.wrapX)
@@ -131,56 +125,49 @@ public class TornadoVMLayerPlanner {
                         weights.freq_cis_realFlat, weights.freq_cis_imagFlat
                 )
                 .transferToDevice(DataTransferMode.EVERY_EXECUTION,
-                        state.positionAndLayer,
-                        state.wrapKeyCache, state.wrapValueCache
+                        state.positionAndLayer
                 )
                 .task("rmsAtt", TornadoVMCompute::rmsnorm,
-                        state.wrapXb, state.wrapX, weights.rms_att_weightFlat, state.positionAndLayer, dim, config.rmsNormEps)
+                        state.wrapXb, state.wrapX, weights.rms_att_weightFlat, state.positionAndLayer, config.dim, config.rmsNormEps)
                 .task("qmatmul", TornadoVMCompute::matmul,
-                        state.wrapQ, state.wrapXb, weights.wqFlat, dim, dim, state.positionAndLayer)
+                        state.wrapQ, state.wrapXb, weights.wqFlat, config.dim, config.dim, state.positionAndLayer)
                 .task("kmatmul", TornadoVMCompute::matmul,
-                        state.wrapK, state.wrapXb, weights.wkFlat, dim, kvDim, state.positionAndLayer)
+                        state.wrapK, state.wrapXb, weights.wkFlat, config.dim, config.kvDim, state.positionAndLayer)
                 .task("vmatmul", TornadoVMCompute::matmul,
-                        state.wrapV, state.wrapXb, weights.wvFlat, dim, kvDim, state.positionAndLayer)
-                .task("rope", TornadoVMCompute::ropeRotationSerial,
-                         state.positionAndLayer, state.wrapQ, state.wrapK,config.numberOfHeads, kvDim,
-                        headSize, weights.freq_cis_realFlat, weights.freq_cis_imagFlat)
+                        state.wrapV, state.wrapXb, weights.wvFlat, config.dim, config.kvDim, state.positionAndLayer)
+//                .task("rope", TornadoVMCompute::ropeRotationSerial,
+//                         state.positionAndLayer, state.wrapQ, state.wrapK,config.numberOfHeads, config.kvDim,
+//                        config.headSize, weights.freq_cis_realFlat, weights.freq_cis_imagFlat)
+                .task("rope", TornadoVMCompute::ropeRotation,context,
+                        state.positionAndLayer, state.wrapQ, state.wrapK, config.kvDim,
+                        config.headSize)
                 .task("copyToCaches", TornadoVMCompute::copyToCache,
                         state.wrapKeyCache, state.wrapK,  state.wrapValueCache, state.wrapV, state.positionAndLayer)
                 .task("parallel-attention", TornadoVMCompute::processHeadsParallel,
                         state.wrapQ, state.wrapKeyCache, state.wrapValueCache, state.wrapXb,
-                        config.numberOfHeads, config.headSize, kvDim, kvMul, config.contextLength,
+                        config.numberOfHeads, config.headSize, config.kvDim, config.kvMul, config.contextLength,
                         state.positionAndLayer, state.wrapAtt)
                 .task("matmul1", TornadoVMCompute::matmul,
-                        state.wrapXb2, state.wrapXb, weights.woFlat, dim, dim, state.positionAndLayer)
+                        state.wrapXb2, state.wrapXb, weights.woFlat, config.dim, config.dim, state.positionAndLayer)
                 .task("residual1", TornadoVMCompute::addInPlace, state.wrapX, state.wrapXb2)
                 .task("rms", TornadoVMCompute::rmsnorm,
-                        state.wrapXb, state.wrapX, weights.rms_ffn_weightFlat, state.positionAndLayer, dim, config.rmsNormEps)
+                        state.wrapXb, state.wrapX, weights.rms_ffn_weightFlat, state.positionAndLayer, config.dim, config.rmsNormEps)
                 .task("projectOne", TornadoVMCompute::matmul,
-                        state.wrapHb, state.wrapXb, weights.w1Flat, dim, config.hiddenDim, state.positionAndLayer)
+                        state.wrapHb, state.wrapXb, weights.w1Flat, config.dim, config.hiddenDim, state.positionAndLayer)
                 .task("projectionThree", TornadoVMCompute::matmul,
-                        state.wrapHb2, state.wrapXb, weights.w3Flat, dim, config.hiddenDim, state.positionAndLayer)
+                        state.wrapHb2, state.wrapXb, weights.w3Flat, config.dim, config.hiddenDim, state.positionAndLayer)
                 .task("silu_elementwise_mul", TornadoVMCompute::siluElemWiseMulActivation,
                         config.hiddenDim, state.wrapHb, state.wrapHb2)
                 .task("projectionTwo", TornadoVMCompute::matmul,
-                        state.wrapXb, state.wrapHb, weights.w2Flat, config.hiddenDim, dim, state.positionAndLayer)
+                        state.wrapXb, state.wrapHb, weights.w2Flat, config.hiddenDim, config.dim, state.positionAndLayer)
                 .task("residual2", TornadoVMCompute::addInPlace, state.wrapX, state.wrapXb)
-                .transferToHost(DataTransferMode.EVERY_EXECUTION,
-                        state.wrapKeyCache, state.wrapValueCache,
-                        state.positionAndLayer,
-                        state.wrapX
-                )
                 .persistOnDevice(state.wrapX, context);
         taskGraphs.add(unifiedLayer.snapshot());
 
 
         TaskGraph logits = new TaskGraph("logits")
-//                .consumeFromDevice(
-//                        state.wrapX, context
-//                )
-                .transferToDevice(DataTransferMode.EVERY_EXECUTION,
-                        state.wrapX, context
-
+                .consumeFromDevice(unifiedLayer.getTaskGraphName(),
+                        state.wrapX
                 )
                 .transferToDevice(DataTransferMode.FIRST_EXECUTION,
                         state.wrapLogits,
@@ -188,8 +175,8 @@ public class TornadoVMLayerPlanner {
                         weights.rms_final_weight_as_floatArray
                 )
                 .task("rmsLogits", TornadoVMCompute::rmsnormInnOut,
-                        state.wrapX, weights.rms_final_weight_as_floatArray, dim, config.rmsNormEps)
-                .task("projection", TornadoVMCompute::matmulTornadoQ8, context, weights.wclsByteArray, state.wrapX, state.wrapLogits, dim)
+                        state.wrapX, weights.rms_final_weight_as_floatArray, config.dim, config.rmsNormEps)
+                .task("projection", TornadoVMCompute::matmulTornadoQ8, context, weights.wclsByteArray, state.wrapX, state.wrapLogits, config.dim)
                 .transferToHost(DataTransferMode.EVERY_EXECUTION, state.wrapLogits, state.wrapX);
         taskGraphs.add(logits.snapshot());
         // @formatter:on
@@ -410,6 +397,10 @@ public class TornadoVMLayerPlanner {
         headsWorker.setGlobalWork(config.numberOfHeads * 64, 1, 1);
         headsWorker.setLocalWork(64, 1, 1);
 
+        WorkerGrid headsWorkerLiner = new WorkerGrid1D(config.numberOfHeads);
+//        headsWorkerLiner.setGlobalWork(config.numberOfHeads, 1, 1);
+//        headsWorker.setLocalWork(64, 1, 1);
+
         WorkerGrid singleWorker = new WorkerGrid1D(1);
         singleWorker.setGlobalWork(1, 1, 1);
         singleWorker.setLocalWork(1, 1, 1);
@@ -432,12 +423,12 @@ public class TornadoVMLayerPlanner {
         // Scheduler 1: RMS Norm
 
         // Scheduler 3: RoPE Rotation
-//        tornadoForwardScheduler.addWorkerGrid("rp.rope", ropeWorker);
+        tornadoForwardScheduler.addWorkerGrid("layer.rope", ropeWorker);
 
         // Scheduler 4: Copy to Caches
 
         // Scheduler 5: Multi-head Attention
-//        tornadoForwardScheduler.addWorkerGrid("attention.parallel-attention", headsWorker);
+//        tornadoForwardScheduler.addWorkerGrid("layer.parallel-attention", headsWorker);
 
         // Scheduler 7: FFN Part 1 (Norm)
         tornadoForwardScheduler.addWorkerGrid("logits.projection", vocabWorker);
