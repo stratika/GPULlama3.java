@@ -13,7 +13,7 @@ import uk.ac.manchester.tornado.api.types.arrays.IntArray;
 import java.util.stream.IntStream;
 
 public class TornadoVMCompute {
-    public static final boolean TORNADOVM = Boolean.parseBoolean(System.getProperty("use.tornadovm", "true"));
+    public static final boolean TORNADOVM = Boolean.parseBoolean(System.getProperty("use.tornadovm", "false"));
 
     public TornadoVMCompute() {
     }
@@ -362,6 +362,158 @@ public class TornadoVMCompute {
             sk.set(i + 1, v0k * fci + v1k * fcr);
         }
 
+    }
+
+    public static void ropeRotationSerialXX(IntArray position, FloatArray sq, FloatArray sk, int kv_dim, int head_size) {
+        // Process each pair of adjacent values - grouping by pairs within dimensions
+        for (int i = 0; i < head_size / 2; i++) {
+            // Calculate frequency for this dimension pair
+            float freq = 1.0f / (float) TornadoMath.pow(10000.0f, 2.0f * i / head_size);
+
+            // Calculate rotation angle
+            float val = position.get(0) * freq;
+            float fcr = (float) TornadoMath.cos(val);
+            float fci = (float) TornadoMath.sin(val);
+
+            // Apply to each head - assuming head_size is the dimension size per head
+            for (int head_idx = 0; head_idx < sq.getSize() / head_size; head_idx++) {
+                int dim_offset = head_idx * head_size;
+
+                // Apply rotation to query
+                int idx1 = dim_offset + i;
+                int idx2 = dim_offset + i + head_size/2;
+
+                // Make sure we don't go out of bounds
+                if (idx2 < sq.getSize()) {
+                    // Get original values
+                    float q1 = sq.get(idx1);
+                    float q2 = sq.get(idx2);
+
+                    // Apply rotation
+                    sq.set(idx1, q1 * fcr - q2 * fci);
+                    sq.set(idx2, q1 * fci + q2 * fcr);
+
+                    // Apply to key if needed
+                    if (idx1 < kv_dim && idx2 < sk.getSize()) {
+                        float k1 = sk.get(idx1);
+                        float k2 = sk.get(idx2);
+
+                        sk.set(idx1, k1 * fcr - k2 * fci);
+                        sk.set(idx2, k1 * fci + k2 * fcr);
+                    }
+                }
+            }
+        }
+    }
+
+    public static void ropeRotationSerial(IntArray position, FloatArray sq, FloatArray sk,
+            int n_heads, int n_kv_heads, int head_size,
+            FloatArray freq_cis_real, FloatArray freq_cis_imag)
+    {
+        int pos = position.get(0);
+
+        // Loop over all heads
+        for (int i = 0; i < n_heads; i++) {
+            // Loop over dimensions within each head
+            for (int j = 0; j < head_size; j += 2) {
+                // Get precomputed rotation values for this position and dimension
+                int head_dim = j / 2;  // Since we're incrementing by 2
+                int freq_index = pos * (head_size / 2) + head_dim;
+
+                float fcr = freq_cis_real.get(freq_index);
+                float fci = freq_cis_imag.get(freq_index);
+
+                // Calculate indices for the current head and dimension
+                int qIdx = i * head_size + j;
+
+                // Rotate query vector
+                float q0 = sq.get(qIdx);
+                float q1 = sq.get(qIdx + 1);
+                sq.set(qIdx, q0 * fcr - q1 * fci);
+                sq.set(qIdx + 1, q0 * fci + q1 * fcr);
+
+                // Rotate key vector if this is a KV head
+                if (i < n_kv_heads) {
+                    int kIdx = i * head_size + j;
+                    float k0 = sk.get(kIdx);
+                    float k1 = sk.get(kIdx + 1);
+                    sk.set(kIdx, k0 * fcr - k1 * fci);
+                    sk.set(kIdx + 1, k0 * fci + k1 * fcr);
+                }
+            }
+        }
+    }
+
+    public static void ropeRotationSeriaY(IntArray position, FloatArray sq, FloatArray sk,
+            int n_heads, int n_kv_heads, int head_size,
+            FloatArray freq_cis_imag, FloatArray freq_cis_real)
+     {
+        int pos = position.get(0);
+
+        // Loop over all heads
+        for (int i = 0; i < n_heads; i++) {
+            // Loop over dimensions within each head
+            for (int j = 0; j < head_size; j += 2) {
+                // Calculate frequency (note 500000.0f instead of 10000.0f)
+                float freq = 1.0f / TornadoMath.pow(10000.0f, (float)j / (float)head_size);
+
+                // Calculate rotation values
+                float val = pos * freq;
+                float fcr =  TornadoMath.cos(val);
+                float fci =  TornadoMath.sin(val);
+
+                // Calculate indices for the current head and dimension
+                int qIdx = i * head_size + j;
+
+                // Rotate query vector
+                float q0 = sq.get(qIdx);
+                float q1 = sq.get(qIdx + 1);
+                sq.set(qIdx, q0 * fcr - q1 * fci);
+                sq.set(qIdx + 1, q0 * fci + q1 * fcr);
+
+                // Rotate key vector if this is a KV head
+                if (i < n_kv_heads) {
+                    int kIdx = i * head_size + j;
+                    float k0 = sk.get(kIdx);
+                    float k1 = sk.get(kIdx + 1);
+                    sk.set(kIdx, k0 * fcr - k1 * fci);
+                    sk.set(kIdx + 1, k0 * fci + k1 * fcr);
+                }
+            }
+        }
+    }
+
+    public static void ropeRotationSerialX(IntArray position, FloatArray sq, FloatArray sk, int kv_dim, int head_size) {
+        // Process each pair of adjacent values
+        for (int i = 0; i < sq.getSize(); i += 2) {
+            // Calculate which feature dimension we're working with
+            int head_dim = i % head_size;
+
+            // Calculate frequency for this dimension
+            float freq = 1.0f / (float) TornadoMath.pow(10000.0f, head_dim / (float) head_size);
+
+            // Calculate rotation angle
+            float val = position.get(0) * freq;
+            float fcr = (float) TornadoMath.cos(val);
+            float fci = (float) TornadoMath.sin(val);
+
+            // Determine if we need to rotate just query or both query and key
+            int rotn = i < kv_dim ? 2 : 1;
+
+            // Rotate query vector
+            float v0q = sq.get(i);
+            float v1q = sq.get(i + 1);
+            sq.set(i, v0q * fcr - v1q * fci);
+            sq.set(i + 1, v0q * fci + v1q * fcr);
+
+            // Rotate key vector if needed
+            if (rotn > 1 && i < sk.getSize()) {
+                float v0k = sk.get(i);
+                float v1k = sk.get(i + 1);
+                sk.set(i, v0k * fcr - v1k * fci);
+                sk.set(i + 1, v0k * fci + v1k * fcr);
+            }
+        }
     }
 
     public static void matmulTornadoQ4(KernelContext context, ByteArray thisx, FloatArray that, FloatArray out, int dim1) {
@@ -880,9 +1032,10 @@ public class TornadoVMCompute {
             int nHeads, int headSize, int kvDim, int kvMul, int seqLen,
             IntArray positionNlayer, FloatArray wrapAtt) {
 
-                int pos = positionNlayer.get(0);
-                int layer = positionNlayer.get(1);
-        long loff = layer * seqLen * kvDim; // layer offset into KV cache
+        int pos = positionNlayer.get(0);
+        int layer = positionNlayer.get(1);
+//        long loff = layer * seqLen * kvDim; // layer offset into KV cache
+        long loff = positionNlayer.get(3);
 
         // Parallelize computation across attention heads
         for (int h = 0; h < nHeads; h++) {
@@ -897,8 +1050,6 @@ public class TornadoVMCompute {
 
         // Base index for this head's attention weights
         int headOffset = h * (pos + 1);
-
-
 
             // STEP 1: Calculate attention scores for all timesteps
             for (int t = 0; t <= pos; t++) {
