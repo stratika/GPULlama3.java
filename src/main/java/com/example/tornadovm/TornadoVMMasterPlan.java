@@ -10,6 +10,7 @@ import uk.ac.manchester.tornado.api.GridScheduler;
 import uk.ac.manchester.tornado.api.ImmutableTaskGraph;
 import uk.ac.manchester.tornado.api.TornadoExecutionPlan;
 
+import java.lang.foreign.MemorySegment;
 import java.util.List;
 
 public class TornadoVMMasterPlan {
@@ -35,6 +36,7 @@ public class TornadoVMMasterPlan {
 
         for (int layer = 0; layer < config.numberOfLayers; layer++) {
             int loff = layer * config.contextLength * config.kvDim;
+
             int layerOffsetForCaches = loff + position * config.kvDim;
 
             state.positionAndLayer.set(0, position);
@@ -49,17 +51,7 @@ public class TornadoVMMasterPlan {
         executionPlan.withGraph(2).withGridScheduler(scheduler).execute();
 
         state.logits.asMemorySegment().copyFrom(state.wrapLogits.getSegment());
-        for (int i = 0; i < 10; i++) {
-            System.out.printf("wrapX[%d] = %f%n", i, state.wrapX.get(i));
-        }
-
-        int totalSize = state.logits.size();
-        int step = Math.max(1, totalSize / 20);  // 1/20 = 5%
-
-        for (int i = 0; i < totalSize; i += step) {
-            System.out.printf("wrapLogits[%d] = %f%n", i, state.logits.getFloat(i));
-        }
-
+        
         return state.logits;
     }
 
