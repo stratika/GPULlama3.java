@@ -1,7 +1,6 @@
 package com.example.inference.engine.impl;
 
 import com.example.aux.Parallel;
-import com.example.aux.Tuple2;
 import com.example.core.model.tensor.FloatTensor;
 import com.example.inference.Sampler;
 import com.example.loader.weights.State;
@@ -9,11 +8,6 @@ import com.example.loader.weights.Weights;
 import com.example.tokenizer.impl.Tokenizer;
 import com.example.tornadovm.TornadoVMCompute;
 import com.example.tornadovm.TornadoVMMasterPlan;
-import uk.ac.manchester.tornado.api.GridScheduler;
-import uk.ac.manchester.tornado.api.ImmutableTaskGraph;
-import uk.ac.manchester.tornado.api.TornadoExecutionPlan;
-import uk.ac.manchester.tornado.api.TornadoExecutionResult;
-import uk.ac.manchester.tornado.api.exceptions.TornadoExecutionPlanException;
 
 import java.lang.foreign.MemorySegment;
 import java.nio.FloatBuffer;
@@ -386,18 +380,16 @@ public record Llama(Configuration configuration, Tokenizer tokenizer, Weights we
             state.k.copyTo(0, state.keyCache[l], position * kvDim, kvDim);
             state.v.copyTo(0, state.valueCache[l], position * kvDim, kvDim);
 
-//            System.out.println("First 15 values in key & value cache at position " + position + ":");
-//            for (int i = 0; i < 15; i++) {
-//                System.out.printf(" keyCache[%d] = %f, valueCache[%d] = %f%n", i, state.keyCache[l].getFloat(position * kvDim + i), i, state.valueCache[l].getFloat(position * kvDim + i));
-//            }
+            //            System.out.println("First 15 values in key & value cache at position " + position + ":");
+            //            for (int i = 0; i < 15; i++) {
+            //                System.out.printf(" keyCache[%d] = %f, valueCache[%d] = %f%n", i, state.keyCache[l].getFloat(position * kvDim + i), i, state.valueCache[l].getFloat(position * kvDim + i));
+            //            }
 
             // Print the first 15 values after copying from original tensors
             System.out.println("First 15 values in key & value cache at position " + position + ":");
             for (int i = 0; i < 15; i++) {
                 int offset = position * model.configuration.kvDim + i;
-                System.out.printf(" keyCache[%d] = %f, valueCache[%d] = %f%n",
-                        i, state.keyCache[l].getFloat(offset),
-                        i, state.valueCache[l].getFloat(offset));
+                System.out.printf(" keyCache[%d] = %f, valueCache[%d] = %f%n", i, state.keyCache[l].getFloat(offset), i, state.valueCache[l].getFloat(offset));
             }
 
             // Also print with layer offset for comparison
@@ -407,17 +399,14 @@ public record Llama(Configuration configuration, Tokenizer tokenizer, Weights we
             for (int i = 0; i < 15; i++) {
                 // Note: For tensor arrays, the layer is already selected by [l]
                 // so we only need position offset within that layer
-                System.out.printf(" keyCache[%d] = %f, valueCache[%d] = %f%n",
-                        i, state.keyCache[l].getFloat(position * model.configuration.kvDim + i),
-                        i, state.valueCache[l].getFloat(position * model.configuration.kvDim + i));
+                System.out.printf(" keyCache[%d] = %f, valueCache[%d] = %f%n", i, state.keyCache[l].getFloat(position * model.configuration.kvDim + i), i,
+                        state.valueCache[l].getFloat(position * model.configuration.kvDim + i));
             }
 
             // Print wrapped version for comparison
             System.out.println("\nWrapped version values:");
             for (int i = 0; i < 15; i++) {
-                System.out.printf(" wrapKeyCache[%d] = %f, wrapValueCache[%d] = %f%n",
-                        i, state.wrapKeyCache.get(fullOffset + i),
-                        i, state.wrapValueCache.get(fullOffset + i));
+                System.out.printf(" wrapKeyCache[%d] = %f, wrapValueCache[%d] = %f%n", i, state.wrapKeyCache.get(fullOffset + i), i, state.wrapValueCache.get(fullOffset + i));
             }
 
             int curLayer = l;
@@ -483,7 +472,6 @@ public record Llama(Configuration configuration, Tokenizer tokenizer, Weights we
                     }
                 }
             });
-
 
             for (int i = 0; i < 15; i++) {
                 System.out.printf("  xb[%d] = %f%n", i, state.xb.getFloat(i));
@@ -584,28 +572,12 @@ public record Llama(Configuration configuration, Tokenizer tokenizer, Weights we
             int position,   //
             TornadoVMMasterPlan tornadoVMMasterPlan) { //
 
-//        state.wrapXb.init(0.0f);
-//        state.wrapXb2.init(0.0f);
-//        state.wrapQ .init(0.0f);
-//        state.wrapK .init(0.0f);
-//        state.wrapV.init(0.0f);
-//        state.wrapAtt.init(0.0f);
-//        state.wrapHb .init(0.0f);
-//        state.wrapHb2.init(0.0f);
-
-//        System.out.println("\n==== TornadoVM State ==== + Position " + position + " Token " + token);
-
         model.weights.token_embedding_table.copyTo(token * model.configuration.dim, state.x, 0, model.configuration.dim);
 
         MemorySegment.copy(state.x.asMemorySegment(), 0, state.wrapX.getSegment(), 0, model.configuration.dim * Float.BYTES);
 
         tornadoVMMasterPlan.executionPlan.withGraph(0).withGridScheduler(tornadoVMMasterPlan.scheduler).execute();
 
-        for (int i = 0; i < 10; i++) {
-//            System.out.printf("input wrapX[%d] = %f%n", i, state.wrapX.get(i));
-        }
-        TornadoExecutionResult layerResult = null;
-
         for (int layer = 0; layer < model.configuration.numberOfLayers; layer++) {
             int loff = layer * model.configuration.contextLength * model.configuration.kvDim;
 
@@ -616,342 +588,23 @@ public record Llama(Configuration configuration, Tokenizer tokenizer, Weights we
             state.positionAndLayer.set(2, layerOffsetForCaches);
             state.positionAndLayer.set(3, loff);
 
-            //force copy - out
-//           layerResult=tornadoVMMasterPlan.executionPlan.withGraph(1).withGridScheduler(tornadoVMMasterPlan.scheduler).execute();
             tornadoVMMasterPlan.executionPlan.withGraph(1).withGridScheduler(tornadoVMMasterPlan.scheduler).execute();
 
-
         }
-//        layerResult.transferToHost(state.wrapKeyCache, state.wrapValueCache, state.positionAndLayer);
-
-//        System.out.println("Pos n layer ");
-//        System.out.println("Position : " +state.positionAndLayer.get(0));
-//        System.out.println("Layer " + state.positionAndLayer.get(1));
-//        System.out.println("layerOffsetForCaches " + state.positionAndLayer.get(2));
-//        System.out.println("loff " +  state.positionAndLayer.get(3));
 
         tornadoVMMasterPlan.executionPlan.withGraph(2).withGridScheduler(tornadoVMMasterPlan.scheduler).execute();
 
         state.logits.asMemorySegment().copyFrom(state.wrapLogits.getSegment());
-//        for (int i = 0; i < 10; i++) {
-//            System.out.printf("output wrapX[%d] = %f%n", i, state.wrapX.get(i));
-//        }
-//
-//        int totalSize = state.logits.size();
-//        int step = Math.max(1, totalSize / 20);  // 1/20 = 5%
-//
-//        for (int i = 0; i < totalSize; i += step) {
-//            System.out.printf("wrapLogits[%d] = %f%n", i, state.logits.getFloat(i));
-//        }
 
         return state.logits;
     }
-
-    public static FloatTensor forwardTornadoVMX( //
-            Llama model,  //
-            State state,  //
-            int token,    //
-            int position,   //
-            TornadoVMMasterPlan tornadoVMMasterPlan) { //
-
-        System.out.println("\n==== TornadoVM State ==== + Position " + position + " Token " + token);
-
-        model.weights.token_embedding_table.copyTo(token * model.configuration.dim, state.x, 0, model.configuration.dim);
-
-//        MemorySegment.copy(state.x.asMemorySegment(), 0, state.wrapX.getSegment(), 24, model.configuration.dim * Float.BYTES);
-
-        for (int i = 0; i < state.x.size(); i++) {
-            state.wrapX.set(i, state.x.getFloat(i));
-        }
-
-        tornadoVMMasterPlan.executionPlan.withGraph(0).withGridScheduler(tornadoVMMasterPlan.scheduler).execute();
-
-        System.out.println("\n==== Initial Token Embedding ====");
-        System.out.println("\n==== Initial wrapX values ====");
-        for (int i = 0; i < 15; i++) {
-            System.out.printf("input wrapX[%d] = %f%n", i, state.wrapX.get(i));
-        }
-        TornadoExecutionResult layerResult = null;
-
-        for (int layer = 0; layer < model.configuration.numberOfLayers; layer++) {
-            System.out.println("\n=========== Processing LAYER " + layer + " ===========");
-
-            int loff = layer * model.configuration.contextLength * model.configuration.kvDim;
-
-            int layerOffsetForCaches = loff + position * model.configuration.kvDim;
-
-            state.positionAndLayer.set(0, position);
-            state.positionAndLayer.set(1, layer);
-            state.positionAndLayer.set(2, layerOffsetForCaches);
-            state.positionAndLayer.set(3, loff);
-
-            //force copy - out
-            tornadoVMMasterPlan.executionPlan.withGraph(1).withGridScheduler(tornadoVMMasterPlan.scheduler).execute();
-
-            System.out.println("\n-- After Attention RMS Norm (Graph 1) --");
-            for (int i = 0; i < 15; i++) {
-                System.out.printf("wrapXb[%d] = %f%n", i, state.wrapXb.get(i));
-            }
-
-
-
-            tornadoVMMasterPlan.executionPlan.withGraph(2).withGridScheduler(tornadoVMMasterPlan.scheduler).execute();
-
-            System.out.println("\n-- After QKV Matmul (Graph 2) --");
-            for (int i = 0; i < 15; i++) {
-                System.out.printf("wrapQ[%d] = %f, wrapK[%d] = %f, wrapV[%d] = %f%n",
-                        i, state.wrapQ.get(i), i, state.wrapK.get(i), i, state.wrapV.get(i));
-            }
-
-
-
-            tornadoVMMasterPlan.executionPlan.withGraph(3).withGridScheduler(tornadoVMMasterPlan.scheduler).execute();
-
-            System.out.println("\n-- After RoPE Rotation (Graph 3) --");
-            for (int i = 0; i < 15; i++) {
-                System.out.printf("wrapQ[%d] = %f, wrapK[%d] = %f, %d%n",
-                        i, state.wrapQ.get(i), i, state.wrapK.get(i), state.positionAndLayer.get(0));
-            }
-
-            tornadoVMMasterPlan.executionPlan.withGraph(4).withGridScheduler(tornadoVMMasterPlan.scheduler).execute();
-
-
-//            System.out.println("\n-- After Copy to KV Cache (Graph 4) --");
-//            for (int i = 0; i < 15; i++) {
-//                System.out.printf("keyCache[%d] = %f, valueCache[%d] = %f%n",
-//                        i, state.wrapKeyCache.get(position * model.configuration.kvDim + i),
-//                        i, state.wrapValueCache.get(position * model.configuration.kvDim + i));
-//            }
-
-            System.out.println("\n-- After Copy to KV Cache (Graph 4) --");
-            // Calculate the offset based on position and layer
-            int layerOffset = layer * model.configuration.contextLength * model.configuration.kvDim;
-            int fullOffset = layerOffset + position * model.configuration.kvDim;
-
-            // Print the values using the full offset (what should be in cache)
-            System.out.println("Using calculated full offset (" + fullOffset + "):");
-            for (int i = 0; i < 15; i++) {
-                System.out.printf("keyCache[%d] = %f, valueCache[%d] = %f%n",
-                        fullOffset + i, state.wrapKeyCache.get(fullOffset + i),
-                        fullOffset + i, state.wrapValueCache.get(fullOffset + i));
-            }
-
-            // Print using the offset from positionAndLayer to verify consistency
-            System.out.println("\nUsing positionAndLayer offset (" + state.positionAndLayer.get(2) + "):");
-            for (int i = 0; i < 15; i++) {
-                System.out.printf("keyCache[%d] = %f, valueCache[%d] = %f%n",
-                        state.positionAndLayer.get(2) + i, state.wrapKeyCache.get(state.positionAndLayer.get(2) + i),
-                        state.positionAndLayer.get(2) + i, state.wrapValueCache.get(state.positionAndLayer.get(2) + i));
-            }
-
-            // Print just using position offset (original code) for comparison
-            System.out.println("\nUsing just position offset (" + position * model.configuration.kvDim + "):");
-            for (int i = 0; i < 15; i++) {
-                System.out.printf("keyCache[%d] = %f, valueCache[%d] = %f%n",
-                        position * model.configuration.kvDim + i, state.wrapKeyCache.get(position * model.configuration.kvDim + i),
-                        position * model.configuration.kvDim + i, state.wrapValueCache.get(position * model.configuration.kvDim + i));
-            }
-
-
-            tornadoVMMasterPlan.executionPlan.withGraph(5).withGridScheduler(tornadoVMMasterPlan.scheduler).execute();
-
-            System.out.println("\n-- After Multi-Head Attention (Graph 5) --");
-            for (int i = 0; i < 15; i++) {
-                System.out.printf("wrapXb[%d] = %f, wrapAtt[%d] = %f%n",
-                        i, state.wrapXb.get(i), i, state.wrapAtt.get(i));
-            }
-
-            tornadoVMMasterPlan.executionPlan.withGraph(6).withGridScheduler(tornadoVMMasterPlan.scheduler).execute();
-
-            System.out.println("\n-- After Attention Output & First Residual (Graph 6) --");
-            for (int i = 0; i < 15; i++) {
-                System.out.printf("wrapX[%d] = %f, wrapXb2[%d] = %f%n",
-                        i, state.wrapX.get(i), i, state.wrapXb2.get(i));
-            }
-
-            tornadoVMMasterPlan.executionPlan.withGraph(7).withGridScheduler(tornadoVMMasterPlan.scheduler).execute();
-
-            System.out.println("\n-- After FFN RMS Norm (Graph 7) --");
-            for (int i = 0; i < 15; i++) {
-                System.out.printf("wrapXb[%d] = %f%n", i, state.wrapXb.get(i));
-            }
-
-
-            tornadoVMMasterPlan.executionPlan.withGraph(8).withGridScheduler(tornadoVMMasterPlan.scheduler).execute();
-
-            System.out.println("\n-- After FFN Projections (Graph 8) --");
-            for (int i = 0; i < 15; i++) {
-                System.out.printf("wrapHb[%d] = %f, wrapHb2[%d] = %f%n",
-                        i, state.wrapHb.get(i), i, state.wrapHb2.get(i));
-            }
-
-            tornadoVMMasterPlan.executionPlan.withGraph(9).withGridScheduler(tornadoVMMasterPlan.scheduler).execute();
-
-            System.out.println("\n-- After SiLU Activation (Graph 9) --");
-            for (int i = 0; i < 15; i++) {
-                System.out.printf("wrapHb[%d] = %f%n", i, state.wrapHb.get(i));
-            }
-
-
-            tornadoVMMasterPlan.executionPlan.withGraph(10).withGridScheduler(tornadoVMMasterPlan.scheduler).execute();
-
-            System.out.println("\n-- After FFN Final Projection & Second Residual (Graph 10) --");
-            for (int i = 0; i < 15; i++) {
-                System.out.printf("wrapX[%d] = %f, wrapXb[%d] = %f%n",
-                        i, state.wrapX.get(i), i, state.wrapXb.get(i));
-            }
-            System.out.println("\n========= END PROCESSING LAYER " + layer + " =========");
-
-        }
-
-
-
-        tornadoVMMasterPlan.executionPlan.withGraph(11).withGridScheduler(tornadoVMMasterPlan.scheduler).execute();
-        tornadoVMMasterPlan.executionPlan.withGraph(12).withGridScheduler(tornadoVMMasterPlan.scheduler).execute();
-
-        state.logits.asMemorySegment().copyFrom(state.wrapLogits.getSegment());
-        for (int i = 0; i < 15; i++) {
-            System.out.printf("output wrapX[%d] = %f%n", i, state.wrapX.get(i));
-        }
-
-        int totalSize = state.logits.size();
-        int step = Math.max(1, totalSize / 20);  // 1/20 = 5%
-
-        for (int i = 0; i < totalSize; i += step) {
-            System.out.printf("wrapLogits[%d] = %f%n", i, state.logits.getFloat(i));
-        }
-
-        tornadoVMMasterPlan.executionPlan.freeDeviceMemory();
-        return state.logits;
-    }
-
-
-    //    public static FloatTensor forwardTornadoVM( //
-//            Llama model,  //
-//            State state,  //
-//            int token,    //
-//            int position,   //
-//            TornadoVMMasterPlan tornadoVMMasterPlan) { //
-//
-//
-//        model.weights.token_embedding_table.copyTo(token * model.configuration.dim, state.x, 0, model.configuration.dim);
-//
-//        MemorySegment.copy(state.x.asMemorySegment(), 0,
-//                state.wrapX.getSegment(), 0,
-//                model.configuration.dim * Float.BYTES);
-//
-//
-//        return tornadoVMMasterPlan.tornadoVMForwardExecute(position);
-//    }
-
-
-
-    static FloatTensor forwardTornadoVMDebug(Llama model, State state, int token, int position, Tuple2<List<ImmutableTaskGraph>, GridScheduler> tornadoVMListOfPlan) {
-
-        Configuration config = model.configuration();
-        Weights weights = model.weights();
-        int dim = config.dim;
-        int kvDim = (config.dim * config.numberOfKeyValueHeads) / config.numberOfHeads;
-
-        // Copy the token embedding into CPU buffer
-        weights.token_embedding_table.copyTo(token * dim, state.x, 0, dim);
-
-        // Explicitly copy from CPU to the TornadoVM buffer
-        System.out.println("Copying initial embedding to TornadoVM buffer");
-        MemorySegment.copy(state.x.asMemorySegment(), 0, state.wrapX.getSegmentWithHeader(), 0, dim * 4);
-
-        // Set position and layer for this debug run (only processing layer 0)
-        state.positionAndLayer.set(0, position);
-        state.positionAndLayer.set(1, 0); // Fixed to layer 0 for debugging
-
-        GridScheduler scheduler = tornadoVMListOfPlan.getSecond();
-        List<ImmutableTaskGraph> taskGraphs = tornadoVMListOfPlan.getFirst();
-
-        System.out.println("Starting TornadoVM forward pass in debug mode");
-
-        try (TornadoExecutionPlan executionPlan = new TornadoExecutionPlan(taskGraphs.get(0),  // Initial buffer setup
-                taskGraphs.get(1),  // RMSNorm for attention
-                taskGraphs.get(2),  // QKV Matmuls
-                taskGraphs.get(3),  // RoPE rotation
-                taskGraphs.get(4),  // Multi-head Attention
-                taskGraphs.get(5),  // Feed-forward neural network
-                taskGraphs.get(6),  // Final RMSNorm
-                taskGraphs.get(7))) // Final projection to logits
-        {
-            // Execute each step sequentially, following the pattern from the test cases
-            System.out.println("Step 0: Initial buffer setup");
-            executionPlan.withGraph(0).withGridScheduler(scheduler).execute();
-
-            System.out.println("Step 1: RMSNorm for attention");
-            executionPlan.withGraph(1).withGridScheduler(scheduler).execute();
-
-            System.out.println("Step 2: QKV Matmuls");
-            executionPlan.withGraph(2).withGridScheduler(scheduler).execute();
-
-            System.out.println("Step 3: RoPE rotation");
-            executionPlan.withGraph(3).withGridScheduler(scheduler).execute();
-
-            // Calculate the offset for layer 0
-            long offset = 0 * config.contextLength * kvDim + position * kvDim;
-            System.out.println("Mapping memory regions at offset: " + offset);
-            System.out.println("Key cache size: " + state.wrapKeyCache.getSize());
-            System.out.println("K vector size: " + state.wrapK.getSize());
-            //            long kvDim = (config.dim * config.numberOfKeyValueHeads) / config.numberOfHeads;
-            //            long offset = layer * config.contextLength * kvDim + position * kvDim;
-            //            System.out.println("Layer: " + layer + ", Position: " + position);
-            //            System.out.println("Dimensions - dim: " + config.dim + ", kvDim: " + kvDim +
-            //                    ", contextLength: " + config.contextLength);
-            //            System.out.println("Calculated offset: " + offset);
-            // CRITICAL: The correct way to map memory regions
-            // We need to map both the key and value cache regions before executing attention
-            // The order of arguments is (dest, source, offset, fromGraphIndex, toGraphIndex)
-            // Based on the test examples, we need to map from graph 3 (RoPE) to graph 4 (attention)
-            executionPlan.mapOnDeviceMemoryRegion(state.wrapKeyCache, state.wrapK, offset, 3, 4);
-            executionPlan.mapOnDeviceMemoryRegion(state.wrapValueCache, state.wrapV, offset, 3, 4);
-
-            System.out.println("Step 4: Multi-head Attention");
-            executionPlan.withGraph(4).withGridScheduler(scheduler).execute();
-
-            System.out.println("Step 5: Feed-forward neural network");
-            executionPlan.withGraph(5).withGridScheduler(scheduler).execute();
-
-            System.out.println("Step 6: Final RMSNorm");
-            executionPlan.withGraph(6).withGridScheduler(scheduler).execute();
-
-            System.out.println("Step 7: Final projection to logits");
-            executionPlan.withGraph(7).withGridScheduler(scheduler).execute();
-
-            System.out.println("Debug forward pass complete");
-
-        } catch (TornadoExecutionPlanException e) {
-            System.err.println("TornadoVM execution failed: " + e.getMessage());
-            e.printStackTrace();
-
-            // Print more detailed diagnostic information
-            System.err.println("Error details:");
-            System.err.println("Position: " + position);
-            System.err.println("Layer: " + state.positionAndLayer.get(1));
-            System.err.println("Number of task graphs: " + taskGraphs.size());
-
-            // Try to dump the current state of K vectors to help debug
-            System.err.println("Current K vector state (first 10 elements):");
-            for (int i = 0; i < Math.min(10, state.wrapK.getSize()); i++) {
-                System.err.println("K[" + i + "] = " + state.wrapK.get(i));
-            }
-
-            throw new RuntimeException("TornadoVM execution failed", e);
-        }
-
-        return state.logits;
-    }
-
 
     public static List<Integer> generateTokens(Llama model, State state, int startPosition, List<Integer> promptTokens, Set<Integer> stopTokens, int maxTokens, Sampler sampler, boolean echo,
             IntConsumer onTokenGenerated) {
 
         TornadoVMMasterPlan tornadoVMPlan = new TornadoVMMasterPlan(state, model);
 
-        //todo: test this
+        // Prepare the TornadoVM execution plan -> JIT -> READ-ONLY copy ins
         tornadoVMPlan.executionPlan.withWarmUp();
 
         long startNanos = System.nanoTime();
@@ -1001,7 +654,7 @@ public record Llama(Configuration configuration, Tokenizer tokenizer, Weights we
         int totalTokens = promptIndex + generatedTokens.size();
 
         // Free the TornadoVM execution plan
-//        tornadoVMPlan.freeTornadoExecutionPlan();
+        //        tornadoVMPlan.freeTornadoExecutionPlan();
 
         System.err.printf("\n%n%.2f tokens/s (%d) [PrEval %.2f tokens/s (%d), TokGen %.2f tokens/s (%d)]%n", totalTokens / (elapsedNanos / 1_000_000_000.0), totalTokens,
                 promptTokens.size() / (promptNanos / 1_000_000_000.0), promptTokens.size(), generatedTokens.size() / (genNanos / 1_000_000_000.0), generatedTokens.size());
