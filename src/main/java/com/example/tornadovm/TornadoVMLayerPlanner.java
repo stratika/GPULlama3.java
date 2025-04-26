@@ -29,7 +29,6 @@ public class TornadoVMLayerPlanner {
 
     }
 
-
     public Tuple2<List<ImmutableTaskGraph>, GridScheduler> setupTornadoForwardPlan() {
         List<ImmutableTaskGraph> taskGraphs = new ArrayList<>();
 
@@ -39,11 +38,11 @@ public class TornadoVMLayerPlanner {
         // @formatter:off
 
         // ================ TASK GRAPH 0: BUFFER INITIALIZATION ================
-        TaskGraph updX = new TaskGraph("updX")
+        TaskGraph activationUpdate = new TaskGraph("activationUpdate")
                 .transferToDevice(DataTransferMode.EVERY_EXECUTION, state.wrapX)
-                .task("copyinX", TornadoVMCompute::emptyTaskToForceCopyIn, state.wrapX)
+                .task("updateX", TornadoVMCompute::emptyTaskToForceCopyIn, state.wrapX)
                 .persistOnDevice(state.wrapX);
-        taskGraphs.add(updX.snapshot());
+        taskGraphs.add(activationUpdate.snapshot());
 
         // ================ TASK GRAPH 1: RMS NORM ================
 
@@ -117,15 +116,12 @@ public class TornadoVMLayerPlanner {
                 .task("rmsLogits", TornadoVMCompute::rmsnormInnOut,
                         state.wrapX, weights.rms_final_weight_as_floatArray, config.dim, config.rmsNormEps)
                 .task("projection", TornadoVMCompute::matmulTornadoQ8, context, weights.wclsByteArray, state.wrapX, state.wrapLogits, config.dim)
-                .transferToHost(DataTransferMode.EVERY_EXECUTION, state.wrapLogits, state.wrapX);
+                .transferToHost(DataTransferMode.EVERY_EXECUTION, state.wrapLogits);
         taskGraphs.add(logits.snapshot());
         // @formatter:on
 
         return new Tuple2<>(taskGraphs, setupGridSchedulers());
     }
-
-
-
 
     private GridScheduler setupGridSchedulers() {
         GridScheduler tornadoForwardScheduler = new GridScheduler();
@@ -133,7 +129,6 @@ public class TornadoVMLayerPlanner {
         WorkerGrid singleWorker = new WorkerGrid1D(1);
         singleWorker.setGlobalWork(1, 1, 1);
         singleWorker.setLocalWork(1, 1, 1);
-
 
         WorkerGrid vocabWorker = new WorkerGrid1D(config.vocabularySize);
         vocabWorker.setGlobalWork(config.vocabularySize, 1, 1);
@@ -143,8 +138,7 @@ public class TornadoVMLayerPlanner {
         ropeWorker.setGlobalWork(config.dim / 2, 1, 1);
         ropeWorker.setLocalWork(128, 1, 1);
 
-
-        tornadoForwardScheduler.addWorkerGrid("updX.copyinX", singleWorker);
+        tornadoForwardScheduler.addWorkerGrid("activationUpdate.updateX", singleWorker);
 
         tornadoForwardScheduler.addWorkerGrid("layer.rope", ropeWorker);
 
