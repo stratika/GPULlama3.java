@@ -96,6 +96,11 @@ public class TornadoVMLayerPlanner {
 
         // Create kernel context
         KernelContext context = new KernelContext();
+        // Calculate number of work groups based on the model dimension and local work size
+        int numWorkGroups = (config.dim + 127) / 128; // Ceiling division for 128 threads per group
+        FloatArray intermediateReduceFirst = new FloatArray(numWorkGroups);
+
+        FloatArray intermediateReduce = new FloatArray(numWorkGroups);
 
         // @formatter:off
 
@@ -129,6 +134,10 @@ public class TornadoVMLayerPlanner {
                 )
                 .task("rmsAtt", TornadoVMCompute::rmsnorm,
                         state.wrapXb, state.wrapX, weights.rms_att_weightFlat, state.positionAndLayer, config.dim, config.rmsNormEps)
+//                .task("reduce", TornadoVMCompute::reduceSquareSums, context, state.wrapX, intermediateReduce, config.dim)
+//                .task("finalSum", TornadoVMCompute::finalSum, context, intermediateReduceFirst, intermediateReduce, config.dim, config.rmsNormEps)
+//                .task("normalize", TornadoVMCompute::normalizeAndScale, context, state.wrapXb, state.wrapX, weights.rms_att_weightFlat, intermediateReduceFirst, state.positionAndLayer, config.dim)
+
                 .task("qmatmul", TornadoVMCompute::matmul,
                         state.wrapQ, state.wrapXb, weights.wqFlat, config.dim, config.dim, state.positionAndLayer)
                 .task("kmatmul", TornadoVMCompute::matmul,
@@ -136,7 +145,7 @@ public class TornadoVMLayerPlanner {
                 .task("vmatmul", TornadoVMCompute::matmul,
                         state.wrapV, state.wrapXb, weights.wvFlat, config.dim, config.kvDim, state.positionAndLayer)
                 .task("rope", TornadoVMCompute::ropeRotation,context,
-                        state.positionAndLayer, state.wrapQ, state.wrapK, config.kvDim,
+                            state.positionAndLayer, state.wrapQ, state.wrapK, config.kvDim,
                         config.headSize)
                 .task("copyToCaches", TornadoVMCompute::copyToCache,
                         state.wrapKeyCache, state.wrapK,  state.wrapValueCache, state.wrapV, state.positionAndLayer)
@@ -179,6 +188,40 @@ public class TornadoVMLayerPlanner {
         // @formatter:on
 
         return new Tuple2<>(taskGraphs, setupGridSchedulers());
+    }
+
+    private int validateAndAdjustBufferSizes() {
+        // Log dimensions
+        //        System.out.println("Model dimensions:");
+        //        System.out.println("dim = " + config.dim);
+        //        System.out.println("headSize = " + config.headSize);
+        //        System.out.println("numHeads = " + config.numberOfHeads);
+        //        System.out.println("numKVHeads = " + config.numberOfKeyValueHeads);
+
+        // Validate localSizeRMS
+        int localSizeRMS = 128;
+        if (config.dim % localSizeRMS != 0) {
+            //            System.out.println("WARNING: dim (" + config.dim + ") is not divisible by localSizeRMS (" + localSizeRMS + ")");
+            // Find a divisor close to original localSizeRMS
+            for (int i = localSizeRMS; i > 0; i--) {
+                if (config.dim % i == 0) {
+                    localSizeRMS = i;
+                    break;
+                }
+            }
+            //            System.out.println("Adjusted localSizeRMS to " + localSizeRMS);
+        }
+        int kvDim = (config.dim * config.numberOfKeyValueHeads) / config.numberOfHeads;
+
+        // Check intermediate array sizes
+        int expectedReduceSize = config.dim / localSizeRMS;
+        //        System.out.println("Expected intermediate reduce size = " + expectedReduceSize);
+        //        System.out.println("wrapX size = " + state.wrapX.getSize());
+        //        // Add validation in validateAndAdjustBufferSizes()
+        //        System.out.println("Key cache size: " + state.wrapKeyCache.getSize());
+        //        System.out.println("Expected key cache size: " + (config.numberOfLayers * config.contextLength * kvDim));
+        // Similar checks for value cache
+        return expectedReduceSize;
     }
 
     public Tuple2<List<ImmutableTaskGraph>, GridScheduler> setupTornadoForwardPlanX() {
@@ -381,9 +424,9 @@ public class TornadoVMLayerPlanner {
         int kvDim = (config.dim * config.numberOfKeyValueHeads) / config.numberOfHeads;
 
         // Create common worker grids that will be used across different schedulers
-        WorkerGrid dimWorker = new WorkerGrid1D(config.dim);
-        dimWorker.setGlobalWork(config.dim, 1, 1);
-        dimWorker.setLocalWork(256, 1, 1);
+        WorkerGrid dimWorker = new WorkerGrid1D(2048);
+        dimWorker.setGlobalWork(2048, 1, 1);
+        dimWorker.setLocalWork(256  , 1, 1);
 
         // Create common worker grids that will be used across different schedulers
         WorkerGrid kvdimWorker = new WorkerGrid1D(kvDim);
@@ -408,7 +451,7 @@ public class TornadoVMLayerPlanner {
 
         WorkerGrid vocabWorker = new WorkerGrid1D(config.vocabularySize);
         vocabWorker.setGlobalWork(config.vocabularySize, 1, 1);
-        vocabWorker.setLocalWork(192, 1, 1);
+        vocabWorker.setLocalWork(64, 1, 1);
 
         WorkerGrid ropeWorker = new WorkerGrid1D(config.dim / 2);
         ropeWorker.setGlobalWork(config.dim / 2, 1, 1);
@@ -418,9 +461,13 @@ public class TornadoVMLayerPlanner {
         tornadoForwardScheduler.addWorkerGrid("updX.copyinX", singleWorker);
 
         // Scheduler 1: RMS Norm
-
-        // Scheduler 3: RoPE Rotation
+        // Add tasks with appropriate worker grids
+//        tornadoForwardScheduler.addWorkerGrid("layer.reduce", dimWorker);
+//        tornadoForwardScheduler.addWorkerGrid("layer.sum", singleWorker);
+//        tornadoForwardScheduler.addWorkerGrid("layer.normalize", dimWorker);
         tornadoForwardScheduler.addWorkerGrid("layer.rope", ropeWorker);
+
+//        tornadoForwardScheduler.addWorkerGrid("layer.projectionTwo", dimWorker);
 
         // Scheduler 4: Copy to Caches
 

@@ -17,79 +17,6 @@ public class TornadoVMCompute {
 
     public TornadoVMCompute() {
     }
-    /**
-     * First step: Compute square sums in parallel and store results per work group
-     */
-    public static void reduceSquareSums(KernelContext context, FloatArray partialSums, FloatArray input, int localSize) {
-        int globalIdx = context.globalIdx;
-        int localIdx = context.localIdx;
-        int localGroupSize = context.localGroupSizeX;
-        int groupID = context.groupIdx;
-
-        // Allocate local memory for reduction
-        float[] localData = context.allocateFloatLocalArray(localSize);
-
-        // Compute squares and store in local memory
-        if (globalIdx < input.getSize()) {
-            float val = input.get(globalIdx);
-            localData[localIdx] = val * val;
-        } else {
-            localData[localIdx] = 0.0f;
-        }
-
-        // Perform parallel reduction within work group
-        for (int stride = (localGroupSize / 2); stride > 0; stride /= 2) {
-            context.localBarrier();
-            if (localIdx < stride) {
-                localData[localIdx] += localData[localIdx + stride];
-            }
-        }
-
-        // Store partial sum for this work group
-        if (localIdx == 0) {
-            partialSums.set(groupID, localData[0]);
-        }
-    }
-
-
-    public static void finalSum(FloatArray reduce, int size, float eps) {
-        float sum = 0.0f;
-
-        for (int i = 0; i < reduce.getSize(); i++) {
-            sum += reduce.get(i);
-        }
-
-        float ss = sum / (float) size;
-        ss += eps;
-        ss = 1.0f / TornadoMath.sqrt(ss);
-        reduce.set(0, ss);
-    }
-
-
-
-    /**
-     * Third step: Apply normalization and scaling using the computed scale factor
-     */
-    public static void normalizeAndScale(KernelContext context, FloatArray output, FloatArray input,
-            FloatArray weights, FloatArray scaleFactorBuffer,
-            IntArray positionAndLayer, int size) {
-        int globalIdx = context.globalIdx;
-
-        if (globalIdx < size) {
-            // Get the layer offset for weights
-            int layerOffset = positionAndLayer.get(1) * size;
-
-            // Get the scale factor computed in the second step
-            float scaleFactor = scaleFactorBuffer.get(0);
-
-            // Apply normalization and scaling
-            float inputVal = input.get(globalIdx);
-            float weightVal = weights.get(layerOffset + globalIdx);
-            float normalizedVal = weightVal * (scaleFactor * inputVal);
-
-            output.set(globalIdx, normalizedVal);
-        }
-    }
 
     public static void rmsnorm(FloatArray output, FloatArray input, FloatArray weights, IntArray positionAndLayer,
             int size, float ermsNorm) {
@@ -199,19 +126,11 @@ public class TornadoVMCompute {
             hb.set(i, val);
         }
     }
-
-    /**
-     * Reductions launched in a single thread-block
-     *
-     * @param context
-     * @param output
-     * @param x
-     */
-    public static void reductionOneBlock(KernelContext context, FloatArray output, FloatArray x, int localRMS, float rmsNormEps) {
+    private static void reductionOneBlock(KernelContext context, FloatArray output, FloatArray x) {
         int gid = context.globalIdx;
         int lid = context.localIdx;
         int groupSize = context.localGroupSizeX;
-        float[] localX = context.allocateFloatLocalArray(localRMS);
+        float[] localX = context.allocateFloatLocalArray(1024);
         localX[lid] = x.get(gid);
         localX[lid] = localX[lid] * localX[lid];
         for (int stride = (groupSize / 2); stride > 0; stride /= 2) {
@@ -224,6 +143,191 @@ public class TornadoVMCompute {
         if (lid == 0) {
             float ss = localX[0];
             ss /= x.getSize();
+            ss += 1e-5f;
+            ss = 1.0f / TornadoMath.sqrt(ss);
+            output.set(0, ss);
+        }
+    }
+
+    public static void rmsNorm_Step1(KernelContext context, FloatArray partialSums, FloatArray input) {
+        int gid = context.globalIdx;
+        int lid = context.localIdx;
+        int groupSize = context.localGroupSizeX;
+        int totalSize = input.getSize();
+
+        // Allocate local memory for reduction
+        float[] localSums = context.allocateFloatLocalArray(256);
+
+        // Each thread calculates sum of squares for its elements
+        float threadSum = 0.0f;
+        for (int i = gid; i < totalSize; i += input.getSize()) {
+            float val = input.get(i);
+            threadSum += val * val;
+        }
+
+        // Load thread's sum into local memory
+        localSums[lid] = threadSum;
+
+        // Synchronize
+        context.localBarrier();
+
+        // Perform reduction in local memory
+        for (int stride = groupSize / 2; stride > 0; stride >>= 1) {
+            if (lid < stride) {
+                localSums[lid] += localSums[lid + stride];
+            }
+            context.localBarrier();
+        }
+
+        // First thread in work group writes the partial sum
+        if (lid == 0) {
+            partialSums.set(context.globalGroupSizeX, localSums[0]);
+        }
+    }
+
+    public static void reduceSquareSums(KernelContext context, FloatArray input, FloatArray reduce, int totalSize) {
+        int globalIdx = context.globalIdx;
+        int localIdx = context.localIdx;
+        int localGroupSize = context.localGroupSizeX;
+        int groupID = context.groupIdx;
+
+        // Allocate local memory
+        float[] localSum = context.allocateFloatLocalArray(128);
+
+        // Calculate thread's sum of squares
+        float threadSum = 0.0f;
+        for (int i = globalIdx; i < totalSize; i += totalSize) {
+            float val = input.get(i);
+            threadSum += val * val;
+        }
+
+        // Store in local memory
+        localSum[localIdx] = threadSum;
+
+        // Synchronize
+        context.localBarrier();
+
+        // Perform reduction in local memory
+        for (int stride = localGroupSize / 2; stride > 0; stride >>= 1) {
+            if (localIdx < stride) {
+                localSum[localIdx] += localSum[localIdx + stride];
+            }
+            context.localBarrier();
+        }
+
+        // Only the first thread in each work group writes the result
+        if (localIdx == 0) {
+            reduce.set(groupID, localSum[0]);
+        }
+    }
+
+    public static void finalSum(KernelContext context, FloatArray scaleFactor, FloatArray reduce, int totalSize, float epsilon) {
+        // Only execute in the first thread
+        if (context.globalIdx == 0) {
+            float sumSquares = 0.0f;
+
+            // Sum all partial results
+            for (int i = 0; i < reduce.getSize(); i++) {
+                sumSquares += reduce.get(i);
+            }
+
+            // Calculate RMS norm scaling factor exactly like the sequential version
+            sumSquares /= totalSize;
+            sumSquares += epsilon;
+            float scale = 1.0f / TornadoMath.sqrt(sumSquares);
+
+            // Store the result
+            scaleFactor.set(0, scale);
+        }
+    }
+
+    public static void normalizeAndScale(KernelContext context, FloatArray output, FloatArray input, FloatArray weights, FloatArray scaleFactor, IntArray positionAndLayer, int size) {
+        int globalIdx = context.globalIdx;
+
+        // Only process if within bounds
+        if (globalIdx < size) {
+            // Get the scaling factor (same for all threads)
+            float scale = scaleFactor.get(0);
+
+            // Calculate layer offset exactly like the sequential version
+            int layerOffset = positionAndLayer.get(1) * size;
+
+            // Normalize and scale with weights exactly like the sequential version
+            output.set(globalIdx, weights.get(layerOffset + globalIdx) * (scale * input.get(globalIdx)));
+        }
+    }
+
+    public static void rmsNorm_Step2(KernelContext context, FloatArray scaleFactor, FloatArray partialSums, int totalSize, float epsilon) {
+        // Only needs to be executed by a single thread
+            // Combine all partial sums
+        float sumSquares = 0.0f;
+        for (int i = 0; i < partialSums.getSize(); i++) {
+            sumSquares += partialSums.get(i);
+        }
+
+        // Calculate RMS norm factor
+        sumSquares /= totalSize;
+        sumSquares += epsilon;
+        float scale = 1.0f / TornadoMath.sqrt(sumSquares);
+
+        // Store the scaling factor
+        scaleFactor.set(0, scale);
+    }
+
+    public static void rmsNorm_Step3(KernelContext context, FloatArray output, FloatArray input, FloatArray weights, FloatArray scaleFactor, IntArray positionAndLayer, int size) {
+        int gid = context.globalIdx;
+
+        // Only process if within bounds
+
+        float scale = scaleFactor.get(0);
+        int layerOffset = positionAndLayer.get(1) * size;
+
+        // Apply normalization and weights
+        output.set(gid, weights.get(layerOffset + gid) * (scale * input.get(gid)));
+    }
+
+//    private static void reductionOneBlock2(KernelContext context, FloatArray output, FloatArray x, FloatArray weights, FloatArray temp) {
+//        int gid = context.globalIdx;
+//        float ss = temp.get(0);
+//        output.set(gid, weights.get(gid) * (ss * x.get(gid)));
+//    }
+
+    public static void reductionOneBlock(KernelContext context, FloatArray output, FloatArray x, int localSize, float rmsNormEps) {
+        int gid = context.globalIdx;
+        int lid = context.localIdx;
+        int groupSize = context.localGroupSizeX;
+
+        // Allocate local memory for reduction
+        float[] localX = context.allocateFloatLocalArray(localSize);
+
+        // Initialize local memory
+        if (lid < localSize) {
+            localX[lid] = 0.0f;
+        }
+
+        // Load data into local memory with stride to cover all elements
+        float sum = 0.0f;
+        for (int i = gid; i < x.getSize(); i += x.getSize()) {
+            float val = x.get(i);
+            sum += val * val;
+        }
+        localX[lid] = sum;
+
+        // Synchronize to make sure all loads are done
+        context.localBarrier();
+
+        // Perform reduction in local memory
+        for (int stride = groupSize / 2; stride > 0; stride >>= 1) {
+            if (lid < stride) {
+                localX[lid] += localX[lid + stride];
+            }
+            context.localBarrier();
+        }
+
+        // Write the result
+        if (lid == 0) {
+            float ss = localX[0];
+            ss /= x.getSize(); // Normalize by full size
             ss += rmsNormEps;
             ss = 1.0f / TornadoMath.sqrt(ss);
             output.set(0, ss);
@@ -318,48 +422,6 @@ public class TornadoVMCompute {
 
     }
 
-    public static void ropeRotationSerialXX(IntArray position, FloatArray sq, FloatArray sk, int kv_dim, int head_size) {
-        // Process each pair of adjacent values - grouping by pairs within dimensions
-        for (int i = 0; i < head_size / 2; i++) {
-            // Calculate frequency for this dimension pair
-            float freq = 1.0f / (float) TornadoMath.pow(10000.0f, 2.0f * i / head_size);
-
-            // Calculate rotation angle
-            float val = position.get(0) * freq;
-            float fcr = (float) TornadoMath.cos(val);
-            float fci = (float) TornadoMath.sin(val);
-
-            // Apply to each head - assuming head_size is the dimension size per head
-            for (int head_idx = 0; head_idx < sq.getSize() / head_size; head_idx++) {
-                int dim_offset = head_idx * head_size;
-
-                // Apply rotation to query
-                int idx1 = dim_offset + i;
-                int idx2 = dim_offset + i + head_size/2;
-
-                // Make sure we don't go out of bounds
-                if (idx2 < sq.getSize()) {
-                    // Get original values
-                    float q1 = sq.get(idx1);
-                    float q2 = sq.get(idx2);
-
-                    // Apply rotation
-                    sq.set(idx1, q1 * fcr - q2 * fci);
-                    sq.set(idx2, q1 * fci + q2 * fcr);
-
-                    // Apply to key if needed
-                    if (idx1 < kv_dim && idx2 < sk.getSize()) {
-                        float k1 = sk.get(idx1);
-                        float k2 = sk.get(idx2);
-
-                        sk.set(idx1, k1 * fcr - k2 * fci);
-                        sk.set(idx2, k1 * fci + k2 * fcr);
-                    }
-                }
-            }
-        }
-    }
-
     public static void ropeRotationSerial(IntArray position, FloatArray sq, FloatArray sk,
             int n_heads, int n_kv_heads, int head_size,
             FloatArray freq_cis_real, FloatArray freq_cis_imag)
@@ -398,44 +460,6 @@ public class TornadoVMCompute {
         }
     }
 
-    public static void ropeRotationSeriaY(IntArray position, FloatArray sq, FloatArray sk,
-            int n_heads, int n_kv_heads, int head_size,
-            FloatArray freq_cis_imag, FloatArray freq_cis_real)
-     {
-        int pos = position.get(0);
-
-        // Loop over all heads
-        for (int i = 0; i < n_heads; i++) {
-            // Loop over dimensions within each head
-            for (int j = 0; j < head_size; j += 2) {
-                // Calculate frequency (note 500000.0f instead of 10000.0f)
-                float freq = 1.0f / TornadoMath.pow(10000.0f, (float)j / (float)head_size);
-
-                // Calculate rotation values
-                float val = pos * freq;
-                float fcr =  TornadoMath.cos(val);
-                float fci =  TornadoMath.sin(val);
-
-                // Calculate indices for the current head and dimension
-                int qIdx = i * head_size + j;
-
-                // Rotate query vector
-                float q0 = sq.get(qIdx);
-                float q1 = sq.get(qIdx + 1);
-                sq.set(qIdx, q0 * fcr - q1 * fci);
-                sq.set(qIdx + 1, q0 * fci + q1 * fcr);
-
-                // Rotate key vector if this is a KV head
-                if (i < n_kv_heads) {
-                    int kIdx = i * head_size + j;
-                    float k0 = sk.get(kIdx);
-                    float k1 = sk.get(kIdx + 1);
-                    sk.set(kIdx, k0 * fcr - k1 * fci);
-                    sk.set(kIdx + 1, k0 * fci + k1 * fcr);
-                }
-            }
-        }
-    }
 
     public static void ropeRotationSerialX(IntArray position, FloatArray sq, FloatArray sk, int kv_dim, int head_size) {
         // Process each pair of adjacent values
@@ -706,39 +730,6 @@ public class TornadoVMCompute {
         return a * b + c;
     }
 
-//    public static void matmulTornadoQ8(KernelContext context, ByteArray thisx, FloatArray that, FloatArray out, int dim1) {
-//        final int BLOCK_SIZE = 32; // Assuming this is the block size used in quantization
-//        final int BYTES_PER_BLOCK = Float16.BYTES + BLOCK_SIZE; // 2 bytes for scale + block_size bytes for values
-//
-//        int idx = context.globalIdx;
-//
-//        float result = 0f;
-//        int thisOffset = idx * dim1;
-//
-//        for (int j = 0; j < dim1; j++) {
-//            int index = thisOffset + j;
-//            // Calculate block position
-//            int blockIndex = index / BLOCK_SIZE;
-//            int withinBlockIndex = index % BLOCK_SIZE;
-//            int blockOffset = blockIndex * BYTES_PER_BLOCK;
-//
-//            // Read scale (float16) for this block
-//            int scaleByte1 = thisx.get(blockOffset) & 0xFF;
-//            int scaleByte2 = thisx.get(blockOffset + 1) & 0xFF;
-//            short scaleFloat16 = (short) ((scaleByte2 << 8) | scaleByte1);
-//            float scale = decodeFloat16(scaleFloat16);
-//
-//            // Read quantized value
-//            byte quantized = thisx.get(blockOffset + 2 + withinBlockIndex);
-//
-//            // Dequantize and multiply
-//            result += (quantized * scale) * that.get(j);
-//        }
-//
-//        out.set(idx, result);
-//
-//    }
-//
     private static float decodeFloat16(short value) {
         int sign = (value & 0x8000) >>> 15;
         int exp = (value & 0x7C00) >>> 10;
@@ -798,302 +789,13 @@ public class TornadoVMCompute {
         });
     }
 
-    private static float getFloatFromByteArray(int index, ByteArray data) {
-        // Direct read of two bytes at the index position - no multiplication by BYTES_PER_FLOAT16
-        int byte1 = data.get(index) & 0xFF;
-        int byte2 = data.get(index + 1) & 0xFF;
-        short float16Value = (short) ((byte2 << 8) | byte1);
-
-        return decodeFloat16(float16Value);
-    }
 
 
-//    private static void findMax(
-//            KernelContext context,
-//            IntArray positionNlayer,
-//            FloatArray maxVal,
-//            FloatArray att,
-//            int localSize
-//    ) {
-//        int position = positionNlayer.get(0);
-//        int gid = context.globalIdx;
-//        int lid = context.localIdx;
-//        int groupSize = context.localGroupSizeX;
-//        float[] localX = context.allocateFloatLocalArray(localSize);
-//        localX[lid] = att.get(gid);
-//        // Step 2: Reduce to find global maximum across all threads
-//        float[] localMaxes = context.allocateFloatLocalArray(blockDim);
-//        localMaxes[tid] = maxVal;
-//
-//        // Parallel reduction to find global maximum
-//        for (int stride = blockDim / 2; stride > 0; stride /= 2) {
-//            context.localBarrier();
-//            if (tid < stride) {
-//                localMaxes[tid] = Math.max(localMaxes[tid], localMaxes[tid + stride]);
-//            }
-//        }
-//
-//
-//        if (lid == 0) {
-//            // store max
-//            maxVal.set(0, localX[0]);
-//        }
-//
-//        int tid = context.localIdx;         // Thread ID within work group
-//        int blockDim = context.localGroupSizeX;  // Work group size
-//        int position = positionNlayer.get(0);
-//        int size = position + 1;  // Equivalent to size in CUDA version
-//
-//        int attOffset = headIdx * seqLen;  // Offset for this head
-//
-//        // Step 1: Each thread finds max in its assigned section
-//        float maxVal = Float.NEGATIVE_INFINITY;
-//
-//        // Initialize with thread's first assigned value
-//        if (tid < size) {
-//            maxVal = attScores.get(attOffset + tid);
-//        }
-//
-//        // Scan through remaining assigned values
-//        for (int i = tid + blockDim; i < size; i += blockDim) {
-//            float current = attScores.get(attOffset + i);
-//            maxVal = Math.max(maxVal, current);
-//        }
-//
-//
-//    }
-
-
-
-    private static void expSum(KernelContext context, FloatArray output, FloatArray x) {
-        int gid = context.globalIdx;
-        int lid = context.localIdx;
-        int groupSize = context.localGroupSizeX;
-        float[] localX = context.allocateFloatLocalArray(1024);
-        localX[lid] = x.get(gid);
-        float max = output.get(0);
-        localX[lid] = TornadoMath.exp(localX[lid] - max);
-        x.set(gid, localX[lid]);
-        for (int stride = (groupSize / 2); stride > 0; stride /= 2) {
-            context.localBarrier();
-            if (lid < stride) {
-                localX[lid] += localX[lid + stride];
-            }
-        }
-
-        if (lid == 0) {
-            // final sum stored in ID 0
-            output.set(0, localX[0]);
-        }
-    }
-
-    private static void norm(KernelContext context, FloatArray temp, FloatArray x) {
-        int gid = context.globalIdx;
-        float sum = temp.get(0);
-        x.set(gid, x.get(gid) / sum);
-    }
-
-
-    /**
-     * Calculate attention scores between query and key vectors
-     */
-    public static void calculateAttentionScores(KernelContext context, FloatArray query, FloatArray key, FloatArray attentionScores, IntArray positionAndLayer, int headSize, int numHeads,
-            int contextLength) {
-        int pos = positionAndLayer.get(0);
-        int layer = positionAndLayer.get(1);
-        int kvOffset = positionAndLayer.get(2);
-
-        // Calculate head and position indices
-        int head = context.globalIdx / contextLength;
-        int targetPos = context.globalIdx % contextLength;
-
-        // Bounds checking
-        if (head >= numHeads || targetPos >= contextLength) {
-            return;
-        }
-
-        // Calculate offsets for query and key
-        int queryOffset = (layer * numHeads + head) * headSize;
-        int keyOffset = kvOffset + (head * headSize);
-
-        // Compute dot product with bounds checking
-        float score = 0.0f;
-        for (int i = 0; i < headSize; i++) {
-            if (queryOffset + i < query.getSize() && keyOffset + i < key.getSize()) {
-                score += query.get(queryOffset + i) * key.get(keyOffset + i);
-            }
-        }
-
-        // Scale the attention score
-        score = score / (float) Math.sqrt(headSize);
-
-        // Store the result with bounds checking
-        int scoreIndex = head * contextLength + targetPos;
-        if (scoreIndex < attentionScores.getSize()) {
-            attentionScores.set(scoreIndex, score);
-        }
-    }
-
-    /**
-     * Find maximum attention score for numerical stability in softmax
-     */
-    public static void findMaxAttentionScoress(KernelContext context,
-            IntArray positionNlayer,
-            int seqLen, FloatArray attScores,
-            FloatArray maxValues, int workGroupSize) {
-        int h = context.groupIdx;         // Head index
-        int threadId = context.localIdx;  // Thread ID within work group
-        int blockDim = context.localGroupSizeX;  // Work group size
-
-        // Attention scores offset for this head
-        int attOffset = h * seqLen;
-
-        // Find the maximum value for numerical stability
-        float maxVal = Float.NEGATIVE_INFINITY;
-        int position = positionNlayer.get(0) + 1;
-
-        for (int t = threadId; t < position; t += blockDim) {
-            maxVal = Math.max(maxVal, attScores.get(attOffset + t));
-        }
-
-        // Parallel reduction to find global maximum
-        float[] maxReduction = context.allocateFloatLocalArray(workGroupSize); //TODO: ISSUES
-        maxReduction[threadId] = maxVal;
-
-        for (int stride = blockDim / 2; stride > 0; stride /= 2) {
-            context.localBarrier();
-            if (threadId < stride) {
-                maxReduction[threadId] = Math.max(maxReduction[threadId], maxReduction[threadId + stride]);
-            }
-        }
-
-        // Thread 0 in each work group writes the max value
-        if (threadId == 0) {
-            maxValues.set(h, maxReduction[0]);
-        }
-    }
-
-    public static void calculateExpAndSum(KernelContext context, IntArray positionNlayer, int seqLen, FloatArray attScores, FloatArray maxValues, FloatArray expValues, FloatArray sumValues,
-            int localWorkGroupSize) {
-        int h = context.groupIdx;         // Head index
-        int threadId = context.localIdx;  // Thread ID within work group
-        int blockDim = context.localGroupSizeX;  // Work group size
-
-        // Get max value for this head
-        float maxVal = maxValues.get(h);
-
-        // Attention scores and exp values offset for this head
-        int attOffset = h * seqLen;
-        int expOffset = h * seqLen;
-        int position = positionNlayer.get(0) + 1;
-
-        // Compute exp(score - max) and thread-local sum
-        float expSum = 0.0f;
-        for (int t = threadId; t < position; t += blockDim) {
-            float score = attScores.get(attOffset + t);
-            float expValue = (float) Math.exp(score - maxVal);
-            expValues.set(expOffset + t, expValue);
-            expSum += expValue;
-        }
-
-        // Ensure all exp values are computed before summing
-        context.localBarrier();
-
-        // Parallel reduction to get the total sum
-        float[] sumReduction = context.allocateFloatLocalArray(localWorkGroupSize);
-        sumReduction[threadId] = expSum;
-
-        for (int stride = blockDim / 2; stride > 0; stride /= 2) {
-            context.localBarrier();
-            if (threadId < stride) {
-                sumReduction[threadId] += sumReduction[threadId + stride];
-            }
-        }
-
-        // Thread 0 in each work group writes the sum
-        if (threadId == 0) {
-            sumValues.set(h, sumReduction[0]);
-        }
-
-        // Ensure sum value is written before proceeding
-        context.localBarrier();
-    }
-
-    /**
-     * Normalize exponential values to get softmax probabilities
-     */
-    public static void normalizeSoftmax(KernelContext context, IntArray positionNlayer, int seqLen, FloatArray expValues, FloatArray sumValues, FloatArray attScores) {
-        int h = context.groupIdx;         // Head index
-        int threadId = context.localIdx;  // Thread ID within work group
-        int blockDim = context.localGroupSizeX;  // Work group size
-
-        // Get sum value for this head
-        float sum = sumValues.get(h);
-
-        // Exp values and attention scores offset for this head
-        int expOffset = h * seqLen;
-        int attOffset = h * seqLen;
-        int position = positionNlayer.get(0) + 1;
-
-        // Normalize values and write back to attention scores
-        for (int t = threadId; t < position; t += blockDim) {
-            float normalizedValue = expValues.get(expOffset + t) / sum;
-            attScores.set(attOffset + t, normalizedValue);
-        }
-    }
-
-    public static void computeWeightedSum(KernelContext context, IntArray positionNlayer, int seqLen, FloatArray attScores, FloatArray valueCache, FloatArray output, int kvDim, int kvMul,
-            int headSize) {
-        int h = context.groupIdx;         // Head index
-        int threadId = context.localIdx;  // Thread ID within work group
-        int blockDim = context.localGroupSizeX;  // Work group size
-
-        // Attention scores offset for this head
-        int attOffset = h * seqLen;
-
-        // Output offset for this head
-        int outputOffset = h * headSize;
-        int position = positionNlayer.get(0) + 1;
-
-        // Calculate weighted sum for each head dimension
-        for (int i = threadId; i < headSize; i += blockDim) {
-            float val = 0.0f;
-            for (int t = 0; t < position; t++) {
-                // Get the value vector for this head and timestep
-                int valueOffset = positionNlayer.get(1) + t * kvDim + (h / kvMul) * headSize;
-
-                // Get the attention weight for this timestep
-                float a = attScores.get(attOffset + t);
-
-                val += a * valueCache.get(valueOffset + i);
-            }
-            output.set(outputOffset + i, val);
-        }
-
-        // Make sure all threads finish writing their outputs
-        context.localBarrier();
-    }
     public static void copyToCache(FloatArray destKeyCache, FloatArray srcKey, FloatArray destValueCache, FloatArray srcValue, IntArray positioNlayer) {
         int destOffset = positioNlayer.get(2);
         for (@Parallel int i = 0; i < srcValue.getSize(); i++) {
             destKeyCache.set(destOffset + i, srcKey.get(i));
             destValueCache.set(destOffset + i, srcValue.get(i));
-        }
-    }
-
-    public static void processHeadsParallel(
-            FloatArray q, FloatArray key_cache, FloatArray value_cache, FloatArray xb,
-            int nHeads, int headSize, int kvDim, int kvMul, int seqLen,
-             FloatArray wrapAtt, int pos, int layer) {
-
-//        int pos = positionNlayer.get(0);
-//        int layer = positionNlayer.get(1);
-        long loff = layer * seqLen * kvDim; // layer offset into KV cache
-
-        // Parallelize computation across attention heads
-        for (int h = 0; h < nHeads; h++) {
-            // Process each head in parallel
-            processHeadTornado(q, key_cache, value_cache, xb, h, headSize, kvDim, kvMul, loff, pos, wrapAtt);
         }
     }
 
@@ -1171,256 +873,4 @@ public class TornadoVMCompute {
             }
     }
 
-//    private static void processHeadTornado(
-//            FloatArray allQ, FloatArray key_cache, FloatArray value_cache, FloatArray allXb,
-//            int h, int headSize, int kvDim, int kvMul, long loff, int pos, FloatArray wrapAtt) {
-//
-//        // Base index for this head's attention weights
-//        int headOffset = h * (pos + 1);
-//
-//        // Local arrays for intermediate calculations
-//        FloatArray scores = new FloatArray(pos + 1);
-//
-//        // STEP 1: Calculate attention scores for all timesteps
-//        for (int t = 0; t <= pos; t++) {
-//            int kvHeadIdx = h / kvMul;
-//            int keyOffset = (int)(loff + t * kvDim + kvHeadIdx * headSize);
-//
-//            float score = 0.0f;
-//            for (int i = 0; i < headSize; i++) {
-//                score += allQ.get(h * headSize + i) * key_cache.get(keyOffset + i);
-//            }
-//            score /= (float)Math.sqrt(headSize);
-//
-//            // Store in local array
-//            scores.set(t ,score);
-//
-//            // Also store in attention buffer
-//            wrapAtt.set(headOffset + t, score);
-//        }
-//
-//        // STEP 2: Apply softmax to attention scores
-//        // Find maximum score for numerical stability
-//        float maxScore = scores.get(0);
-//        for (int t = 1; t <= pos; t++) {
-//            if (scores.get(t) > maxScore) {
-//                maxScore =  scores.get(t);
-//            }
-//        }
-//
-//        // Compute exponentials and sum
-//        float sum = 0.0f;
-//        for (int t = 0; t <= pos; t++) {
-//            scores.set (t, (float)Math.exp(scores.get(t) - maxScore));
-//            sum += scores.get(t);
-//        }
-//
-//        // Normalize and store back to global array
-//        for (int t = 0; t <= pos; t++) {
-//            float normalizedScore = (sum > 0.0f) ? (scores.get(t) / sum) : (1.0f / (pos + 1));
-//            wrapAtt.set(headOffset + t, normalizedScore);
-//        }
-//
-//        // STEP 3: Compute weighted sum of values
-//        float[] headOutput = new float[headSize];
-//        for (int i = 0; i < headSize; i++) {
-//            headOutput[i] = 0.0f;
-//        }
-//
-//        for (int t = 0; t <= pos; t++) {
-//            int kvHeadIdx = h / kvMul;
-//            int valueOffset = (int)(loff + t * kvDim + kvHeadIdx * headSize);
-//            float weight = wrapAtt.get(headOffset + t);
-//
-//            for (int i = 0; i < headSize; i++) {
-//                headOutput[i] += weight * value_cache.get(valueOffset + i);
-//            }
-//        }
-//
-//        // Store result in output
-//        for (int i = 0; i < headSize; i++) {
-//            allXb.set(h * headSize + i, headOutput[i]);
-//        }
-//    }
-
-//    /**
-//     * Process a single attention head - TornadoVM compatible version
-//     */
-//    private static void processHeadTornado(
-//            FloatArray allQ, FloatArray key_cache, FloatArray value_cache, FloatArray allXb,
-//            int h, int headSize, int kvDim, int kvMul, long loff, int pos, FloatArray wrapAtt) {
-//
-//        // Local attention scores
-////        float[] attScores = new float[pos + 1];
-//
-//        // Calculate attention scores for this head and all timesteps
-//        for (int t = 0; t <= pos; t++) {
-//            int kvHeadIdx = h / kvMul;
-//            int keyOffset = (int) (loff + t * kvDim + kvHeadIdx * headSize);
-//
-//            float score = 0.0f;
-//            for (int i = 0; i < headSize; i++) {
-//                score += allQ.get(h * headSize + i) * key_cache.get(keyOffset + i);
-//            }
-//            score /= TornadoMath.sqrt(headSize);
-//
-//            wrapAtt.set(h * (pos + 1) + t, score);
-////            attScores[t] = score;
-//        }
-//
-//        // Softmax on attention scores
-//        softmaxInPlace(wrapAtt, pos + 1);
-//
-//        // Initialize intermediate results
-//        FloatArray localXb = new FloatArray(64); //TODO:
-//        for (int i = 0; i < headSize; i++) {
-//            localXb.set(i, 0.0f);
-//        }
-//
-//        // Weighted sum of values
-//        for (int t = 0; t <= pos; t++) {
-//            int kvHeadIdx = h / kvMul;
-//            int valueOffset = (int) (loff + t * kvDim + kvHeadIdx * headSize);
-//
-//            float a = wrapAtt.get(h * (pos + 1) + t);
-////            float a = attScores[t];
-//
-//            for (int i = 0; i < headSize; i++) {
-//                localXb.set(i, localXb.get(i) + a * value_cache.get(valueOffset + i));
-//            }
-//        }
-//
-//        // Store back to global xb
-//        for (int i = 0; i < headSize; i++) {
-//            allXb.set(h * headSize + i, localXb.get(i));
-//        }
-//    }
-//
-//    /**
-//     * Softmax implementation that works in-place on a float array
-//     */
-//    private static void softmaxInPlace(FloatArray arr, int n) {
-//        // Find max for numerical stability
-//        float max = Float.NEGATIVE_INFINITY;
-//        for (int i = 0; i < n; i++) {
-//            if (arr.get(i) > max) {
-//                max = arr.get(i);
-//            }
-//        }
-//
-//        // Compute exp and sum
-//        float sum = 0.0f;
-//        for (int i = 0; i < n; i++) {
-//            arr.set(i, (float) TornadoMath.exp(arr.get(i) - max));
-//            sum += arr.get(i);
-//        }
-//
-//        // Normalize
-//        for (int i = 0; i < n; i++) {
-//            arr.set(i, arr.get(i) / sum);
-//        }
-//    }
-
-    /**
-     * Enhanced matrix multiplication for Q8 quantized weights with detailed debugging
-     */
-    public static void enhancedMatmulTornadoQ8(KernelContext context,
-            ByteArray weights,
-            FloatArray input,
-            FloatArray output,
-            int dim,
-            FloatArray debugBuffer) {
-        final int BLOCK_SIZE = 32; // Q8 block size
-        final int BYTES_PER_BLOCK = 2 + BLOCK_SIZE; // 2 bytes for scale + 32 bytes for values
-
-        int idx = context.globalIdx;
-
-        // Debug info
-        if (idx == 0) {
-            debugBuffer.set(0, weights.getSize());   // Size of weights array
-            debugBuffer.set(1, input.getSize());     // Size of input array
-            debugBuffer.set(2, output.getSize());    // Size of output array
-            debugBuffer.set(3, dim);                 // Dimension value
-
-            // Record some input values for verification
-            for (int i = 0; i < Math.min(5, input.getSize()); i++) {
-                debugBuffer.set(5 + i, input.get(i));
-            }
-        }
-
-        // Bounds check - crucial to avoid out-of-bounds access
-        if (idx >= output.getSize()) {
-            return;
-        }
-
-        float result = 0.0f;
-        int thisOffset = idx * dim;
-
-        // Compute the matrix multiplication with careful bounds checking
-        for (int j = 0; j < dim; j++) {
-            int index = thisOffset + j;
-
-            // Calculate block position and ensure we don't exceed array bounds
-            int blockIndex = index / BLOCK_SIZE;
-            int withinBlockIndex = index % BLOCK_SIZE;
-            int blockOffset = blockIndex * BYTES_PER_BLOCK;
-
-            // Check if we have enough bytes left to read
-            if (blockOffset + 1 >= weights.getSize()) {
-                continue; // Skip this calculation if out of bounds
-            }
-
-            // Read scale (float16) for this block
-            int scaleByte1 = weights.get(blockOffset) & 0xFF;
-            int scaleByte2 = weights.get(blockOffset + 1) & 0xFF;
-            short scaleFloat16 = (short) ((scaleByte2 << 8) | scaleByte1);
-            float scale = decodeFloat16(scaleFloat16);
-
-            // Check if we have enough bytes for the quantized value
-            if (blockOffset + 2 + withinBlockIndex >= weights.getSize()) {
-                continue; // Skip this calculation if out of bounds
-            }
-
-            // Read and dequantize the weight value
-            byte quantized = weights.get(blockOffset + 2 + withinBlockIndex);
-
-            // Check if input index is in bounds
-            if (j >= input.getSize()) {
-                continue; // Skip if input index is out of bounds
-            }
-
-            // Accumulate the result
-            result += (quantized * scale) * input.get(j);
-        }
-
-        // Store the result
-        output.set(idx, result);
-
-        // Record the first few computed values for debugging
-        if (idx < 5) {
-            debugBuffer.set(idx, result);
-        }
-    }
-
-    public static void checkLogitsValues(FloatArray logits, FloatArray debugBuffer) {
-        int nonZeroCount = 0;
-        float sum = 0.0f;
-        float maxVal = Float.NEGATIVE_INFINITY;
-
-        // Count non-zero values and compute basic stats
-        for (int i = 0; i < Math.min(1000, logits.getSize()); i++) {
-            float val = logits.get(i);
-            sum += TornadoMath.abs(val);
-            maxVal = TornadoMath.max(maxVal, val);
-
-            if (TornadoMath.abs(val) > 1e-6f) {
-                nonZeroCount++;
-            }
-        }
-
-        // Store debugging info
-        debugBuffer.set(0, nonZeroCount);
-        debugBuffer.set(1, sum);
-        debugBuffer.set(2, maxVal);
-    }
 }

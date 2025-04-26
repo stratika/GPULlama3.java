@@ -229,9 +229,9 @@ public class TornadoVMLayerPlannerDebug {
         // Scheduler 0: Buffer Initialization
         tornadoForwardScheduler.addWorkerGrid("updX.copyinX", singleWorker);
 
-        // Scheduler 1: RMS Norm
 
-        tornadoForwardScheduler.addWorkerGrid("layer.rmsAtt", singleWorker);
+        tornadoForwardScheduler.addWorkerGrid("layer.rmsMap", singleWorker);
+        tornadoForwardScheduler.addWorkerGrid("layer.rmsNorm", dimWorker);
 
         // Scheduler 3: RoPE Rotation
         tornadoForwardScheduler.addWorkerGrid("layer.rope", ropeWorker);
@@ -657,7 +657,7 @@ public class TornadoVMLayerPlannerDebug {
 
         // Create kernel context
         KernelContext context = new KernelContext();
-
+        FloatArray intermediateReduceFirst = new FloatArray(1024);
         // @formatter:off
         TaskGraph updX = new TaskGraph("updX")
                 .transferToDevice(DataTransferMode.EVERY_EXECUTION, state.wrapX)
@@ -678,11 +678,18 @@ public class TornadoVMLayerPlannerDebug {
                         weights.woFlat,
                         weights.rms_ffn_weightFlat,
                         weights.w1Flat, weights.w2Flat, weights.w3Flat,
-                        state.wrapHb, state.wrapHb2
+                        state.wrapHb, state.wrapHb2,
+                        intermediateReduceFirst
                 )
                 .transferToDevice(DataTransferMode.EVERY_EXECUTION, state.positionAndLayer)
-                .task("rmsAtt", TornadoVMCompute::rmsnorm,
-                        state.wrapXb, state.wrapX, weights.rms_att_weightFlat, state.positionAndLayer, config.dim, config.rmsNormEps)
+//        state.wrapXb, state.wrapX, weights.rms_att_weightFlat, state.positionAndLayer, config.dim, config.rmsNormEps)
+//                .task("rmsAtt", TornadoVMCompute::rmsnorm,
+//                        state.wrapXb, state.wrapX, weights.rms_att_weightFlat, state.positionAndLayer, config.dim, config.rmsNormEps)
+                .task("rmsNorm", TornadoVMCompute::reductionOneBlock,
+                        context, intermediateReduceFirst, state.wrapX, 1024, config.rmsNormEps)
+                .task("rmsMap", TornadoVMCompute::reductionOneBlock2,
+                        context, state.wrapXb, state.wrapXb, intermediateReduceFirst, weights.rms_att_weightFlat, state.positionAndLayer, state.wrapX.getSize())
+
                 .task("qmatmul", TornadoVMCompute::matmul,
                         state.wrapQ, state.wrapXb, weights.wqFlat, config.dim, config.dim, state.positionAndLayer)
                 .task("kmatmul", TornadoVMCompute::matmul,

@@ -998,7 +998,7 @@ public record Llama(Configuration configuration, Tokenizer tokenizer, Weights we
         int totalTokens = promptIndex + generatedTokens.size();
 
         // Free the TornadoVM execution plan
-        tornadoVMPlan.freeTornadoExecutionPlan();
+//        tornadoVMPlan.freeTornadoExecutionPlan();
 
         System.err.printf("\n%n%.2f tokens/s (%d) [PrEval %.2f tokens/s (%d), TokGen %.2f tokens/s (%d)]%n", totalTokens / (elapsedNanos / 1_000_000_000.0), totalTokens,
                 promptTokens.size() / (promptNanos / 1_000_000_000.0), promptTokens.size(), generatedTokens.size() / (genNanos / 1_000_000_000.0), generatedTokens.size());
