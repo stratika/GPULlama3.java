@@ -241,6 +241,95 @@ public class TornadoVMCompute {
         }
     }
 
+    public static void matmulUnroll4(FloatArray xout, FloatArray x, FloatArray w, int n, int d, IntArray positionAndLayer) {
+        int layer = positionAndLayer.get(1);
+        int layerOffset = layer * n * d;
+
+        // Simple mapping to global threads, assuming hardware handles work distribution
+        for (@Parallel int i = 0; i < d; i++) {
+            float sum = 0.0f;
+            int baseIdx = layerOffset + i * n;
+
+            // For very large n, consider chunking this loop
+            for (int j = 0; j < n; j += 4) {
+                // Unrolled to process 4 elements at once (adjust based on your vector width)
+                float sum1 = (j < n) ? w.get(baseIdx + j) * x.get(j) : 0;
+                float sum2 = (j+1 < n) ? w.get(baseIdx + j+1) * x.get(j+1) : 0;
+                float sum3 = (j+2 < n) ? w.get(baseIdx + j+2) * x.get(j+2) : 0;
+                float sum4 = (j+3 < n) ? w.get(baseIdx + j+3) * x.get(j+3) : 0;
+
+                sum += sum1 + sum2 + sum3 + sum4;
+            }
+
+            xout.set(i, sum);
+        }
+    }
+
+    public static void matmulUnroll8(FloatArray xout, FloatArray x, FloatArray w, int n, int d, IntArray positionAndLayer) {
+        int layer = positionAndLayer.get(1);
+        int layerOffset = layer * n * d;
+
+        // Simple mapping to global threads, assuming hardware handles work distribution
+        for (@Parallel int i = 0; i < d; i++) {
+            float sum = 0.0f;
+            int baseIdx = layerOffset + i * n;
+
+            // For very large n, consider chunking this loop
+            for (int j = 0; j < n; j += 8) {
+                // Unrolled to process 4 elements at once (adjust based on your vector width)
+                float sum1 = (j < n) ? w.get(baseIdx + j) * x.get(j) : 0;
+                float sum2 = (j+1 < n) ? w.get(baseIdx + j+1) * x.get(j+1) : 0;
+                float sum3 = (j+2 < n) ? w.get(baseIdx + j+2) * x.get(j+2) : 0;
+                float sum4 = (j+3 < n) ? w.get(baseIdx + j+3) * x.get(j+3) : 0;
+                float sum5 = (j+4 < n) ? w.get(baseIdx + j+4) * x.get(j+4) : 0;
+                float sum6 = (j+5 < n) ? w.get(baseIdx + j+5) * x.get(j+5) : 0;
+                float sum7 = (j+6 < n) ? w.get(baseIdx + j+6) * x.get(j+6) : 0;
+                float sum8 = (j+7 < n) ? w.get(baseIdx + j+7) * x.get(j+7) : 0;
+
+                sum += sum1 + sum2 + sum3 + sum4 + sum5 + sum6 + sum7 + sum8;
+            }
+
+            xout.set(i, sum);
+        }
+    }
+
+    public static void matmulUnroll16(FloatArray xout, FloatArray x, FloatArray w, int n, int d, IntArray positionAndLayer) {
+        int layer = positionAndLayer.get(1);
+        int layerOffset = layer * n * d;
+
+        // Simple mapping to global threads, assuming hardware handles work distribution
+        for (@Parallel int i = 0; i < d; i++) {
+            float sum = 0.0f;
+            int baseIdx = layerOffset + i * n;
+
+            // For very large n, consider chunking this loop
+            for (int j = 0; j < n; j += 16) {
+                // Unrolled to process 16 elements at once
+                float sum1 = (j < n) ? w.get(baseIdx + j) * x.get(j) : 0;
+                float sum2 = (j+1 < n) ? w.get(baseIdx + j+1) * x.get(j+1) : 0;
+                float sum3 = (j+2 < n) ? w.get(baseIdx + j+2) * x.get(j+2) : 0;
+                float sum4 = (j+3 < n) ? w.get(baseIdx + j+3) * x.get(j+3) : 0;
+                float sum5 = (j+4 < n) ? w.get(baseIdx + j+4) * x.get(j+4) : 0;
+                float sum6 = (j+5 < n) ? w.get(baseIdx + j+5) * x.get(j+5) : 0;
+                float sum7 = (j+6 < n) ? w.get(baseIdx + j+6) * x.get(j+6) : 0;
+                float sum8 = (j+7 < n) ? w.get(baseIdx + j+7) * x.get(j+7) : 0;
+                float sum9 = (j+8 < n) ? w.get(baseIdx + j+8) * x.get(j+8) : 0;
+                float sum10 = (j+9 < n) ? w.get(baseIdx + j+9) * x.get(j+9) : 0;
+                float sum11 = (j+10 < n) ? w.get(baseIdx + j+10) * x.get(j+10) : 0;
+                float sum12 = (j+11 < n) ? w.get(baseIdx + j+11) * x.get(j+11) : 0;
+                float sum13 = (j+12 < n) ? w.get(baseIdx + j+12) * x.get(j+12) : 0;
+                float sum14 = (j+13 < n) ? w.get(baseIdx + j+13) * x.get(j+13) : 0;
+                float sum15 = (j+14 < n) ? w.get(baseIdx + j+14) * x.get(j+14) : 0;
+                float sum16 = (j+15 < n) ? w.get(baseIdx + j+15) * x.get(j+15) : 0;
+
+                sum += sum1 + sum2 + sum3 + sum4 + sum5 + sum6 + sum7 + sum8 +
+                        sum9 + sum10 + sum11 + sum12 + sum13 + sum14 + sum15 + sum16;
+            }
+
+            xout.set(i, sum);
+        }
+    }
+
     public static void normalizeAndScale(KernelContext context, FloatArray output, FloatArray input, FloatArray weights, FloatArray scaleFactor, IntArray positionAndLayer, int size) {
         int globalIdx = context.globalIdx;
 
