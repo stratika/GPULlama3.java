@@ -51,11 +51,11 @@ public final class Weights {
     public final ByteArray wclsByteArray;
     public final FloatArray rms_final_weight_as_floatArray;
 
-    public final FloatArray[] woAsFloatArray;
-    public final FloatArray[] w1AsFloatArray;
-    public final FloatArray[] w2AFloatArray;
-    public final FloatArray[] w3AFloatArray;
+    public final FloatArray tokenEmbeddingTable; // (vocab_size, dim)
+
     public final HalfFloatArray halfFloat;
+
+
 
     public Weights(FloatTensor token_embedding_table, FloatBuffer[] rms_att_weight, FloatTensor[] wq, FloatTensor[] wk, FloatTensor[] wv, FloatTensor[] wo, FloatBuffer[] rms_ffn_weight,
             FloatTensor[] w1, FloatTensor[] w2, FloatTensor[] w3, FloatBuffer rms_final_weight, FloatBuffer freq_cis_real, FloatBuffer freq_cis_imag, FloatTensor wcls) {
@@ -73,6 +73,7 @@ public final class Weights {
         this.freq_cis_real = freq_cis_real;
         this.freq_cis_imag = freq_cis_imag;
         this.wcls = wcls;
+        this.tokenEmbeddingTable = loadToFloatArray(token_embedding_table); // (vocab_size, dim)
 
         this.rms_att_weightFlat = loadToSingleFloatArray(rms_att_weight); // (layer, dim) rmsnorm weights
         this.rms_ffn_weightFlat = loadToSingleFloatArray(rms_ffn_weight); // (layer, dim)
@@ -93,10 +94,7 @@ public final class Weights {
         // Store read-only weight as a ByteArray in TornadoVM
         this.wclsByteArray = ByteArray.fromSegment(wcls.asMemorySegment());
 
-        this.woAsFloatArray = loadToFloatArray(wo);
-        this.w1AsFloatArray = loadToFloatArray(w1);
-        this.w2AFloatArray = loadToFloatArray(w2);
-        this.w3AFloatArray = loadToFloatArray(w3);
+
         this.rms_final_weight_as_floatArray = FloatArray.fromFloatBuffer(rms_final_weight);
 
         this.halfFloat = loadToHalfFloatArray(wcls);
@@ -172,6 +170,16 @@ public final class Weights {
         }
 
         return halfFloatArray;
+    }
+
+    public FloatArray loadToFloatArray(FloatTensor input) {
+        FloatArray floatArray = new FloatArray(input.size());
+
+        for (int i = 0; i < input.size(); i++) {
+            floatArray.set(i, input.getFloat(i));
+        }
+
+        return floatArray;
     }
 
 }

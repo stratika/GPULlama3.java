@@ -160,8 +160,15 @@ public record Llama(Configuration configuration, Tokenizer tokenizer, Weights we
             int token,    //
             int position,   //
             TornadoVMMasterPlan tornadoVMMasterPlan) { //
-        model.weights.token_embedding_table.copyTo(token * model.configuration.dim, state.x, 0, model.configuration.dim);
-        MemorySegment.copy(state.x.asMemorySegment(), 0, state.wrapX.getSegment(), 0, model.configuration.dim * Float.BYTES);
+
+        MemorySegment.copy(
+                model.weights.tokenEmbeddingTable.getSegment(),
+                token * model.configuration.dim * Float.BYTES,
+                state.wrapX.getSegment(),
+                0,
+                model.configuration.dim * Float.BYTES
+        );
+
 
         return tornadoVMMasterPlan.tornadoVMForwardExecute(position);
     }
