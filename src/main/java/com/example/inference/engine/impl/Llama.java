@@ -951,6 +951,9 @@ public record Llama(Configuration configuration, Tokenizer tokenizer, Weights we
 
         TornadoVMMasterPlan tornadoVMPlan = new TornadoVMMasterPlan(state, model);
 
+        //todo: test this
+        tornadoVMPlan.executionPlan.withWarmUp();
+
         long startNanos = System.nanoTime();
         long startGen = 0;
         if (maxTokens < 0 || model.configuration().contextLength < maxTokens) {
