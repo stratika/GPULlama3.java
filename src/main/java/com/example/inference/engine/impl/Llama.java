@@ -154,6 +154,31 @@ public record Llama(Configuration configuration, Tokenizer tokenizer, Weights we
         return state.logits;
     }
 
+    /**
+     * Performs the initial embedding lookup and triggers the TornadoVM accelerated forward pass for an LLM token.
+     *
+     * <p>This method handles the first phase of processing a token through the transformer model:
+     * <ol>
+     *   <li>Copies the token embedding from the model's embedding table to the state's buffer</li>
+     *   <li>Delegates the transformer layer processing to TornadoVM through the master plan</li>
+     * </ol>
+     *
+     * <p>The token embedding lookup happens on the CPU using {@link MemorySegment} operations,
+     * while the subsequent transformer layers processing is offloaded to the accelerator through
+     * TornadoVM for improved performance.
+     *
+     * @param model
+     *         The Llama model containing weights and configuration parameters
+     * @param state
+     *         The current execution state holding input/output tensors and temporary buffers
+     * @param token
+     *         The input token ID to process
+     * @param position
+     *         The position of this token in the sequence context window
+     * @param tornadoVMMasterPlan
+     *         The execution plan for TornadoVM acceleration
+     * @return FloatTensor containing the output logits for token prediction
+     */
     public static FloatTensor forwardTornadoVM( //
             Llama model,  //
             State state,  //
@@ -161,18 +186,10 @@ public record Llama(Configuration configuration, Tokenizer tokenizer, Weights we
             int position,   //
             TornadoVMMasterPlan tornadoVMMasterPlan) { //
 
-        MemorySegment.copy(
-                model.weights.tokenEmbeddingTable.getSegment(),
-                token * model.configuration.dim * Float.BYTES,
-                state.wrapX.getSegment(),
-                0,
-                model.configuration.dim * Float.BYTES
-        );
-
+        MemorySegment.copy(model.weights.tokenEmbeddingTable.getSegment(), token * model.configuration.dim * Float.BYTES, state.wrapX.getSegment(), 0, model.configuration.dim * Float.BYTES);
 
         return tornadoVMMasterPlan.tornadoVMForwardExecute(position);
     }
-
 
     public static List<Integer> generateTokens(Llama model, State state, int startPosition, List<Integer> promptTokens, Set<Integer> stopTokens, int maxTokens, Sampler sampler, boolean echo,
             IntConsumer onTokenGenerated) {

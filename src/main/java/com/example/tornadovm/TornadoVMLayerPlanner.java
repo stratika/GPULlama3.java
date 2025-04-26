@@ -36,7 +36,6 @@ public class TornadoVMLayerPlanner {
         KernelContext context = new KernelContext();
 
         // @formatter:off
-
         // ================ TASK GRAPH 0: BUFFER INITIALIZATION ================
         TaskGraph activationUpdate = new TaskGraph("activationUpdate")
                 .transferToDevice(DataTransferMode.EVERY_EXECUTION, state.wrapX)
