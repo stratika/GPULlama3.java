@@ -191,7 +191,6 @@ public record Llama(Configuration configuration, Tokenizer tokenizer, Weights we
         int token = state.latestToken; // BOS?
         int nextToken;
         int promptIndex = 0;
-        int counter = 0;
         for (int position = startPosition; position < maxTokens; ++position) {
             if (TornadoVMCompute.TORNADOVM) {
                 forwardTornadoVM(model, state, token, position, tornadoVMPlan);
