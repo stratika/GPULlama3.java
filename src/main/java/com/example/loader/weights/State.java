@@ -21,6 +21,7 @@ public final class State {
     public final FloatTensor v; // value (dim,)
     public final FloatTensor att; // buffer for scores/attention values (n_heads, seq_len)
     public final FloatTensor logits; // output logits
+    public final int batchsize;
 
     // kv cache
     public final FloatTensor[] keyCache;   // (n_layer, seq_len, kv_dim)
@@ -48,7 +49,9 @@ public final class State {
 
     /** last index in previous block */
 
-    public State(Configuration config) {
+    public State(Configuration config, int batchsize) {
+        this.batchsize = -1;
+
         this.x = ArrayFloatTensor.allocate(config.dim);
         this.xb = ArrayFloatTensor.allocate(config.dim);
         this.xb2 = ArrayFloatTensor.allocate(config.dim);

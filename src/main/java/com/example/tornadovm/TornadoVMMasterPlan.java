@@ -8,6 +8,7 @@ import com.example.loader.weights.State;
 import uk.ac.manchester.tornado.api.GridScheduler;
 import uk.ac.manchester.tornado.api.ImmutableTaskGraph;
 import uk.ac.manchester.tornado.api.TornadoExecutionPlan;
+import uk.ac.manchester.tornado.api.types.arrays.FloatArray;
 
 import java.util.List;
 
@@ -45,7 +46,7 @@ public class TornadoVMMasterPlan {
      *         The current position in the sequence being processed
      * @return FloatTensor containing the output logits for token prediction
      */
-    public FloatTensor tornadoVMForwardExecute(int position) {
+    public FloatArray tornadoVMForwardExecute(int position) {
         // Execute the first TornadoVM graph (pre-processing) -> copy-in
         executionPlan.withGraph(0).withGridScheduler(scheduler).execute();
 
@@ -69,9 +70,9 @@ public class TornadoVMMasterPlan {
         executionPlan.withGraph(2).withGridScheduler(scheduler).execute();
 
         // Copy the computed logits from the TornadoVM buffer to the output tensor
-        state.logits.asMemorySegment().copyFrom(state.wrapLogits.getSegment());
+//        state.logits.asMemorySegment().copyFrom(state.wrapLogits.getSegment());
 
-        return state.logits;
+        return state.wrapLogits;
     }
 
     public void freeTornadoExecutionPlan() {

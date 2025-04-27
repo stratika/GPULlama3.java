@@ -12,6 +12,7 @@ import uk.ac.manchester.tornado.api.TaskGraph;
 import uk.ac.manchester.tornado.api.WorkerGrid;
 import uk.ac.manchester.tornado.api.WorkerGrid1D;
 import uk.ac.manchester.tornado.api.enums.DataTransferMode;
+import uk.ac.manchester.tornado.api.types.arrays.FloatArray;
 
 import java.util.ArrayList;
 import java.util.List;
@@ -34,7 +35,13 @@ public class TornadoVMLayerPlanner {
 
         // Create kernel context
         KernelContext context = new KernelContext();
+        int localSize = 256;
+        // You need at least 9 elements: 1 for the final result + 8 for the workgroup partial sums
+        FloatArray temp = new FloatArray(1 + ((config.dim + localSize-1) / localSize));
+        FloatArray tempFFN = new FloatArray(1 + ((config.dim + localSize-1) / localSize));
 
+        temp.init(0.0f);
+        tempFFN.init(0.0f);
         // @formatter:off
         // ================ TASK GRAPH 0: BUFFER INITIALIZATION ================
         TaskGraph activationUpdate = new TaskGraph("activationUpdate")
@@ -58,17 +65,17 @@ public class TornadoVMLayerPlanner {
                         weights.woFlat,
                         weights.rms_ffn_weightFlat,
                         weights.w1Flat, weights.w2Flat, weights.w3Flat,
-                        state.wrapHb, state.wrapHb2,
-                        weights.freq_cis_realFlat, weights.freq_cis_imagFlat
+                        state.wrapHb, state.wrapHb2
                 )
                 .transferToDevice(DataTransferMode.EVERY_EXECUTION,
-                        state.positionAndLayer
-                )
+                        state.positionAndLayer,                         temp, tempFFN
+                        )
                 .task("rmsAtt", TornadoVMCompute::rmsnorm,
                         state.wrapXb, state.wrapX, weights.rms_att_weightFlat, state.positionAndLayer, config.dim, config.rmsNormEps)
-//                .task("reduce", TornadoVMCompute::reduceSquareSums, context, state.wrapX, intermediateReduce, config.dim)
-//                .task("finalSum", TornadoVMCompute::finalSum, context, intermediateReduceFirst, intermediateReduce, config.dim, config.rmsNormEps)
-//                .task("normalize", TornadoVMCompute::normalizeAndScale, context, state.wrapXb, state.wrapX, weights.rms_att_weightFlat, intermediateReduceFirst, state.positionAndLayer, config.dim)
+//                .task("reductionsOneBlock", TornadoVMCompute::reductionOneBlockWithLayer, context, temp,
+//                        state.wrapX, config.dim, config.rmsNormEps, localSize)
+//                .task("mapContext", TornadoVMCompute::reductionOneBlock2WithLayer, context, state.wrapXb,
+//                        state.wrapX, weights.rms_att_weightFlat, temp, state.positionAndLayer, config.dim)
 
                 .task("qmatmul", TornadoVMCompute::matmulUnroll4,
                         state.wrapQ, state.wrapXb, weights.wqFlat, config.dim, config.dim, state.positionAndLayer)
@@ -83,13 +90,20 @@ public class TornadoVMLayerPlanner {
                         state.wrapKeyCache, state.wrapK,  state.wrapValueCache, state.wrapV, state.positionAndLayer)
                 .task("parallel-attention", TornadoVMCompute::processHeadsParallel,
                         state.wrapQ, state.wrapKeyCache, state.wrapValueCache, state.wrapXb,
-                        config.numberOfHeads, config.headSize, config.kvDim, config.kvMul, config.contextLength,
+                        config.numberOfHeads, config.headSize, config.kvDim, config.kvMul, config.vocabularySize,
                         state.positionAndLayer, state.wrapAtt)
                 .task("matmul1", TornadoVMCompute::matmulUnroll4,
                         state.wrapXb2, state.wrapXb, weights.woFlat, config.dim, config.dim, state.positionAndLayer)
                 .task("residual1", TornadoVMCompute::addInPlace, state.wrapX, state.wrapXb2)
+
                 .task("rms", TornadoVMCompute::rmsnorm,
                         state.wrapXb, state.wrapX, weights.rms_ffn_weightFlat, state.positionAndLayer, config.dim, config.rmsNormEps)
+
+//                .task("reductionsOneBlockFFN", TornadoVMCompute::reductionOneBlockWithLayer, context, tempFFN,
+//                        state.wrapX, config.dim, config.rmsNormEps, localSize)
+//                .task("mapContextFFN", TornadoVMCompute::reductionOneBlock2WithLayer, context, state.wrapXb,
+//                        state.wrapX, weights.rms_ffn_weightFlat, tempFFN, state.positionAndLayer, config.dim)
+
                 .task("projectOne", TornadoVMCompute::matmulUnroll4,
                         state.wrapHb, state.wrapXb, weights.w1Flat, config.dim, config.hiddenDim, state.positionAndLayer)
                 .task("projectionThree", TornadoVMCompute::matmulUnroll4,
@@ -113,8 +127,8 @@ public class TornadoVMLayerPlanner {
                         weights.rms_final_weight_as_floatArray
                 )
                 .task("rmsLogits", TornadoVMCompute::rmsnormInnOut,
-                        state.wrapX, weights.rms_final_weight_as_floatArray, config.dim, config.rmsNormEps)
-                .task("projection", TornadoVMCompute::matmulTornadoQ8, context, weights.wclsByteArray, state.wrapX, state.wrapLogits, config.dim)
+                            state.wrapX, weights.rms_final_weight_as_floatArray, config.dim, config.rmsNormEps)
+                .task("projection", TornadoVMCompute::matmulTornadoQ8Optimized, context, weights.wclsByteArray, state.wrapX, state.wrapLogits, config.dim)
                 .transferToHost(DataTransferMode.EVERY_EXECUTION, state.wrapLogits);
         taskGraphs.add(logits.snapshot());
         // @formatter:on
@@ -131,7 +145,7 @@ public class TornadoVMLayerPlanner {
 
         WorkerGrid vocabWorker = new WorkerGrid1D(config.vocabularySize);
         vocabWorker.setGlobalWork(config.vocabularySize, 1, 1);
-        vocabWorker.setLocalWork(64, 1, 1);
+        vocabWorker.setLocalWork(32, 1, 1);
 
         WorkerGrid ropeWorker = new WorkerGrid1D(config.dim / 2);
         ropeWorker.setGlobalWork(config.dim / 2, 1, 1);
@@ -142,6 +156,20 @@ public class TornadoVMLayerPlanner {
         tornadoForwardScheduler.addWorkerGrid("layer.rope", ropeWorker);
 
         tornadoForwardScheduler.addWorkerGrid("logits.projection", vocabWorker);
+
+        // In your setupGridSchedulers method
+        WorkerGrid rmsNormWorker = new WorkerGrid1D(config.dim);
+        rmsNormWorker.setGlobalWork(config.dim, 1, 1);  // Set global work size to total dimension
+        rmsNormWorker.setLocalWork(256, 1, 1);         // Set local work size to 256 (standard efficient size)
+
+        tornadoForwardScheduler.addWorkerGrid("layer.reductionsOneBlock", rmsNormWorker);
+        tornadoForwardScheduler.addWorkerGrid("layer.mapContext", rmsNormWorker);
+
+        tornadoForwardScheduler.addWorkerGrid("layer.reductionsOneBlockFFN", rmsNormWorker);
+        tornadoForwardScheduler.addWorkerGrid("layer.mapContextFFN", rmsNormWorker);
+
+        // Make sure to merge this scheduler with your tornadoForwardScheduler
+
 
         return tornadoForwardScheduler;
     }

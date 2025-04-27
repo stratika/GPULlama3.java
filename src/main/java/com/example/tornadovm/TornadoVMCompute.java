@@ -5,6 +5,7 @@ import com.example.core.model.GGMLType;
 import com.example.core.types.Float16;
 import uk.ac.manchester.tornado.api.KernelContext;
 import uk.ac.manchester.tornado.api.annotations.Parallel;
+import uk.ac.manchester.tornado.api.annotations.Reduce;
 import uk.ac.manchester.tornado.api.math.TornadoMath;
 import uk.ac.manchester.tornado.api.types.arrays.ByteArray;
 import uk.ac.manchester.tornado.api.types.arrays.FloatArray;
@@ -35,6 +36,143 @@ public class TornadoVMCompute {
         // Normalize and scale with weights from the correct layer
         for (int j = 0; j < size; j++) {
             output.set(j,weights.get(layerOffset + j) * (scale * input.get(j)));
+        }
+    }
+    public static void reductionOneBlockWithLayer(KernelContext context, FloatArray output, FloatArray x,
+         int size, float ermsNorm, int localMemSize) {
+        int gid = context.globalIdx;
+        int lid = context.localIdx;
+        int groupId = context.groupIdx;
+        int groupSize = context.localGroupSizeX;
+
+        // Allocate local memory with the provided size
+        float[] localX = context.allocateFloatLocalArray(localMemSize);
+
+        // Load input value and compute square
+        if (gid < size) {
+            localX[lid] = x.get(gid);
+            localX[lid] = localX[lid] * localX[lid];
+        } else {
+            localX[lid] = 0.0f;
+        }
+
+        // Perform parallel reduction within the work group
+        for (int stride = (groupSize / 2); stride > 0; stride /= 2) {
+            context.localBarrier();
+            if (lid < stride) {
+                localX[lid] += localX[lid + stride];
+            }
+        }
+
+        // Each workgroup stores its partial sum in a different location
+        if (lid == 0) {
+            // Store the partial sum from each workgroup
+            output.set(groupId + 1, localX[0]);
+        }
+
+        // Only the first thread in the first workgroup computes the final normalization factor
+        if (gid == 0) {
+            // Combine partial sums from all workgroups
+            float ss = 0.0f;
+            for (int i = 1; i <= 8; i++) {  // Assuming 8 workgroups
+                ss += output.get(i);
+            }
+
+            ss /= size;
+            ss += ermsNorm;
+            ss = 1.0f / TornadoMath.sqrt(ss);
+            output.set(0, ss);  // Store the final scale factor
+        }
+    }
+
+    public static void reductionOneBlockWithLayer(KernelContext context, FloatArray output, FloatArray x,
+            IntArray positionAndLayer, int size, float ermsNorm) {
+        int gid = context.globalIdx;
+        int lid = context.localIdx;
+        int groupSize = context.localGroupSizeX;
+        float[] localX = context.allocateFloatLocalArray(1024);
+
+        // Load input value and compute square
+        if (gid < size) {
+            localX[lid] = x.get(gid);
+            localX[lid] = localX[lid] * localX[lid];
+        } else {
+            localX[lid] = 0.0f;
+        }
+
+        // Perform parallel reduction within the work group
+        for (int stride = (groupSize / 2); stride > 0; stride /= 2) {
+            context.localBarrier();
+            if (lid < stride) {
+                localX[lid] += localX[lid + stride];
+            }
+        }
+
+        // Only the first thread in the work group computes the normalization factor
+        if (lid == 0) {
+            float ss = localX[0];
+            ss /= size;
+            ss += ermsNorm;
+            ss = 1.0f / TornadoMath.sqrt(ss);
+            output.set(0, ss);
+        }
+    }
+
+    public static void reductionOneBlock2WithLayer(KernelContext context, FloatArray output, FloatArray x,
+            FloatArray weights, FloatArray temp,
+            IntArray positionAndLayer, int size) {
+        int gid = context.globalIdx;
+
+        if (gid < size) {
+            // Get the layer offset from positionAndLayer
+            int layerOffset = positionAndLayer.get(1) * size;
+
+            // Apply normalization with the correct weight for this layer
+            float ss = temp.get(0);
+            output.set(gid, weights.get(layerOffset + gid) * (ss * x.get(gid)));
+        }
+    }
+
+
+//                    .task("reduce", TornadoVMCompute::reduce, ss, state.wrapX)
+//                .task("singleNorm", TornadoVMCompute::singleNorm, ss, config.dim, config.rmsNormEps)
+//                .task("mapWithScale", TornadoVMCompute::mapWithScaleAndNorm, state.wrapXb, weights.rms_att_weightFlat,
+//            state.wrapX, ss, state.positionAndLayer, config.dim)
+
+
+    public static void reduce(@Reduce FloatArray output, FloatArray x) {
+        output.set(0, 0.0f);
+        for (@Parallel int i = 0; i < x.getSize(); i++) {
+            float val = x.get(i) * x.get(i);
+            output.set(0, output.get(0) + val);
+        }
+    }
+
+
+    public static void singleNorm(FloatArray output, int size, float ermsNorm) {
+        float ss = output.get(0);
+        ss /= size;
+        ss += ermsNorm;
+        ss = 1.0f / TornadoMath.sqrt(ss);
+        output.set(0, ss);
+    }
+
+//    public static void mapWithScaleAndNorm(FloatArray output, FloatArray weights, FloatArray input, FloatArray normFactor) {
+//        float scale = normFactor.get(0);  // Get the scale computed by singleNorm
+//        for (@Parallel int i = 0; i < input.getSize(); i++) {
+//            // Now we apply both the scale and the weights
+//            output.set(i, weights.get(i) * (scale * input.get(i)));
+//        }
+//    }
+
+    public static void mapWithScaleAndNorm(FloatArray output, FloatArray weights, FloatArray input,
+            FloatArray normFactor, IntArray positionAndLayer, int size) {
+        float scale = normFactor.get(0);  // Get the scale computed by singleNorm
+        int layerOffset = positionAndLayer.get(1) * size;
+
+        for (@Parallel int i = 0; i < input.getSize(); i++) {
+            // Now we apply both the scale and the weights, accounting for layer offset
+            output.set(i, weights.get(layerOffset + i) * (scale * input.get(i)));
         }
     }
 
@@ -841,6 +979,162 @@ public class TornadoVMCompute {
         return sign == 0 ? result : -result;
     }
 
+    public static void matmulTornadoQ8Optimized(KernelContext context, ByteArray thisx, FloatArray that, FloatArray out, int dim1) {
+        final int BLOCK_SIZE = 32; // Block size used in quantization
+        final int BYTES_PER_BLOCK = 2 + BLOCK_SIZE; // 2 bytes for scale + block_size bytes for values
+        final int UNROLL_FACTOR = 16; // Increased unroll factor for better performance
+        final int VECTOR_SIZE = 4; // Process 4 elements at once with vectorization
+
+        int idx = context.globalIdx;
+        float result = 0f;
+        int thisOffset = idx * dim1;
+
+        // Cache last block index and scale to avoid redundant decoding
+        int lastBlockIndex = -1;
+        float cachedScale = 0f;
+
+        // Early calculation of block boundaries to reduce in-loop calculations
+        int numFullUnrolls = dim1 / UNROLL_FACTOR;
+        int remainingStart = numFullUnrolls * UNROLL_FACTOR;
+
+        // Pre-calculate first block index to potentially save work in the loop
+        int firstIndex = thisOffset;
+        int firstBlockIndex = firstIndex / BLOCK_SIZE;
+        int firstBlockOffset = firstBlockIndex * BYTES_PER_BLOCK;
+
+        // Initial scale calculation outside the loop
+        int scaleByte1 = thisx.get(firstBlockOffset) & 0xFF;
+        int scaleByte2 = thisx.get(firstBlockOffset + 1) & 0xFF;
+        short scaleFloat16 = (short) ((scaleByte2 << 8) | scaleByte1);
+        cachedScale = decodeFloat16Fast(scaleFloat16);
+        lastBlockIndex = firstBlockIndex;
+
+        // Main loop with increased unrolling
+        for (int j = 0; j < numFullUnrolls; j++) {
+            int baseIdx = j * UNROLL_FACTOR;
+
+            // Process elements in groups of UNROLL_FACTOR
+            for (int k = 0; k < UNROLL_FACTOR; k += VECTOR_SIZE) {
+                // Process VECTOR_SIZE elements in each iteration
+                for (int v = 0; v < VECTOR_SIZE; v++) {
+                    int index = thisOffset + baseIdx + k + v;
+                    int blockIndex = index / BLOCK_SIZE;
+
+                    // Only decode scale if we're in a new block
+                    if (blockIndex != lastBlockIndex) {
+                        int blockOffset = blockIndex * BYTES_PER_BLOCK;
+                        int newScaleByte1 = thisx.get(blockOffset) & 0xFF;
+                        int newScaleByte2 = thisx.get(blockOffset + 1) & 0xFF;
+                        short newScaleFloat16 = (short) ((newScaleByte2 << 8) | newScaleByte1);
+                        cachedScale = decodeFloat16Fast(newScaleFloat16);
+                        lastBlockIndex = blockIndex;
+                    }
+
+                    int withinBlockIndex = index % BLOCK_SIZE;
+                    int blockOffset = blockIndex * BYTES_PER_BLOCK;
+
+                    // Read quantized value
+                    byte quantized = thisx.get(blockOffset + 2 + withinBlockIndex);
+
+                    // Dequantize and accumulate
+                    result = fma(quantized * cachedScale, that.get(baseIdx + k + v), result);
+                }
+            }
+        }
+
+        // Handle remaining elements
+        for (int j = remainingStart; j < dim1; j++) {
+            int index = thisOffset + j;
+            int blockIndex = index / BLOCK_SIZE;
+
+            // Only decode scale if we're in a new block
+            if (blockIndex != lastBlockIndex) {
+                int blockOffset = blockIndex * BYTES_PER_BLOCK;
+                int scaleByte11 = thisx.get(blockOffset) & 0xFF;
+                int scaleByte22 = thisx.get(blockOffset + 1) & 0xFF;
+                short scaleFloat166 = (short) ((scaleByte22 << 8) | scaleByte11);
+                cachedScale = decodeFloat16Fast(scaleFloat166);
+                lastBlockIndex = blockIndex;
+            }
+
+            int withinBlockIndex = index % BLOCK_SIZE;
+            int blockOffset = blockIndex * BYTES_PER_BLOCK;
+
+            // Read quantized value
+            byte quantized = thisx.get(blockOffset + 2 + withinBlockIndex);
+
+            // Dequantize and accumulate
+            result = fma(quantized * cachedScale, that.get(j), result);
+        }
+
+        out.set(idx, result);
+    }
+
+    public static void matmulTornadoQ8LocalMem(KernelContext context, ByteArray thisx, FloatArray that, FloatArray out, int dim1) {
+        final int BLOCK_SIZE = 32; // Block size used in quantization
+        final int BYTES_PER_BLOCK = 2 + BLOCK_SIZE; // 2 bytes for scale + block_size bytes for values
+        final int TS = 16; // Tile size for local memory
+
+        // Thread identifiers
+        int row = context.localIdx;
+        int col = context.localIdy;
+        int globalRow = TS * context.groupIdx + row;
+        int globalCol = TS * context.groupIdy + col;
+
+        // Allocate local memory for tiles
+        float[] thatSub = context.allocateFloatLocalArray(TS * TS);
+        float[] thisxSub = context.allocateFloatLocalArray(TS * TS);
+
+        float result = 0f;
+
+        // Loop over all tiles
+        int numTiles = dim1 / TS;
+        for (int t = 0; t < numTiles; t++) {
+            // Load one tile of data into local memory with dequantization
+            int tiledRow = TS * t + row;
+            int tiledCol = TS * t + col;
+
+            // Calculate global indices
+            int thisIndex = (globalRow * dim1) + tiledCol;
+            int thatIndex = (tiledRow * dim1) + globalCol;
+
+            // Dequantize thisx data
+            int thisBlockIndex = thisIndex / BLOCK_SIZE;
+            int thisWithinBlockIndex = thisIndex % BLOCK_SIZE;
+            int thisBlockOffset = thisBlockIndex * BYTES_PER_BLOCK;
+
+            // Decode scale for thisx
+            int scaleByte1 = thisx.get(thisBlockOffset) & 0xFF;
+            int scaleByte2 = thisx.get(thisBlockOffset + 1) & 0xFF;
+            short scaleFloat16 = (short) ((scaleByte2 << 8) | scaleByte1);
+            float scale = decodeFloat16Fast(scaleFloat16);
+
+            // Read quantized value and dequantize
+            byte quantized = thisx.get(thisBlockOffset + 2 + thisWithinBlockIndex);
+            thisxSub[col * TS + row] = quantized * scale;
+
+            // Load that data directly (no quantization)
+            thatSub[col * TS + row] = that.get(thatIndex);
+
+            // Synchronize to make sure the tile is loaded
+            context.localBarrier();
+
+            // Perform matrix multiplication for a single tile
+            for (int k = 0; k < TS; k++) {
+                result = fma(thisxSub[k * TS + row], thatSub[col * TS + k], result);
+            }
+
+            // Synchronize before loading the next tile
+            context.localBarrier();
+        }
+
+        // Handle edge case if dimension is not a multiple of tile size
+        if (globalRow < dim1 && globalCol < dim1) {
+            // Store the final result
+            out.set(globalCol * dim1 + globalRow, result);
+        }
+    }
+
     /**
      * Compute 2^n efficiently
      */
@@ -960,6 +1254,77 @@ public class TornadoVMCompute {
                 }
                 allXb.set(h * headSize + i, weightedSum);
             }
+    }
+
+    public static void processHeadsParallel(
+            FloatArray q, FloatArray key_cache, FloatArray value_cache, FloatArray xb,
+            int nHeads, int headSize, int kvDim, int kvMul, int seqLen,
+            IntArray positionNlayer) {
+
+        int pos = positionNlayer.get(0);
+        long loff = positionNlayer.get(3);
+
+        // Parallelize computation across attention heads
+        for (@Parallel int h = 0; h < nHeads; h++) {
+            // Process each head in parallel using the memory-efficient approach
+            processHeadTornadoOptimized(q, key_cache, value_cache, xb, h, headSize, kvDim, kvMul, loff, pos);
+        }
+    }
+
+    private static void processHeadTornadoOptimized(
+            FloatArray allQ, FloatArray key_cache, FloatArray value_cache, FloatArray allXb,
+            int h, int headSize, int kvDim, int kvMul, long loff, int pos) {
+
+        // Store only the attention scores, which is much smaller than the full wrapAtt array
+        float[] scores = new float[pos + 1];
+        float maxScore = -Float.MAX_VALUE;
+        float[] accum = new float[headSize]; // Store weighted sum result
+
+        // Initialize accumulators
+        for (int i = 0; i < headSize; i++) {
+            accum[i] = 0.0f;
+        }
+
+        // STEP 1: Compute dot products and track max score
+        for (int t = 0; t <= pos; t++) {
+            int kvHeadIdx = h / kvMul;
+            int keyOffset = (int) (loff + t * kvDim + kvHeadIdx * headSize);
+            float score = 0.0f;
+
+            // Calculate dot product
+            for (int i = 0; i < headSize; i++) {
+                score += allQ.get(h * headSize + i) * key_cache.get(keyOffset + i);
+            }
+            score = score / TornadoMath.sqrt(headSize);
+            scores[t] = score;
+
+            // Update running max
+            if (score > maxScore) {
+                maxScore = score;
+            }
+        }
+
+        // STEP 2+3+4: Apply softmax and accumulate weighted sum in one pass
+        float sumExp = 0.0f;
+        for (int t = 0; t <= pos; t++) {
+            int kvHeadIdx = h / kvMul;
+            int valueOffset = (int) (loff + t * kvDim + kvHeadIdx * headSize);
+
+            // Apply exp with max trick
+            float expScore = TornadoMath.exp(scores[t] - maxScore);
+            sumExp += expScore;
+
+            // Accumulate weighted values
+            for (int i = 0; i < headSize; i++) {
+                accum[i] += expScore * value_cache.get(valueOffset + i);
+            }
+        }
+
+        // STEP 5: Normalize the weighted sum
+        float invSumExp = (sumExp > 0.0f) ? (1.0f / sumExp) : (1.0f / (pos + 1));
+        for (int i = 0; i < headSize; i++) {
+            allXb.set(h * headSize + i, accum[i] * invSumExp);
+        }
     }
 
 }

@@ -8,15 +8,18 @@ import com.example.loader.weights.Weights;
 import com.example.tokenizer.impl.Tokenizer;
 import com.example.tornadovm.TornadoVMCompute;
 import com.example.tornadovm.TornadoVMMasterPlan;
+import uk.ac.manchester.tornado.api.types.arrays.FloatArray;
 
 import java.lang.foreign.MemorySegment;
 import java.nio.FloatBuffer;
 import java.util.ArrayList;
+import java.util.Arrays;
 import java.util.List;
 import java.util.Set;
 import java.util.function.IntConsumer;
 
 public record Llama(Configuration configuration, Tokenizer tokenizer, Weights weights) {
+        private static final int BATCH_SIZE = Integer.getInteger("llama.BatchSize", 16);
 
     public static void rmsnorm(FloatTensor out, FloatTensor x, FloatBuffer weight, int size, float rmsNormEps) {
         // calculate sum of squares
@@ -179,7 +182,7 @@ public record Llama(Configuration configuration, Tokenizer tokenizer, Weights we
      *         The execution plan for TornadoVM acceleration
      * @return FloatTensor containing the output logits for token prediction
      */
-    public static FloatTensor forwardTornadoVM( //
+    public static FloatArray forwardTornadoVM( //
             Llama model,  //
             State state,  //
             int token,    //
@@ -193,28 +196,29 @@ public record Llama(Configuration configuration, Tokenizer tokenizer, Weights we
 
     public static List<Integer> generateTokens(Llama model, State state, int startPosition, List<Integer> promptTokens, Set<Integer> stopTokens, int maxTokens, Sampler sampler, boolean echo,
             IntConsumer onTokenGenerated) {
+        TornadoVMMasterPlan tornadoVMPlan = null;
 
-        TornadoVMMasterPlan tornadoVMPlan = new TornadoVMMasterPlan(state, model);
+        if (TornadoVMCompute.TORNADOVM) {
+             tornadoVMPlan = new TornadoVMMasterPlan(state, model);
+            // Prepare the TornadoVM execution plan -> JIT -> READ-ONLY copy ins
+            tornadoVMPlan.executionPlan.withWarmUp();
+        }
 
-        // Prepare the TornadoVM execution plan -> JIT -> READ-ONLY copy ins
-        tornadoVMPlan.executionPlan.withWarmUp();
 
         long startNanos = System.nanoTime();
         long startGen = 0;
         if (maxTokens < 0 || model.configuration().contextLength < maxTokens) {
             maxTokens = model.configuration().contextLength;
         }
+
         List<Integer> generatedTokens = new ArrayList<>(maxTokens);
         int token = state.latestToken; // BOS?
         int nextToken;
         int promptIndex = 0;
         for (int position = startPosition; position < maxTokens; ++position) {
-            if (TornadoVMCompute.TORNADOVM) {
-                forwardTornadoVM(model, state, token, position, tornadoVMPlan);
-            } else {
-                forwardJava(model, state, token, position);
-            }
-            startGen = System.nanoTime();
+            Object logits = runForward(model, state, token, position, tornadoVMPlan);
+
+            // Mark the start of token generation phase (after prompt processing)
             if (promptIndex < promptTokens.size()) {
                 // Force-pick token from prompt.
                 nextToken = promptTokens.get(promptIndex++);
@@ -223,9 +227,8 @@ public record Llama(Configuration configuration, Tokenizer tokenizer, Weights we
                     System.err.print(Tokenizer.replaceControlCharacters(model.tokenizer().decode(List.of(nextToken))));
                 }
             } else {
-                nextToken = sampler.sampleToken(state.logits);
+                nextToken = sampler.sampleToken(logits);
                 if (echo) {
-                    // log inferred token
                     System.err.print(Tokenizer.replaceControlCharacters(model.tokenizer().decode(List.of(nextToken))));
                 }
                 generatedTokens.add(nextToken);
@@ -236,24 +239,58 @@ public record Llama(Configuration configuration, Tokenizer tokenizer, Weights we
                     break;
                 }
             }
+
+            if (startGen == 0) {
+                startGen = System.nanoTime();
+            }
             state.latestToken = token = nextToken;
         }
-
-        long elapsedNanos = System.nanoTime() - startNanos;
-        long promptNanos = startGen - startNanos;
-        long genNanos = elapsedNanos - startGen + startNanos;
+        long elapsedNanos = System.nanoTime() - startGen;
         int totalTokens = promptIndex + generatedTokens.size();
 
-        // Free the TornadoVM execution plan
-        //        tornadoVMPlan.freeTornadoExecutionPlan();
-
-        System.err.printf("\n%n%.2f tokens/s (%d) [PrEval %.2f tokens/s (%d), TokGen %.2f tokens/s (%d)]%n", totalTokens / (elapsedNanos / 1_000_000_000.0), totalTokens,
-                promptTokens.size() / (promptNanos / 1_000_000_000.0), promptTokens.size(), generatedTokens.size() / (genNanos / 1_000_000_000.0), generatedTokens.size());
+        System.err.printf("\n%n%.2f tokens/s (%d)%n ", (totalTokens-1) / (elapsedNanos / 1_000_000_000.0), totalTokens);
         return generatedTokens;
     }
 
+
+
+    /**
+     * Unified method to run the forward pass through the model
+     */
+    private static Object runForward(Llama model, State state, int token, int position, TornadoVMMasterPlan tornadoVMPlan) {
+        if (TornadoVMCompute.TORNADOVM) {
+            return forwardTornadoVM(model, state, token, position, tornadoVMPlan);
+        } else {
+            return forwardJava(model, state, token, position);
+        }
+    }
+
+    /**
+     * Print performance metrics for the generation process
+     */
+    private static void printPerformanceMetrics(long startNanos, long inferenceStartNanos, int promptTokenCount, int generatedTokenCount) {
+        long endNanos = System.nanoTime();
+        long totalNanos = endNanos - startNanos;
+        long inferenceNanos = inferenceStartNanos > 0 ? endNanos - inferenceStartNanos : 0;
+        long promptNanos = inferenceStartNanos - startNanos;
+        int totalTokens = promptTokenCount + generatedTokenCount;
+
+        double totalTokensPerSecond = totalTokens / (totalNanos / 1_000_000_000.0);
+        double promptTokensPerSecond = promptTokenCount > 0 ? promptTokenCount / (promptNanos / 1_000_000_000.0) : 0;
+        double inferenceTokensPerSecond = generatedTokenCount > 0 ? generatedTokenCount / (inferenceNanos / 1_000_000_000.0) : 0;
+
+        System.err.printf("\n%n%.2f tokens/s (%d) [PrEval %.2f tokens/s (%d), TokGen %.2f tokens/s (%d)]%n", totalTokensPerSecond, totalTokens, promptTokensPerSecond, promptTokenCount,
+                inferenceTokensPerSecond, generatedTokenCount);
+    }
+
     public State createNewState() {
-        State state = new State(configuration());
+        State state = new State(configuration(), -1);
+        state.latestToken = tokenizer.getSpecialTokens().get("<|begin_of_text|>");
+        return state;
+    }
+
+    public State createNewState(int batchsize) {
+        State state = new State(configuration(), batchsize);
         state.latestToken = tokenizer.getSpecialTokens().get("<|begin_of_text|>");
         return state;
     }

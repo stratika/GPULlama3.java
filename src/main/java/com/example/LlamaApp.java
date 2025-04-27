@@ -3,6 +3,7 @@ package com.example;
 import com.example.aot.AOT;
 import com.example.aux.ChatFormat;
 
+import com.example.core.model.tensor.FloatTensor;
 import com.example.inference.CategoricalSampler;
 import com.example.inference.Sampler;
 import com.example.inference.ToppSampler;
@@ -10,7 +11,8 @@ import com.example.inference.engine.impl.Llama;
 import com.example.inference.engine.impl.Options;
 import com.example.loader.weights.ModelLoader;
 import com.example.loader.weights.State;
-
+import com.example.tornadovm.FloatArrayUtils;
+import uk.ac.manchester.tornado.api.types.arrays.FloatArray;
 
 import java.io.IOException;
 import java.util.*;
@@ -26,7 +28,7 @@ public class LlamaApp {
         Sampler sampler;
         if (temperature == 0.0f) {
             // greedy argmax sampling: take the token with the highest probability
-            sampler = Sampler.ARGMAX;
+            sampler = Sampler.TENSOR_ARGMAX; // Use TENSOR_ARGMAX instead of ARGMAX
         } else {
             // we sample from this distribution to get the next token
             RandomGenerator rng = RandomGeneratorFactory.getDefault().create(rngSeed);
@@ -39,10 +41,21 @@ public class LlamaApp {
                 innerSampler = new ToppSampler(vocabularySize, topp, rng);
             }
             sampler = logits -> {
-                // apply the temperature to the logits
-                logits.divideInPlace(0, logits.size(), temperature);
-                // apply softmax to the logits to get the probabilities for next token
-                logits.softmaxInPlace(0, logits.size());
+                // Handle both FloatTensor and FloatArray types
+                if (logits instanceof FloatTensor) {
+                    // For FloatTensor, use its methods directly
+                    FloatTensor tensorLogits = (FloatTensor) logits;
+                    tensorLogits.divideInPlace(0, tensorLogits.size(), temperature);
+                    tensorLogits.softmaxInPlace(0, tensorLogits.size());
+                } else if (logits instanceof FloatArray) {
+                    // For FloatArray, use our helper class
+                    FloatArray arrayLogits = (FloatArray) logits;
+                    FloatArrayUtils.divideInPlace(arrayLogits, 0, arrayLogits.getSize(), temperature);
+                    FloatArrayUtils.softmaxInPlace(arrayLogits, 0, arrayLogits.getSize());
+                } else {
+                    throw new IllegalArgumentException("Unsupported logits type: " +
+                            (logits != null ? logits.getClass().getName() : "null"));
+                }
                 return innerSampler.sampleToken(logits);
             };
         }
