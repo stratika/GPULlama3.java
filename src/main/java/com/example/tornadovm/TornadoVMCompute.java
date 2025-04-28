@@ -85,6 +85,15 @@ public class TornadoVMCompute {
         }
     }
 
+
+    public static void initTempToZero(FloatArray temp, FloatArray tempFFN) {
+        // Zero out all elements (even though in this case we only need first 9 elements)
+        for (@Parallel int i = 0; i < temp.getSize(); i++) {
+            temp.set(i, 0.0f);
+            tempFFN.set(i, 0.0f);
+        }
+    }
+
     public static void reductionOneBlockWithLayer(KernelContext context, FloatArray output, FloatArray x,
             IntArray positionAndLayer, int size, float ermsNorm) {
         int gid = context.globalIdx;
@@ -132,6 +141,35 @@ public class TornadoVMCompute {
             output.set(gid, weights.get(layerOffset + gid) * (ss * x.get(gid)));
         }
     }
+
+    public static void reductionOneBlock2WithL(KernelContext context, FloatArray output,
+            FloatArray weights, FloatArray temp,
+            IntArray positionAndLayer, int size) {
+        int gid = context.globalIdx;
+
+        if (gid < size) {
+            // Get the layer offset from positionAndLayer
+            int layerOffset = 0 * size;
+
+            // Apply normalization with the correct weight for this layer
+            float ss = temp.get(0);
+            output.set(gid, weights.get(layerOffset + gid) * (ss * output.get(gid)));
+        }
+    }
+
+
+    public static void mapContextLogits(KernelContext context, FloatArray output,
+            FloatArray weights, FloatArray tempLogits, int size) {
+        int gid = context.globalIdx;
+
+        if (gid < size) {
+            // Apply normalization with weights (no layer offset needed)
+            float ss = tempLogits.get(0);
+            output.set(gid, weights.get(gid) * (ss * output.get(gid)));
+        }
+    }
+
+
 
 
 //                    .task("reduce", TornadoVMCompute::reduce, ss, state.wrapX)
@@ -1327,4 +1365,82 @@ public class TornadoVMCompute {
         }
     }
 
+
+    public static void reductionOneBlockForLogits(KernelContext context, FloatArray output, FloatArray x,
+            int size, float ermsNorm, int localMemSize) {
+        int gid = context.globalIdx;
+        int lid = context.localIdx;
+        int groupId = context.groupIdx;
+        int groupSize = context.localGroupSizeX;
+
+        // Allocate local memory for reduction
+        float[] localX = context.allocateFloatLocalArray(localMemSize);
+
+        // Load input value and compute square
+        if (gid < size) {
+            localX[lid] = x.get(gid);
+            localX[lid] = localX[lid] * localX[lid];
+        } else {
+            localX[lid] = 0.0f;
+        }
+
+        // Perform parallel reduction within the work group
+        for (int stride = (groupSize / 2); stride > 0; stride /= 2) {
+            context.localBarrier();
+            if (lid < stride) {
+                localX[lid] += localX[lid + stride];
+            }
+        }
+
+        // Each workgroup stores its partial sum in a different location
+        if (lid == 0) {
+            // Store the partial sum from each workgroup
+            output.set(size + groupId + 1, localX[0]);
+        }
+
+        // Only the first thread in the first workgroup computes the final normalization factor
+        if (gid == 0) {
+            // Combine partial sums from all workgroups
+            float ss = 0.0f;
+            for (int i = 1; i <= 8; i++) {  // Assuming 8 workgroups
+                ss += output.get(i);
+            }
+
+            ss /= size;
+            ss += ermsNorm;
+            ss = 1.0f / TornadoMath.sqrt(ss);
+            output.set(0, ss);  // Store the final scale factor
+        }
+    }
+
+    // Second task: Apply normalization with weights
+    public static void applyNormForLogits(KernelContext context, FloatArray output, FloatArray weights,
+            int size, FloatArray tempLogits) {
+//        int gid = context.globalIdx;
+//
+//        if (gid < size) {
+//            // Apply normalization with weights
+//            float ss = output.get(size);  // Get scale factor stored at position size
+//            float val = output.get(gid);
+//            output.set(gid, weights.get(gid) * (ss * val));
+//        }
+        int gid = context.globalIdx;
+
+        if (gid < size) {
+            // Get scale factor from position 'size' (not hardcoded offset)
+            float scaleFactor = tempLogits.get(0);
+
+            // Load the input value from the correct position
+            float val = output.get(gid);
+
+            // Load the weight from the correct position
+            float w = weights.get(gid);
+
+            // Apply normalization: weight * (scale * value)
+            float normalized = w * (scaleFactor * val);
+
+            // Store the result back to the same position
+            output.set(gid, normalized);
+        }
+    }
 }

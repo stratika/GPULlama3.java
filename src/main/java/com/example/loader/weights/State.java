@@ -44,7 +44,13 @@ public final class State {
     public final FloatArray wrapValueCache; // FloatArray wrapper for the value cache, optimized for TornadoVM.
     public final IntArray positionAndLayer;
 
-    // store intermediate values
+    // store inter
+    //
+    public int localSize;
+    public FloatArray temp; // Temporary buffer for intermediate calculations, size adjusted for local workgroup size.
+    public FloatArray tempFFN; // Temporary buffer for feed-forward network calculations, size adjusted for local workgroup size.
+    public FloatArray tempLogits; // Temporary buffer for logits calculations, size adjusted for local workgroup size.
+
     public int latestToken;             // Keeps track of the most recent token processed by the model. Useful for stateful or autoregressive models.
 
     /** last index in previous block */
@@ -85,6 +91,13 @@ public final class State {
         this.wrapAtt = new FloatArray(config.numberOfHeads * config.contextLength);
         this.positionAndLayer = new IntArray(4);
         this.latestToken = -1;
+
+        //
+        this.localSize = 256;
+        // You need at least 9 elements: 1 for the final result + 8 for the workgroup partial sums
+        this.temp = new FloatArray(1 + ((config.dim + localSize-1) / localSize));
+        this.tempFFN = new FloatArray(1 + ((config.dim + localSize-1) / localSize));
+        this.tempLogits = new FloatArray(1 + ((config.dim + localSize-1) / localSize));
     }
 
     @Override
