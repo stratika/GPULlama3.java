@@ -105,8 +105,6 @@ public class TornadoVMLayerPlanner {
                         config.hiddenDim, state.wrapHb, state.wrapHb2)
                 .task("projectionTwo", TornadoVMCompute::matmulUnroll4,
                         state.wrapXb, state.wrapHb, weights.w2Flat, config.hiddenDim, config.dim, state.positionAndLayer)
-//                .task("projectionTwo", TornadoVMCompute::matmulHybrid,context,
-//                        state.wrapXb, state.wrapHb, weights.w2Flat, config.hiddenDim, config.dim, state.positionAndLayer)
                 .task("residual2", TornadoVMCompute::addInPlace, state.wrapX, state.wrapXb)
                 .persistOnDevice(state.wrapX, context);
         taskGraphs.add(unifiedLayer.snapshot());
