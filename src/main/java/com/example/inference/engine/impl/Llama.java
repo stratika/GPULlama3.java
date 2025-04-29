@@ -1,32 +1,27 @@
 package com.example.inference.engine.impl;
 
 import com.example.aux.Parallel;
-import com.example.aux.Tuple2;
 import com.example.core.model.tensor.FloatTensor;
 import com.example.inference.Sampler;
 import com.example.loader.weights.State;
 import com.example.loader.weights.Weights;
 import com.example.tokenizer.impl.Tokenizer;
 import com.example.tornadovm.TornadoVMCompute;
-import com.example.tornadovm.TornadoVMLayerPlanner;
-import uk.ac.manchester.tornado.api.GridScheduler;
-import uk.ac.manchester.tornado.api.TornadoExecutionPlan;
+import com.example.tornadovm.TornadoVMMasterPlan;
+import uk.ac.manchester.tornado.api.types.arrays.FloatArray;
 
+import java.lang.foreign.MemorySegment;
 import java.nio.FloatBuffer;
 import java.util.ArrayList;
+import java.util.Arrays;
 import java.util.List;
 import java.util.Set;
 import java.util.function.IntConsumer;
 
 public record Llama(Configuration configuration, Tokenizer tokenizer, Weights weights) {
+        private static final int BATCH_SIZE = Integer.getInteger("llama.BatchSize", 16);
 
-    public State createNewState() {
-        State state = new State(configuration());
-        state.latestToken = tokenizer.getSpecialTokens().get("<|begin_of_text|>");
-        return state;
-    }
-
-    static void rmsnorm(FloatTensor out, FloatTensor x, FloatBuffer weight, int size, float rmsNormEps) {
+    public static void rmsnorm(FloatTensor out, FloatTensor x, FloatBuffer weight, int size, float rmsNormEps) {
         // calculate sum of squares
         float ss = x.reduce(0, size, 0f, (acc, xi) -> acc + xi * xi);
         ss /= size;
@@ -37,7 +32,7 @@ public record Llama(Configuration configuration, Tokenizer tokenizer, Weights we
         out.mapWithIndexInPlace(0, size, (value, index) -> weight.get(index) * (finalss * x.getFloat(index)));
     }
 
-    static FloatTensor forward(Llama model, State state, int token, int position,  ArrayList<Tuple2<TornadoExecutionPlan, GridScheduler>> tornadoVMListOfPlans) {
+    public static FloatTensor forwardJava(Llama model, State state, int token, int position) {
         // a few convenience variables
         Configuration config = model.configuration();
         Weights weights = model.weights();
@@ -77,7 +72,8 @@ public record Llama(Configuration configuration, Tokenizer tokenizer, Weights we
             }
 
             // save key,value at this time step (position) to our kv cache
-            //int loff = l * config.seq_len * kvDim; // kv cache layer offset for convenience
+            //int loff = l * config.seq_len * kvDim;
+            // kv cache layer offset for convenience
             state.k.copyTo(0, state.keyCache[l], position * kvDim, kvDim);
             state.v.copyTo(0, state.valueCache[l], position * kvDim, kvDim);
 
@@ -125,111 +121,104 @@ public record Llama(Configuration configuration, Tokenizer tokenizer, Weights we
                 }
             });
 
-            if (!TornadoVMCompute.TORNADOVM) {
-                ffnLayerJava(l, state, dim, config, weights);
-            } else {
-                ffnLayerTornadoVM(state, tornadoVMListOfPlans.get(l));
-            }
+            // final matmul to get the output of the attention
+            weights.wo[l].matmul(state.xb, state.xb2, dim, dim);
+
+            // residual connection back into x
+            state.x.addInPlace(state.xb2);
+
+            // ffn rmsnorm
+            rmsnorm(state.xb, state.x, weights.rms_ffn_weight[l], dim, config.rmsNormEps);
+
+            //            System.out.println("x " + weights.w1.toString() + " " + weights.w2.toString() + " " + weights.w3.toString());
+            // Now for FFN in PyTorch we have: self.w2(F.silu(self.w1(x)) * self.w3(x))
+            // first calculate self.w1(x) and self.w3(x)
+            weights.w1[l].matmul(state.xb, state.hb, config.hiddenDim, dim);
+            weights.w3[l].matmul(state.xb, state.hb2, config.hiddenDim, dim);
+
+            // SwiGLU non-linearity
+            // silu(x)=x*σ(x), where σ(x) is the logistic sigmoid
+            state.hb.mapInPlace(value -> value / (float) (1.0 + Math.exp(-value)));
+
+            // elementwise multiply with w3(x)
+            state.hb.multiplyInPlace(state.hb2);
+
+            // final matmul to get the output of the ffn
+            weights.w2[l].matmul(state.hb, state.xb, dim, config.hiddenDim);
+
+            // residual connection
+            state.x.addInPlace(state.xb);
         }
 
+        rmsnorm(state.x, state.x, weights.rms_final_weight, dim, config.rmsNormEps);
 
-        if(TornadoVMCompute.TORNADOVM) {
-            state.wrapXFloat.getSegment().copyFrom(state.x.asMemorySegment());
-            tornadoVMListOfPlans.get(tornadoVMListOfPlans.size()-1).getFirst().withGridScheduler(tornadoVMListOfPlans.get(tornadoVMListOfPlans.size()-1).getSecond()).execute();
-            state.logits.asMemorySegment().copyFrom(state.wrapLogits.getSegment());
-            state.x.asMemorySegment().copyFrom(state.wrapXFloat.getSegment());
-        } else {
-            rmsnorm(state.x, state.x, weights.rms_final_weight, dim, config.rmsNormEps);
-            weights.wcls.matmul(state.x, state.logits, config.vocabularySize, dim);
-        }
+        weights.wcls.matmul(state.x, state.logits, config.vocabularySize, dim);
 
         return state.logits;
     }
 
-    static void ffnLayerJava(int l, State state, int dim, Configuration config, Weights weights) {
-        // final matmul to get the output of the attention
-        weights.wo[l].matmul(state.xb, state.xb2, dim, dim);
-
-        // residual connection back into x
-        state.x.addInPlace(state.xb2);
-
-        // ffn rmsnorm
-        rmsnorm(state.xb, state.x, weights.rms_ffn_weight[l], dim, config.rmsNormEps);
-
-        //            System.out.println("x " + weights.w1.toString() + " " + weights.w2.toString() + " " + weights.w3.toString());
-        // Now for FFN in PyTorch we have: self.w2(F.silu(self.w1(x)) * self.w3(x))
-        // first calculate self.w1(x) and self.w3(x)
-        weights.w1[l].matmul(state.xb, state.hb, config.hiddenDim, dim);
-        weights.w3[l].matmul(state.xb, state.hb2, config.hiddenDim, dim);
-
-        // SwiGLU non-linearity
-        // silu(x)=x*σ(x), where σ(x) is the logistic sigmoid
-        state.hb.mapInPlace(value -> value / (float) (1.0 + Math.exp(-value)));
-
-        // elementwise multiply with w3(x)
-        state.hb.multiplyInPlace(state.hb2);
-
-        // final matmul to get the output of the ffn
-        weights.w2[l].matmul(state.hb, state.xb, dim, config.hiddenDim);
-
-        // residual connection
-        state.x.addInPlace(state.xb);
-    }
-
-    static void ffnLayerTornadoVM(State state, Tuple2<TornadoExecutionPlan, GridScheduler> tornadoVMFFNLayer) {
-        state.wrapXFloat.getSegment().copyFrom(state.x.asMemorySegment());
-        state.wrapHb.getSegment().copyFrom(state.hb.asMemorySegment());
-        state.wrapHb2.getSegment().copyFrom(state.hb2.asMemorySegment());
-        state.wrapXb.getSegment().copyFrom(state.xb.asMemorySegment());
-        state.wrapXb2.getSegment().copyFrom(state.xb2.asMemorySegment());
-
-        tornadoVMFFNLayer.getFirst().withGridScheduler(tornadoVMFFNLayer.getSecond()).execute();
-
-        state.xb2.asMemorySegment().copyFrom(state.wrapXb2.getSegment());
-        state.xb.asMemorySegment().copyFrom(state.wrapXb.getSegment());
-        state.hb2.asMemorySegment().copyFrom(state.wrapHb2.getSegment());
-        state.hb.asMemorySegment().copyFrom(state.wrapHb.getSegment());
-        state.x.asMemorySegment().copyFrom(state.wrapXFloat.getSegment());
-    }
-
     /**
-     * LLM generation entry point, ingest prompt tokens and generates new tokens.
+     * Performs the initial embedding lookup and triggers the TornadoVM accelerated forward pass for an LLM token.
      *
-     * <p>
-     * All prompt tokens are ingested first, then inference starts, until a stop token is found.
-     * The returned tokens only include generated/inferred tokens.
+     * <p>This method handles the first phase of processing a token through the transformer model:
+     * <ol>
+     *   <li>Copies the token embedding from the model's embedding table to the state's buffer</li>
+     *   <li>Delegates the transformer layer processing to TornadoVM through the master plan</li>
+     * </ol>
      *
-     * @param model            model to run inference (including weights, configuration, tokenizer ...)
-     * @param state            state of the model e.g. key/value caches ... this is mutated by this call
-     * @param startPosition    start prompt ingestion + inference at this position in the context e.g. useful if state was kept across calls (chained generation). 0 implies run with no previous context.
-     * @param promptTokens     prompt tokens to ingest, all the prompt tokens will be ingested, given there's enough capacity left in the context
-     * @param stopTokens       set of tokens that abort generation during inference, stop tokens do not affect prompt ingestion
-     * @param maxTokens        maximum number of tokens (can go up to {@link Configuration#contextLength context length}
-     *                         if this value is negative or greater than {@link Configuration#contextLength context length}
-     * @param sampler          {@link Sampler strategy} used to select tokens
-     * @param echo             debugging flag, prints ALL, prompt and inferred tokens, to {@link System#err stderr}
-     * @param onTokenGenerated callback, if non-null, it's called every time a token is inferred e.g. it's not called when ingesting prompt tokens
-     * @return list of generated/inferred tokens, including the stop token, if any e.g. does not include any token from the prompt
+     * <p>The token embedding lookup happens on the CPU using {@link MemorySegment} operations,
+     * while the subsequent transformer layers processing is offloaded to the accelerator through
+     * TornadoVM for improved performance.
+     *
+     * @param model
+     *         The Llama model containing weights and configuration parameters
+     * @param state
+     *         The current execution state holding input/output tensors and temporary buffers
+     * @param token
+     *         The input token ID to process
+     * @param position
+     *         The position of this token in the sequence context window
+     * @param tornadoVMMasterPlan
+     *         The execution plan for TornadoVM acceleration
+     * @return FloatTensor containing the output logits for token prediction
      */
+    public static FloatArray forwardTornadoVM( //
+            Llama model,  //
+            State state,  //
+            int token,    //
+            int position,   //
+            TornadoVMMasterPlan tornadoVMMasterPlan) { //
+
+        MemorySegment.copy(model.weights.tokenEmbeddingTable.getSegment(), token * model.configuration.dim * Float.BYTES, state.wrapX.getSegment(), 0, model.configuration.dim * Float.BYTES);
+
+        return tornadoVMMasterPlan.tornadoVMForwardExecute(position);
+    }
+
     public static List<Integer> generateTokens(Llama model, State state, int startPosition, List<Integer> promptTokens, Set<Integer> stopTokens, int maxTokens, Sampler sampler, boolean echo,
             IntConsumer onTokenGenerated) {
+        TornadoVMMasterPlan tornadoVMPlan = null;
+
+        if (TornadoVMCompute.TORNADOVM) {
+             tornadoVMPlan = new TornadoVMMasterPlan(state, model);
+            // Prepare the TornadoVM execution plan -> JIT -> READ-ONLY copy ins
+            tornadoVMPlan.executionPlan.withWarmUp();
+        }
+
+
         long startNanos = System.nanoTime();
         long startGen = 0;
         if (maxTokens < 0 || model.configuration().contextLength < maxTokens) {
             maxTokens = model.configuration().contextLength;
         }
+
         List<Integer> generatedTokens = new ArrayList<>(maxTokens);
         int token = state.latestToken; // BOS?
         int nextToken;
         int promptIndex = 0;
-
-
-        TornadoVMLayerPlanner tornadoVMLayerPlanner = new TornadoVMLayerPlanner(state, model);
-        ArrayList< Tuple2<TornadoExecutionPlan, GridScheduler>>  tornadoVMPlans = tornadoVMLayerPlanner.setupAndGetTornadoVMExecutionPlans();
-
         for (int position = startPosition; position < maxTokens; ++position) {
-            forward(model, state, token, position,tornadoVMPlans);
-            startGen = System.nanoTime();
+            Object logits = runForward(model, state, token, position, tornadoVMPlan);
+
+            // Mark the start of token generation phase (after prompt processing)
             if (promptIndex < promptTokens.size()) {
                 // Force-pick token from prompt.
                 nextToken = promptTokens.get(promptIndex++);
@@ -238,9 +227,8 @@ public record Llama(Configuration configuration, Tokenizer tokenizer, Weights we
                     System.err.print(Tokenizer.replaceControlCharacters(model.tokenizer().decode(List.of(nextToken))));
                 }
             } else {
-                nextToken = sampler.sampleToken(state.logits);
+                nextToken = sampler.sampleToken(logits);
                 if (echo) {
-                    // log inferred token
                     System.err.print(Tokenizer.replaceControlCharacters(model.tokenizer().decode(List.of(nextToken))));
                 }
                 generatedTokens.add(nextToken);
@@ -251,19 +239,65 @@ public record Llama(Configuration configuration, Tokenizer tokenizer, Weights we
                     break;
                 }
             }
+
+            if (startGen == 0) {
+                startGen = System.nanoTime();
+            }
             state.latestToken = token = nextToken;
         }
-
-        long elapsedNanos = System.nanoTime() - startNanos;
-        long promptNanos = startGen - startNanos;
-        long genNanos = elapsedNanos - startGen + startNanos;
+        long elapsedNanos = System.nanoTime() - startGen;
         int totalTokens = promptIndex + generatedTokens.size();
 
-        System.err.printf("\n%n%.2f tokens/s (%d) [PrEval %.2f tokens/s (%d), TokGen %.2f tokens/s (%d)]%n",
-                totalTokens / (elapsedNanos / 1_000_000_000.0), totalTokens,
-                promptTokens.size() / (promptNanos / 1_000_000_000.0), promptTokens.size(),
-                generatedTokens.size() / (genNanos / 1_000_000_000.0), generatedTokens.size());
+        System.err.printf("\n%n%.2f tokens/s (%d)%n ", (totalTokens-1) / (elapsedNanos / 1_000_000_000.0), totalTokens);
+
+        if (TornadoVMCompute.TORNADOVM) {
+            tornadoVMPlan.freeTornadoExecutionPlan();
+            // Print TornadoVM performance metrics
+        }
         return generatedTokens;
+    }
+
+
+
+    /**
+     * Unified method to run the forward pass through the model
+     */
+    private static Object runForward(Llama model, State state, int token, int position, TornadoVMMasterPlan tornadoVMPlan) {
+        if (TornadoVMCompute.TORNADOVM) {
+            return forwardTornadoVM(model, state, token, position, tornadoVMPlan);
+        } else {
+            return forwardJava(model, state, token, position);
+        }
+    }
+
+    /**
+     * Print performance metrics for the generation process
+     */
+    private static void printPerformanceMetrics(long startNanos, long inferenceStartNanos, int promptTokenCount, int generatedTokenCount) {
+        long endNanos = System.nanoTime();
+        long totalNanos = endNanos - startNanos;
+        long inferenceNanos = inferenceStartNanos > 0 ? endNanos - inferenceStartNanos : 0;
+        long promptNanos = inferenceStartNanos - startNanos;
+        int totalTokens = promptTokenCount + generatedTokenCount;
+
+        double totalTokensPerSecond = totalTokens / (totalNanos / 1_000_000_000.0);
+        double promptTokensPerSecond = promptTokenCount > 0 ? promptTokenCount / (promptNanos / 1_000_000_000.0) : 0;
+        double inferenceTokensPerSecond = generatedTokenCount > 0 ? generatedTokenCount / (inferenceNanos / 1_000_000_000.0) : 0;
+
+        System.err.printf("\n%n%.2f tokens/s (%d) [PrEval %.2f tokens/s (%d), TokGen %.2f tokens/s (%d)]%n", totalTokensPerSecond, totalTokens, promptTokensPerSecond, promptTokenCount,
+                inferenceTokensPerSecond, generatedTokenCount);
+    }
+
+    public State createNewState() {
+        State state = new State(configuration(), -1);
+        state.latestToken = tokenizer.getSpecialTokens().get("<|begin_of_text|>");
+        return state;
+    }
+
+    public State createNewState(int batchsize) {
+        State state = new State(configuration(), batchsize);
+        state.latestToken = tokenizer.getSpecialTokens().get("<|begin_of_text|>");
+        return state;
     }
 
 }

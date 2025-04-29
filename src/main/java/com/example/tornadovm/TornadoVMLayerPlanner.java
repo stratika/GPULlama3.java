@@ -1,199 +1,190 @@
 package com.example.tornadovm;
 
 import com.example.aux.Tuple2;
-import com.example.core.model.tensor.FloatTensor;
 import com.example.inference.engine.impl.Configuration;
 import com.example.inference.engine.impl.Llama;
 import com.example.loader.weights.State;
 import com.example.loader.weights.Weights;
 import uk.ac.manchester.tornado.api.GridScheduler;
+import uk.ac.manchester.tornado.api.ImmutableTaskGraph;
 import uk.ac.manchester.tornado.api.KernelContext;
 import uk.ac.manchester.tornado.api.TaskGraph;
-import uk.ac.manchester.tornado.api.TornadoExecutionPlan;
 import uk.ac.manchester.tornado.api.WorkerGrid;
 import uk.ac.manchester.tornado.api.WorkerGrid1D;
 import uk.ac.manchester.tornado.api.enums.DataTransferMode;
 import uk.ac.manchester.tornado.api.types.arrays.FloatArray;
 
-import java.nio.FloatBuffer;
 import java.util.ArrayList;
+import java.util.List;
 
 public class TornadoVMLayerPlanner {
 
-
-    private  final State state;
-    private final Llama model;
-    private final Configuration configuration;
+    private final State state;
+    private final Configuration config;
     private final Weights weights;
-    
+
     public TornadoVMLayerPlanner(State state, Llama model) {
         this.state = state;
-        this.model = model;
-        this.configuration = model.configuration();
+        this.config = model.configuration();
         this.weights = model.weights();
+
     }
 
+    public Tuple2<List<ImmutableTaskGraph>, GridScheduler> setupTornadoForwardPlan() {
+        List<ImmutableTaskGraph> taskGraphs = new ArrayList<>();
 
-    private Tuple2<TornadoExecutionPlan, GridScheduler> createTornadoExecutionPlan() {
-
-        TaskGraph taskGraph;
+        // Create kernel context
         KernelContext context = new KernelContext();
-        boolean isQ4Type = weights.wcls.toString().contains("Q4");
 
-        taskGraph = new TaskGraph("s0")
-                .transferToDevice(DataTransferMode.EVERY_EXECUTION, state.wrapXFloat)
-                .transferToDevice(DataTransferMode.FIRST_EXECUTION, weights.wclsByteArray)
-                .transferToDevice(DataTransferMode.FIRST_EXECUTION, configuration.dim)
-                .transferToDevice(DataTransferMode.FIRST_EXECUTION, configuration.vocabularySize)
+        state.temp.init(0.0f);
+        state.tempFFN.init(0.0f);
+        state.tempLogits.init(0.0f);
+
+        // @formatter:off
+        // ================ TASK GRAPH 0: BUFFER INITIALIZATION ================
+        TaskGraph activationUpdate = new TaskGraph("activationUpdate")
+                .transferToDevice(DataTransferMode.EVERY_EXECUTION, state.wrapX)
+                .task("updateX", TornadoVMCompute::emptyTaskToForceCopyIn, state.wrapX)
+                .persistOnDevice(state.wrapX);
+        taskGraphs.add(activationUpdate.snapshot());
+
+        // ================ TASK GRAPH 1: RMS NORM ================
+
+        TaskGraph unifiedLayer = new TaskGraph("layer")
+                .consumeFromDevice(state.wrapX)
+                .transferToDevice(DataTransferMode.FIRST_EXECUTION,
+                        context,
+                        weights.rms_att_weightFlat,
+                        weights.wqFlat, weights.wkFlat, weights.wvFlat,
+                        state.wrapXb, state.wrapXb2,
+                        state.wrapQ, state.wrapK, state.wrapV,
+                        state.wrapKeyCache, state.wrapValueCache,
+                        state.wrapAtt,
+                        weights.woFlat,
+                        weights.rms_ffn_weightFlat,
+                        weights.w1Flat, weights.w2Flat, weights.w3Flat,
+                        state.wrapHb, state.wrapHb2
+                )
+                .transferToDevice(DataTransferMode.EVERY_EXECUTION,
+                        state.positionAndLayer,
+                        state.temp,
+                        state.tempFFN
+//                        state.tempLogits
+                        )
+                .task("reductionsOneBlock", TornadoVMCompute::reductionOneBlockWithLayer, context, state.temp,
+                        state.wrapX, config.dim, config.rmsNormEps, state.localSize)
+                .task("mapContext", TornadoVMCompute::reductionOneBlock2WithLayer, context, state.wrapXb,
+                        state.wrapX, weights.rms_att_weightFlat, state.temp, state.positionAndLayer, config.dim)
+                .task("qmatmul", TornadoVMCompute::matmulUnroll4,
+                        state.wrapQ, state.wrapXb, weights.wqFlat, config.dim, config.dim, state.positionAndLayer)
+                .task("kmatmul", TornadoVMCompute::matmulUnroll4,
+                        state.wrapK, state.wrapXb, weights.wkFlat, config.dim, config.kvDim, state.positionAndLayer)
+                .task("vmatmul", TornadoVMCompute::matmulUnroll4,
+                        state.wrapV, state.wrapXb, weights.wvFlat, config.dim, config.kvDim, state.positionAndLayer)
+                .task("rope", TornadoVMCompute::ropeRotation,context,
+                            state.positionAndLayer, state.wrapQ, state.wrapK, config.kvDim,
+                        config.headSize)
+                .task("copyToCaches", TornadoVMCompute::copyToCache,
+                        state.wrapKeyCache, state.wrapK,  state.wrapValueCache, state.wrapV, state.positionAndLayer)
+                .task("parallel-attention", TornadoVMCompute::processHeadsParallel,
+                        state.wrapQ, state.wrapKeyCache, state.wrapValueCache, state.wrapXb,
+                        config.numberOfHeads, config.headSize, config.kvDim, config.kvMul, config.vocabularySize,
+                        state.positionAndLayer, state.wrapAtt)
+                .task("matmul1", TornadoVMCompute::matmulUnroll4,
+                        state.wrapXb2, state.wrapXb, weights.woFlat, config.dim, config.dim, state.positionAndLayer)
+                .task("residual1", TornadoVMCompute::addInPlace, state.wrapX, state.wrapXb2)
+                .task("reductionsOneBlockFFN", TornadoVMCompute::reductionOneBlockWithLayer, context, state.tempFFN,
+                        state.wrapX, config.dim, config.rmsNormEps, state.localSize)
+                .task("mapContextFFN", TornadoVMCompute::reductionOneBlock2WithLayer, context, state.wrapXb,
+                        state.wrapX, weights.rms_ffn_weightFlat, state.tempFFN, state.positionAndLayer, config.dim)
+                .task("projectOne", TornadoVMCompute::matmulUnroll4,
+                        state.wrapHb, state.wrapXb, weights.w1Flat, config.dim, config.hiddenDim, state.positionAndLayer)
+                .task("projectionThree", TornadoVMCompute::matmulUnroll4,
+                        state.wrapHb2, state.wrapXb, weights.w3Flat, config.dim, config.hiddenDim, state.positionAndLayer)
+                .task("silu_elementwise_mul", TornadoVMCompute::siluElemWiseMulActivation,
+                        config.hiddenDim, state.wrapHb, state.wrapHb2)
+                .task("projectionTwo", TornadoVMCompute::matmulUnroll4,
+                        state.wrapXb, state.wrapHb, weights.w2Flat, config.hiddenDim, config.dim, state.positionAndLayer)
+                .task("residual2", TornadoVMCompute::addInPlace, state.wrapX, state.wrapXb)
+                .persistOnDevice(state.wrapX, context);
+        taskGraphs.add(unifiedLayer.snapshot());
+
+
+        TaskGraph logits = new TaskGraph("logits")
+                .consumeFromDevice(unifiedLayer.getTaskGraphName(),
+                        state.wrapX
+                )
+                .transferToDevice(DataTransferMode.FIRST_EXECUTION,
+                        state.wrapLogits,
+                        weights.wclsByteArray,
+                        weights.rms_final_weight_as_floatArray
+                )
+//                .task("reductionsOneBlockLogits", TornadoVMCompute::reductionOneBlockForLogits, context, state.tempLogits,
+//                        state.wrapX, config.dim, config.rmsNormEps, state.localSize)
+//                .task("mapContextLogits", TornadoVMCompute::applyNormForLogits, context,
+//                        state.wrapX, weights.rms_att_weightFlat, config.dim, state.tempLogits)
+//                        state.wrapX, weights.rms_att_weightFlat, config.dim, state.tempLogits)
+                .task("rmsLogits", TornadoVMCompute::rmsnormInnOut,
+                            state.wrapX, weights.rms_final_weight_as_floatArray, config.dim, config.rmsNormEps)
+                .task("projection", TornadoVMCompute::matmulTornadoQ8Optimized, context, weights.wclsByteArray, state.wrapX, state.wrapLogits, config.dim)
                 .transferToHost(DataTransferMode.EVERY_EXECUTION, state.wrapLogits);
+        taskGraphs.add(logits.snapshot());
+        // @formatter:on
 
-        if (isQ4Type) {
-            taskGraph.task("t0", TornadoVMCompute::matmulTornadoQ4, context, weights.wclsByteArray, state.wrapXFloat, state.wrapLogits, configuration.dim);
-        } else {
-            taskGraph.task("t0", TornadoVMCompute::matmulTornadoQ8, context, weights.wclsByteArray, state.wrapXFloat, state.wrapLogits, configuration.dim);
-        }
-
-
-        WorkerGrid worker = new WorkerGrid1D(configuration.vocabularySize);
-        worker.setLocalWork(TornadoVMCompute.WORKGROUP,1,1);
-        GridScheduler gridScheduler = new GridScheduler("s0.t0", worker);
-
-        return new Tuple2<>(new TornadoExecutionPlan(taskGraph.snapshot()), gridScheduler);
+        return new Tuple2<>(taskGraphs, setupGridSchedulers());
     }
 
-    /**
-     * Creates a TornadoVM-based fused execution plan for processixng using a series of compute tasks
-     * on the `TaskGraph`, optimizing tensor calculations, normalization, and matrix multiplication.
-     * The generated execution plan leverages TornadoVM for GPU-accelerated tasks and adjusts based
-     * on the data type of the model's weights.
-     *
-     * <p>This method configures a `TaskGraph` with data transfers and tasks for reduction,
-     * summation, normalization, and matrix multiplication, preparing data transfer
-     * from and to the host at each execution step. It dynamically adjusts tasks depending
-     * on whether the model uses Q4 or Q8 quantized weights.</p>
-     *
-     * <p>Finally, this method sets up worker grids for each task to optimize performance
-     * on the selected hardware, and associates them with the appropriate tasks in a `GridScheduler`.</p>
-     *
-     * @return A tuple containing a `TornadoExecutionPlan` and a `GridScheduler`:
-     *         - `TornadoExecutionPlan`: Defines the fused task graph with all tasks and transfers set up.
-     *         - `GridScheduler`: Manages grid workers for each task, optimizing parallel processing.
-     */
-    private Tuple2<TornadoExecutionPlan, GridScheduler> createTornadoExecutionPlanFused() {
+    private GridScheduler setupGridSchedulers() {
+        GridScheduler tornadoForwardScheduler = new GridScheduler();
 
-        TaskGraph taskGraph;
-        KernelContext context = new KernelContext();
-        boolean isQ4Type = weights.wcls.toString().contains("Q4");
+        WorkerGrid singleWorker = new WorkerGrid1D(1);
+        singleWorker.setGlobalWork(1, 1, 1);
+        singleWorker.setLocalWork(1, 1, 1);
 
-        final int size = configuration.dim;
-        final int localSize = 256;
+        WorkerGrid vocabWorker = new WorkerGrid1D(config.vocabularySize);
+        vocabWorker.setGlobalWork(config.vocabularySize, 1, 1);
+        vocabWorker.setLocalWork(32, 1, 1);
 
-        FloatArray reduce = new FloatArray(size / localSize);
+        WorkerGrid ropeWorker = new WorkerGrid1D(config.dim / 2);
+        ropeWorker.setGlobalWork(config.dim / 2, 1, 1);
+        ropeWorker.setLocalWork(128, 1, 1);
 
-        taskGraph = new TaskGraph("fused")
-                .transferToDevice(DataTransferMode.EVERY_EXECUTION, state.wrapXFloat)
-                .transferToDevice(DataTransferMode.FIRST_EXECUTION, //
-                        weights.wclsByteArray, weights.rms_final_weight_as_floatArray,
-                        configuration.vocabularySize, configuration.dim, configuration.rmsNormEps)
-                .task("reduce", TornadoVMCompute::reduceSquareSums, context, state.wrapXFloat, reduce) //
-                .task("sum", TornadoVMCompute::finalSum, context, reduce,configuration.dim, configuration.rmsNormEps) //
-                .task("ns", TornadoVMCompute::normalizeAndScale, context, state.wrapXFloat, weights.rms_final_weight_as_floatArray, reduce, configuration.dim) //
-                .transferToHost(DataTransferMode.EVERY_EXECUTION, state.wrapLogits, state.wrapXFloat);
+//        WorkerGrid projectionTwo = new WorkerGrid1D(config.dim );
+//        projectionTwo.setGlobalWork(config.dim , 1, 1);
+//        projectionTwo.setLocalWork(16, 1, 1);
+//
+//        WorkerGrid projectionThree = new WorkerGrid1D(config.hiddenDim );
+//        projectionThree.setGlobalWork(config.hiddenDim , 1, 1);
+//        projectionThree.setLocalWork(16, 1, 1);
 
-        if (isQ4Type) {
-            taskGraph.task("mv", TornadoVMCompute::matmulTornadoQ4, context, weights.wclsByteArray, state.wrapXFloat, state.wrapLogits, configuration.dim);
-        } else {
-            taskGraph.task("mv", TornadoVMCompute::matmulTornadoQ8, context, weights.wclsByteArray, state.wrapXFloat, state.wrapLogits, configuration.dim);
-        }
 
-        WorkerGrid worker = new WorkerGrid1D(size);
-        worker.setGlobalWork(size, 1, 1);
-        worker.setLocalWork(localSize, 1, 1);
+        tornadoForwardScheduler.addWorkerGrid("activationUpdate.updateX", singleWorker);
 
-        WorkerGrid finalTokenWorker = new WorkerGrid1D(configuration.vocabularySize);
-        finalTokenWorker.setGlobalWork(configuration.vocabularySize, 1, 1);
-        finalTokenWorker.setLocalWork(TornadoVMCompute.WORKGROUP,1,1);
+        tornadoForwardScheduler.addWorkerGrid("layer.rope", ropeWorker);
 
-        GridScheduler gridScheduler = new GridScheduler("fused.reduce", worker);
-        gridScheduler.setWorkerGrid("fused.sum", new WorkerGrid1D(1));
-        gridScheduler.setWorkerGrid("fused.ns", worker);
-        gridScheduler.setWorkerGrid("fused.mv", finalTokenWorker);
+        tornadoForwardScheduler.addWorkerGrid("logits.projection", vocabWorker);
 
-        return new Tuple2<>(new TornadoExecutionPlan(taskGraph.snapshot()), gridScheduler);
+//        tornadoForwardScheduler.addWorkerGrid("layer.projectOne", projectOne);
+//        tornadoForwardScheduler.addWorkerGrid("layer.projectionTwo", projectionTwo);
+
+        // In your setupGridSchedulers method
+        WorkerGrid rmsNormWorker = new WorkerGrid1D(config.dim);
+        rmsNormWorker.setGlobalWork(config.dim, 1, 1);  // Set global work size to total dimension
+        rmsNormWorker.setLocalWork(256, 1, 1);         // Set local work size to 256 (standard efficient size)
+
+        tornadoForwardScheduler.addWorkerGrid("layer.reductionsOneBlock", rmsNormWorker);
+        tornadoForwardScheduler.addWorkerGrid("layer.mapContext", rmsNormWorker);
+
+        tornadoForwardScheduler.addWorkerGrid("layer.reductionsOneBlockFFN", rmsNormWorker);
+        tornadoForwardScheduler.addWorkerGrid("layer.mapContextFFN", rmsNormWorker);
+
+
+        tornadoForwardScheduler.addWorkerGrid("logits.reductionsOneBlockLogits", rmsNormWorker);
+        tornadoForwardScheduler.addWorkerGrid("logits.mapContextLogits", rmsNormWorker);
+        // Make sure to merge this scheduler with your tornadoForwardScheduler
+
+
+        return tornadoForwardScheduler;
     }
 
-
-    private Tuple2<TornadoExecutionPlan, GridScheduler> createTornadoExecutionPlanPerLayer(int l) {
-        TaskGraph taskGraph;
-        KernelContext context = new KernelContext();
-        final int localSize = 256;
-        FloatArray reduce = new FloatArray(state.wrapXFloat.getSize() / localSize);
-
-        taskGraph = new TaskGraph("ffn-layer")
-                .transferToDevice(DataTransferMode.EVERY_EXECUTION, //
-                        state.wrapXFloat, //
-                        state.wrapHb, state.wrapHb2, //
-                        state.wrapXb, state.wrapXb2 //
-                ) //
-                .transferToDevice(DataTransferMode.FIRST_EXECUTION, //
-                        weights.woAsFloatArray[l], weights.w1AsFloatArray[l], //
-                        weights.w2AFloatArray[l], weights.w3AFloatArray[l], //
-                        configuration.vocabularySize, configuration.dim, //
-                        configuration.rmsNormEps, configuration.hiddenDim, //
-                        reduce
-                ) //
-
-                // First matmul and residual
-                .task("matmul0", TornadoVMCompute::matrixVectorSimple, state.wrapXb, state.wrapXb2, weights.woAsFloatArray[l], configuration.dim, configuration.dim) //
-                .task("addInPlace", TornadoVMCompute::addInPlace, state.wrapXb2, state.wrapXFloat) //
-
-                // RMSNorm sequence
-                .task("reduce", TornadoVMCompute::reduceSquareSums, context, state.wrapXFloat, reduce) //
-                .task("sum", TornadoVMCompute::finalSum, context, reduce, configuration.dim, configuration.rmsNormEps) //
-                .task("ns", TornadoVMCompute::normalizeAndScale2, context, state.wrapXb, state.wrapXFloat, weights.rms_ffn_weight_as_floatArray[l], reduce, configuration.dim) //
-
-                // Parallel matmuls with separate output buffers
-                .task("matmul1", TornadoVMCompute::matrixVectorSimple,  state.wrapXb, state.wrapHb,weights.w1AsFloatArray[l], configuration.hiddenDim, configuration.dim) //
-                .task("matmul3", TornadoVMCompute::matrixVectorSimple, state.wrapXb, state.wrapHb2, weights.w3AFloatArray[l], configuration.hiddenDim, configuration.dim) //
-
-                // SiLU and multiplication
-                .task("mapInPlace", TornadoVMCompute::mapInPlace, state.wrapHb) //
-                .task("multInPlace", TornadoVMCompute::multiplyInPlace, state.wrapHb, state.wrapHb2) //
-
-                // Final matmul and residual
-                .task("matmul2", TornadoVMCompute::matrixVectorSimple, state.wrapHb, state.wrapXb, weights.w2AFloatArray[l], configuration.dim, configuration.hiddenDim) //
-                .task("addInPlace2", TornadoVMCompute::addInPlace, state.wrapXb, state.wrapXFloat) //
-
-                // Buffer need to copy back
-                .transferToHost(DataTransferMode.EVERY_EXECUTION,
-                        state.wrapXFloat, //
-                        state.wrapHb, state.wrapHb2, //
-                        state.wrapXb, state.wrapXb2 //
-                );
-
-        WorkerGrid worker = new WorkerGrid1D(configuration.dim);
-        worker.setGlobalWork(configuration.dim, 1, 1);
-        worker.setLocalWork(localSize, 1, 1);
-
-
-        GridScheduler gridScheduler = new GridScheduler("ffn-layer.addInPlace", worker);
-        gridScheduler.setWorkerGrid("ffn-layer.reduce", worker);
-        gridScheduler.setWorkerGrid("ffn-layer.sum", new WorkerGrid1D(1));
-        gridScheduler.setWorkerGrid("ffn-layer.ns", worker);
-
-        return new Tuple2<>(new TornadoExecutionPlan(taskGraph.snapshot()), gridScheduler);
-    }
-
-    public ArrayList<Tuple2<TornadoExecutionPlan,GridScheduler>> setupAndGetTornadoVMExecutionPlans() {
-        ArrayList<Tuple2<TornadoExecutionPlan,GridScheduler>> tornadoVMPlans = new ArrayList<>();
-
-        int numLayers = configuration.numberOfLayers;
-        for (int i = 0; i < numLayers; i++) {
-            tornadoVMPlans.add(createTornadoExecutionPlanPerLayer(i));
-        }
-
-        // plans.get(plans.size() - 1) -> size = numOfLayers +1;
-        tornadoVMPlans.add(createTornadoExecutionPlanFused());
-        return tornadoVMPlans;
-    }
 }
