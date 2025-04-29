@@ -249,6 +249,11 @@ public record Llama(Configuration configuration, Tokenizer tokenizer, Weights we
         int totalTokens = promptIndex + generatedTokens.size();
 
         System.err.printf("\n%n%.2f tokens/s (%d)%n ", (totalTokens-1) / (elapsedNanos / 1_000_000_000.0), totalTokens);
+
+        if (TornadoVMCompute.TORNADOVM) {
+            tornadoVMPlan.freeTornadoExecutionPlan();
+            // Print TornadoVM performance metrics
+        }
         return generatedTokens;
     }
 

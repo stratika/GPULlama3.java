@@ -417,6 +417,38 @@ public class TornadoVMCompute {
         }
     }
 
+    public static void matmulHybrid(KernelContext context, FloatArray xout, FloatArray x, FloatArray w,
+            int n, int d, IntArray positionAndLayer) {
+        int globalIdx = context.globalIdx;
+
+        if (globalIdx < d) {
+            int layer = positionAndLayer.get(1);
+            int layerOffset = layer * n * d;
+            int baseIdx = layerOffset + globalIdx * n;
+
+            // Use a fixed local memory size for frequently accessed items
+            // Use much smaller tile size to minimize boundary issues
+            final int CHUNK = 32;
+            float sum = 0.0f;
+
+            for (int start = 0; start < n; start += CHUNK) {
+                int end = TornadoMath.min(start + CHUNK, n);
+
+                // Process this chunk directly, no local memory for simplicity
+                for (int j = start; j < end; j += 4) {
+                    float sum1 = (j < n) ? w.get(baseIdx + j) * x.get(j) : 0;
+                    float sum2 = (j+1 < n) ? w.get(baseIdx + j+1) * x.get(j+1) : 0;
+                    float sum3 = (j+2 < n) ? w.get(baseIdx + j+2) * x.get(j+2) : 0;
+                    float sum4 = (j+3 < n) ? w.get(baseIdx + j+3) * x.get(j+3) : 0;
+                    sum += sum1 + sum2 + sum3 + sum4;
+                }
+            }
+
+            xout.set(globalIdx, sum);
+        }
+    }
+
+
     public static void matmulUnroll4(FloatArray xout, FloatArray x, FloatArray w, int n, int d, IntArray positionAndLayer) {
         int layer = positionAndLayer.get(1);
         int layerOffset = layer * n * d;
@@ -439,6 +471,186 @@ public class TornadoVMCompute {
 
             xout.set(i, sum);
         }
+    }
+
+    /**
+     * Optimized matrix multiplication kernel using tiling and local memory
+     * techniques observed in the TornadoVM framework examples.
+     *
+     * @param xout Output matrix array
+     * @param x Input vector
+     * @param w Weight matrix
+     * @param n Size of input dimension
+     * @param d Size of output dimension
+     * @param positionAndLayer Layer position information
+     */
+    public static void matmulOptimized(KernelContext context, FloatArray xout, FloatArray x, FloatArray w,
+            int n, int d, IntArray positionAndLayer) {
+        // Get thread identification from KernelContext
+        int globalIdx = context.globalIdx;
+
+        // Process only if thread ID is within bounds
+        if (globalIdx < d) {
+            int layer = positionAndLayer.get(7); // Based on the OpenCL kernel
+            int layerOffset = layer << 24; // Equivalent to layer * 2^24
+
+            // Base index calculation for weights
+            int baseIdx = layerOffset + (globalIdx << 11); // Equivalent to globalIdx * 2048
+
+            // Allocate local memory for input vector (helps with memory coalescing)
+            final int TILE_SIZE = 128; // Adjust based on hardware characteristics
+            float[] localX = context.allocateFloatLocalArray(TILE_SIZE);
+
+            float sum = 0.0f;
+
+            // Process input in tiles to improve cache utilization
+            for (int tileStart = 0; tileStart < n; tileStart += TILE_SIZE) {
+                // Load a tile of input vector into local memory
+                int localIdx = context.localIdx;
+                if (localIdx < TILE_SIZE && tileStart + localIdx < n) {
+                    localX[localIdx] = x.get(tileStart + localIdx);
+                }
+
+                // Wait for all threads to load data
+                context.localBarrier();
+
+                // Process the current tile with unrolling
+                int tileEnd = Math.min(tileStart + TILE_SIZE, n);
+                for (int j = tileStart; j < tileEnd; j += 4) {
+                    // Unrolled multiplication of 4 elements (or fewer if at the end)
+                    float sum1 = 0.0f, sum2 = 0.0f, sum3 = 0.0f, sum4 = 0.0f;
+
+                    // Use local memory for input vector access
+                    int localOffset = j - tileStart;
+
+                    if (j < tileEnd)
+                        sum1 = w.get(baseIdx + j) * localX[localOffset];
+                    if (j+1 < tileEnd)
+                        sum2 = w.get(baseIdx + j+1) * localX[localOffset+1];
+                    if (j+2 < tileEnd)
+                        sum3 = w.get(baseIdx + j+2) * localX[localOffset+2];
+                    if (j+3 < tileEnd)
+                        sum4 = w.get(baseIdx + j+3) * localX[localOffset+3];
+
+                    sum += sum1 + sum2 + sum3 + sum4;
+                }
+
+                // Barrier to ensure all threads are done with this tile before loading next
+                context.localBarrier();
+            }
+
+            // Write result to output
+            xout.set(globalIdx, sum);
+        }
+    }
+
+    public static void matmulCollaborative(KernelContext context, FloatArray xout, FloatArray x, FloatArray w,
+            int n, int d, IntArray positionAndLayer) {
+        // Get thread identification
+        int globalIdx = context.globalIdx;
+        int localIdx = context.localIdx;
+        int groupIdx = context.groupIdx;
+        int localSize = context.localGroupSizeX;
+
+        // Calculate indices
+        int layer = positionAndLayer.get(1);
+        int layerOffset = layer * n * d;
+        int baseIdx = layerOffset + globalIdx * n;
+
+        // Define tile size for local memory
+        final int TS = 128; // Can be tuned for your hardware
+
+        // Allocate local memory for input vector tile
+        float[] xLocal = context.allocateFloatLocalArray(TS);
+
+        // Initialize accumulator
+        float sum = 0.0f;
+
+        // Process input in tiles
+        for (int tileStart = 0; tileStart < n; tileStart += TS) {
+            int tileEnd = uk.ac.manchester.tornado.api.math.TornadoMath.min(tileStart + TS, n);
+            int tileSize = tileEnd - tileStart;
+
+            // Collaborative loading of input vector into local memory
+            for (int i = localIdx; i < tileSize; i += localSize) {
+                xLocal[i] = x.get(tileStart + i);
+            }
+
+            // Wait for all threads to finish loading
+            context.localBarrier();
+
+            // Process the current tile with unrolling
+            for (int j = 0; j < tileSize; j += 4) {
+                // Bounds-checked unrolled computation
+                float sum1 = (j < tileSize) ? w.get(baseIdx + tileStart + j) * xLocal[j] : 0.0f;
+                float sum2 = (j+1 < tileSize) ? w.get(baseIdx + tileStart + j+1) * xLocal[j+1] : 0.0f;
+                float sum3 = (j+2 < tileSize) ? w.get(baseIdx + tileStart + j+2) * xLocal[j+2] : 0.0f;
+                float sum4 = (j+3 < tileSize) ? w.get(baseIdx + tileStart + j+3) * xLocal[j+3] : 0.0f;
+
+                sum += sum1 + sum2 + sum3 + sum4;
+            }
+
+            // Wait for all threads to finish with this tile
+            context.localBarrier();
+        }
+
+        // Write result
+        if (globalIdx < d) {
+            xout.set(globalIdx, sum);
+        }
+    }
+
+
+    /**
+     * Optimized implementation with work-group collaboration
+     * This version uses collaborative loading to improve memory access patterns
+     */
+    public static void matmulCollaborativXe(KernelContext context, FloatArray xout,
+            FloatArray x, FloatArray w,
+            int n, int d, IntArray positionAndLayer) {
+        int globalIdx = context.globalIdx;
+        int localIdx = context.localIdx;
+        int localSize = context.localGroupSizeX;
+        int groupId = context.groupIdx;
+
+        // Exit if thread is out of bounds
+//        if (globalIdx >= d) return;
+
+        int layer = positionAndLayer.get(1);
+        int layerOffset = layer << 24;
+        int baseIdx = layerOffset + (globalIdx << 11);
+
+        // Use shared memory for input vector chunks
+        final int CHUNK_SIZE = 128; // Tune based on hardware
+        float[] localX = context.allocateFloatLocalArray(CHUNK_SIZE);
+        float sum = 0.0f;
+
+        // Process in chunks to maximize cache efficiency
+        for (int chunkStart = 0; chunkStart < n; chunkStart += CHUNK_SIZE) {
+            // Collaborative loading of input chunk
+            for (int i = localIdx; i < CHUNK_SIZE && chunkStart + i < n; i += localSize) {
+                localX[i] = x.get(chunkStart + i);
+            }
+
+            // Wait for all threads to finish loading
+            context.localBarrier();
+
+            // Process chunk with unrolling (4 elements at a time)
+            int chunkEnd = TornadoMath.min(chunkStart + CHUNK_SIZE, n);
+            for (int j = chunkStart; j < chunkEnd; j += 4) {
+                // Vector-style processing with local memory
+                for (int k = 0; k < 4 && j + k < chunkEnd; k++) {
+                    int localIndex = j + k - chunkStart;
+                    sum += w.get(baseIdx + j + k) * localX[localIndex];
+                }
+            }
+
+            // Synchronize before next chunk
+            context.localBarrier();
+        }
+
+        // Store result
+        xout.set(globalIdx, sum);
     }
 
     public static void matmulUnroll8(FloatArray xout, FloatArray x, FloatArray w, int n, int d, IntArray positionAndLayer) {

@@ -68,7 +68,7 @@ CMD+=("-Dtornado.debug=false")
 CMD+=("-Dtornado.fullDebug=false")
 CMD+=("-Dtornado.print.kernel=false")
 CMD+=("-Dtornado.print.bytecodes=false")
-CMD+=("-Dtornado.device.memory=10GB")
+CMD+=("-Dtornado.device.memory=7GB")
 CMD+=("-Dtornado.profiler=false")
 CMD+=("-Dtornado.log.profiler=false")
 

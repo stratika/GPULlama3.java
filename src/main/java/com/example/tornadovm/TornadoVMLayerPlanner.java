@@ -105,6 +105,8 @@ public class TornadoVMLayerPlanner {
                         config.hiddenDim, state.wrapHb, state.wrapHb2)
                 .task("projectionTwo", TornadoVMCompute::matmulUnroll4,
                         state.wrapXb, state.wrapHb, weights.w2Flat, config.hiddenDim, config.dim, state.positionAndLayer)
+//                .task("projectionTwo", TornadoVMCompute::matmulHybrid,context,
+//                        state.wrapXb, state.wrapHb, weights.w2Flat, config.hiddenDim, config.dim, state.positionAndLayer)
                 .task("residual2", TornadoVMCompute::addInPlace, state.wrapX, state.wrapXb)
                 .persistOnDevice(state.wrapX, context);
         taskGraphs.add(unifiedLayer.snapshot());
@@ -149,11 +151,23 @@ public class TornadoVMLayerPlanner {
         ropeWorker.setGlobalWork(config.dim / 2, 1, 1);
         ropeWorker.setLocalWork(128, 1, 1);
 
+//        WorkerGrid projectionTwo = new WorkerGrid1D(config.dim );
+//        projectionTwo.setGlobalWork(config.dim , 1, 1);
+//        projectionTwo.setLocalWork(16, 1, 1);
+//
+//        WorkerGrid projectionThree = new WorkerGrid1D(config.hiddenDim );
+//        projectionThree.setGlobalWork(config.hiddenDim , 1, 1);
+//        projectionThree.setLocalWork(16, 1, 1);
+
+
         tornadoForwardScheduler.addWorkerGrid("activationUpdate.updateX", singleWorker);
 
         tornadoForwardScheduler.addWorkerGrid("layer.rope", ropeWorker);
 
         tornadoForwardScheduler.addWorkerGrid("logits.projection", vocabWorker);
+
+//        tornadoForwardScheduler.addWorkerGrid("layer.projectOne", projectOne);
+//        tornadoForwardScheduler.addWorkerGrid("layer.projectionTwo", projectionTwo);
 
         // In your setupGridSchedulers method
         WorkerGrid rmsNormWorker = new WorkerGrid1D(config.dim);
