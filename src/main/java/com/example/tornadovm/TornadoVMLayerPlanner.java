@@ -90,12 +90,13 @@ public class TornadoVMLayerPlanner {
                         state.wrapKeyCache, state.wrapK,  state.wrapValueCache, state.wrapV, state.positionAndLayer)
                 .task("parallel-attention", TornadoVMCompute::processHeadsParallel,
                         state.wrapQ, state.wrapKeyCache, state.wrapValueCache, state.wrapXb,
-                        config.numberOfHeads, config.headSize, config.kvDim, config.kvMul, config.vocabularySize,
-                        state.positionAndLayer, state.wrapAtt)
+                        config.numberOfHeads, config.headSize, config.kvDim, config.kvMul,
+                        state.positionAndLayer, state.wrapAtt, config.vocabularySize)
 //                .task("matmul1", TornadoVMCompute::matmulUnroll4,
 //                        state.wrapXb2, state.wrapXb, weights.woFlat, config.dim, config.dim, state.positionAndLayer)
 //                .task("residual1", TornadoVMCompute::addInPlace, state.wrapX, state.wrapXb2)
 
+                // final matmul to get the output of the attention fused with residual connection back into x
                 .task("matmul1", TornadoVMCompute::matmulUnroll4WithResidual,
                         state.wrapX, state.wrapXb, weights.woFlat, config.dim, config.dim, state.positionAndLayer)
 
@@ -115,6 +116,7 @@ public class TornadoVMLayerPlanner {
 //                        state.wrapXb, state.wrapHb, weights.w2Flat, config.hiddenDim, config.dim, state.positionAndLayer)
 //                .task("residual2", TornadoVMCompute::addInPlace, state.wrapX, state.wrapXb)
 
+                // final matmul (down proj) to get the output of the ffn fused with residual connection back into x
                 .task("projectionTwo", TornadoVMCompute::matmulUnroll4WithResidual,
                 state.wrapX, state.wrapHb, weights.w2Flat, config.hiddenDim, config.dim, state.positionAndLayer)
 

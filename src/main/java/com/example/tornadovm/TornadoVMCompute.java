@@ -273,6 +273,7 @@ public class TornadoVMCompute {
         }
     }
 
+
     public static void matmulKV(FloatArray xout, FloatArray x, FloatArray w, int dim, int kvdim, IntArray positionAndLayer) {
         int layer = positionAndLayer.get(1);
         int layerOffset = layer * dim * kvdim;
@@ -475,12 +476,12 @@ public class TornadoVMCompute {
         int layerOffset = layer * n * d;
 
         // Simple mapping to global threads, assuming hardware handles work distribution
-        for (@Parallel int i = 0; i < d; i++) {
+        for (@Parallel int i = 0; i < d; i++) { //<--- projectionTwo d = 2048
             float sum = 0.0f;
             int baseIdx = layerOffset + i * n;
 
             // For very large n, consider chunking this loop
-            for (int j = 0; j < n; j += 4) {
+            for (int j = 0; j < n; j += 4) { // <--- projectionTwo n = 8192
                 // Unrolled to process 4 elements at once
                 float sum1 = (j < n) ? w.get(baseIdx + j) * x.get(j) : 0;
                 float sum2 = (j+1 < n) ? w.get(baseIdx + j+1) * x.get(j+1) : 0;
@@ -1683,8 +1684,8 @@ public class TornadoVMCompute {
 
     public static void processHeadsParallel(
             FloatArray q, FloatArray key_cache, FloatArray value_cache, FloatArray xb,
-            int nHeads, int headSize, int kvDim, int kvMul, int seqLen,
-            IntArray positionNlayer, FloatArray wrapAtt) {
+            int nHeads, int headSize, int kvDim, int kvMul,
+            IntArray positionNlayer, FloatArray wrapAtt, int seq) {
 
         int pos = positionNlayer.get(0);
         long loff = positionNlayer.get(3);
@@ -1692,17 +1693,17 @@ public class TornadoVMCompute {
         // Parallelize computation across attention heads
         for (@Parallel int h = 0; h < nHeads; h++) {
             // Process each head in parallel
-            processHeadTornado(q, key_cache, value_cache, xb, h, headSize, kvDim, kvMul, loff, pos, wrapAtt);
+            processHeadTornado(q, key_cache, value_cache, xb, h, headSize, kvDim, kvMul, loff, pos, wrapAtt,  seq);
         }
     }
 
     private static void processHeadTornado(
             FloatArray allQ, FloatArray key_cache, FloatArray value_cache, FloatArray allXb,
-            int h, int headSize, int kvDim, int kvMul, long loff, int pos, FloatArray wrapAtt) {
+            int h, int headSize, int kvDim, int kvMul, long loff, int pos, FloatArray wrapAtt, int seq) {
 
         // Base index for this head's attention weights
         int headOffset = h * (pos + 1);
-
+//        float[] wrapAttArray =
             // STEP 1: Calculate attention scores for all timesteps
             for (int t = 0; t <= pos; t++) {
                 int kvHeadIdx = h / kvMul;
