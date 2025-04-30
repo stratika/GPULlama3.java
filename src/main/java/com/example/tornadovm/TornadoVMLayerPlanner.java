@@ -18,6 +18,7 @@ import java.util.ArrayList;
 import java.util.List;
 
 public class TornadoVMLayerPlanner {
+//    private static final int LOCAL_RMS_MM = Integer.getInteger("logits.projection", 16);
 
     private final State state;
     private final Configuration config;
@@ -99,10 +100,13 @@ public class TornadoVMLayerPlanner {
                         state.wrapX, weights.rms_ffn_weightFlat, state.tempFFN, state.positionAndLayer, config.dim)
                 .task("projectOne", TornadoVMCompute::matmulUnroll4,
                         state.wrapHb, state.wrapXb, weights.w1Flat, config.dim, config.hiddenDim, state.positionAndLayer)
-                .task("projectionThree", TornadoVMCompute::matmulUnroll4,
-                        state.wrapHb2, state.wrapXb, weights.w3Flat, config.dim, config.hiddenDim, state.positionAndLayer)
-                .task("silu_elementwise_mul", TornadoVMCompute::siluElemWiseMulActivation,
-                        config.hiddenDim, state.wrapHb, state.wrapHb2)
+//                .task("projectionThree", TornadoVMCompute::matmulUnroll4,
+//                        state.wrapHb2, state.wrapXb, weights.w3Flat, config.dim, config.hiddenDim, state.positionAndLayer)
+//                .task("silu_elementwise_mul", TornadoVMCompute::siluElemWiseMulActivation,
+//                        config.hiddenDim, state.wrapHb, state.wrapHb2)
+
+                .task("combinedProjectionAndActivation", TornadoVMCompute::combinedMatmulSiluActivationTiled, context,
+                        state.wrapHb, state.wrapXb, weights.w3Flat, state.wrapHb2, config.dim, config.hiddenDim, state.positionAndLayer)
                 .task("projectionTwo", TornadoVMCompute::matmulUnroll4,
                         state.wrapXb, state.wrapHb, weights.w2Flat, config.hiddenDim, config.dim, state.positionAndLayer)
                 .task("residual2", TornadoVMCompute::addInPlace, state.wrapX, state.wrapXb)
@@ -143,7 +147,7 @@ public class TornadoVMLayerPlanner {
 
         WorkerGrid vocabWorker = new WorkerGrid1D(config.vocabularySize);
         vocabWorker.setGlobalWork(config.vocabularySize, 1, 1);
-        vocabWorker.setLocalWork(32, 1, 1);
+        vocabWorker.setLocalWork(16, 1, 1);
 
         WorkerGrid ropeWorker = new WorkerGrid1D(config.dim / 2);
         ropeWorker.setGlobalWork(config.dim / 2, 1, 1);
@@ -153,9 +157,7 @@ public class TornadoVMLayerPlanner {
 //        projectionTwo.setGlobalWork(config.dim , 1, 1);
 //        projectionTwo.setLocalWork(16, 1, 1);
 //
-//        WorkerGrid projectionThree = new WorkerGrid1D(config.hiddenDim );
-//        projectionThree.setGlobalWork(config.hiddenDim , 1, 1);
-//        projectionThree.setLocalWork(16, 1, 1);
+
 
 
         tornadoForwardScheduler.addWorkerGrid("activationUpdate.updateX", singleWorker);
@@ -164,7 +166,11 @@ public class TornadoVMLayerPlanner {
 
         tornadoForwardScheduler.addWorkerGrid("logits.projection", vocabWorker);
 
-//        tornadoForwardScheduler.addWorkerGrid("layer.projectOne", projectOne);
+
+        WorkerGrid projectionThree = new WorkerGrid1D(config.hiddenDim );
+        projectionThree.setGlobalWork(config.hiddenDim , 1, 1);
+        projectionThree.setLocalWork(32, 1, 1);
+        tornadoForwardScheduler.addWorkerGrid("layer.combinedProjectionAndActivation", projectionThree);
 //        tornadoForwardScheduler.addWorkerGrid("layer.projectionTwo", projectionTwo);
 
         // In your setupGridSchedulers method

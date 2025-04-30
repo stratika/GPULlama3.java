@@ -294,14 +294,8 @@ public class TornadoVMCompute {
     /**
      * SiLU activation function
      */
-    public static void siluElemWiseMulActivation(int hidenDimSize, FloatArray hb, FloatArray hb2) {
-        for (@Parallel int i = 0; i < hidenDimSize; i++) {
-            float val = hb.get(i);
-            val *= (1.0f / (1.0f + TornadoMath.exp(-val)));
-            val *= hb2.get(i);
-            hb.set(i, val);
-        }
-    }
+
+
     private static void reductionOneBlock(KernelContext context, FloatArray output, FloatArray x) {
         int gid = context.globalIdx;
         int lid = context.localIdx;
@@ -448,6 +442,8 @@ public class TornadoVMCompute {
         }
     }
 
+//    [1 1 1
+//     1  1  1]  X  [1 1 1]
 
     public static void matmulUnroll4(FloatArray xout, FloatArray x, FloatArray w, int n, int d, IntArray positionAndLayer) {
         int layer = positionAndLayer.get(1);
@@ -470,6 +466,162 @@ public class TornadoVMCompute {
             }
 
             xout.set(i, sum);
+        }
+    }
+
+    public static void siluElemWiseMulActivation(int hidenDimSize, FloatArray hb, FloatArray hb2) {
+        for (@Parallel int i = 0; i < hidenDimSize; i++) {
+            float val = hb.get(i);
+            val *= (1.0f / (1.0f + TornadoMath.exp(-val)));
+            val *= hb2.get(i);
+            hb.set(i, val);
+        }
+    }
+
+    public static void combinedMatmulSiluActivationTiled(KernelContext context, FloatArray hb, FloatArray x, FloatArray w, FloatArray hb2,
+            int n, int d, IntArray positionAndLayer) {
+        int layer = positionAndLayer.get(1);
+        int layerOffset = layer * n * d;
+
+        final int TILE_SIZE = 32;  // Good balance for RTX 3070
+        float[] xTile = new KernelContext().allocateFloatLocalArray(TILE_SIZE);
+
+        for (@Parallel int i = 0; i < d; i++) {
+            float sum = 0.0f;
+            int baseIdx = layerOffset + i * n;
+
+            for (int j = 0; j < n; j += TILE_SIZE) {
+                // Collaborative loading of x values into shared memory
+                int localId = context.localIdx;
+                if (localId < TILE_SIZE && j + localId < n) {
+                    xTile[localId] = x.get(j + localId);
+                }
+                context.localBarrier();
+
+                // Process this tile with unrolling
+                for (int k = 0; k < TILE_SIZE; k += 4) {
+                    if (j + k >= n) break;
+                    float sum1 = (k < TILE_SIZE) ? w.get(baseIdx + j + k) * xTile[k] : 0;
+                    float sum2 = (k+1 < TILE_SIZE && j+k+1 < n) ? w.get(baseIdx + j + k + 1) * xTile[k+1] : 0;
+                    float sum3 = (k+2 < TILE_SIZE && j+k+2 < n) ? w.get(baseIdx + j + k + 2) * xTile[k+2] : 0;
+                    float sum4 = (k+3 < TILE_SIZE && j+k+3 < n) ? w.get(baseIdx + j + k + 3) * xTile[k+3] : 0;
+
+                    sum += sum1 + sum2 + sum3 + sum4;
+                }
+                context.localBarrier();
+            }
+
+            // Apply SiLU activation and element-wise multiplication
+            float hbVal = hb.get(i);
+            float silu = hbVal * (1.0f / (1.0f + TornadoMath.exp(-hbVal)));
+            float result = silu * sum;
+
+            hb.set(i, result);
+        }
+    }
+
+    public static void combinedMatmulSiluActivation(KernelContext context, FloatArray hb, FloatArray x, FloatArray w, FloatArray hb2,
+            int n, int d, IntArray positionAndLayer) {
+        // Get thread ID
+        int i = context.globalIdx;
+
+        // Bounds check
+//        if (i >= d) return;
+
+        int layer = positionAndLayer.get(1);
+        int layerOffset = layer * n * d;
+        int baseIdx = layerOffset + i * n;
+
+        // Matrix multiplication - without tiling for now to ensure correctness
+        float sum = 0.0f;
+        for (int j = 0; j < n; j += 4) {
+            // Process 4 elements at a time (unrolled)
+            float sum1 = (j < n) ? w.get(baseIdx + j) * x.get(j) : 0;
+            float sum2 = (j+1 < n) ? w.get(baseIdx + j+1) * x.get(j+1) : 0;
+            float sum3 = (j+2 < n) ? w.get(baseIdx + j+2) * x.get(j+2) : 0;
+            float sum4 = (j+3 < n) ? w.get(baseIdx + j+3) * x.get(j+3) : 0;
+
+            sum += sum1 + sum2 + sum3 + sum4;
+        }
+
+        // Store intermediate result (optional, can be commented out if not needed)
+        // hb2.set(i, sum);
+
+        // SiLU activation and element-wise multiplication
+        float hbVal = hb.get(i);
+        float silu = hbVal * (1.0f / (1.0f + TornadoMath.exp(-hbVal)));
+        float result = silu * sum;
+
+        // Store final result
+        hb.set(i, result);
+    }
+
+    public static void combinedMatmulSiluActivation(FloatArray hb, FloatArray x, FloatArray w, FloatArray hb2,
+            int n, int d, IntArray positionAndLayer) {
+        int layer = positionAndLayer.get(1);
+        int layerOffset = layer * n * d;
+
+        // Parallel processing for each output element
+        for (@Parallel int i = 0; i < d; i++) {
+            // Part 1: Matrix multiplication (equivalent to matmulUnroll4)
+            float sum = 0.0f;
+            int baseIdx = layerOffset + i * n;
+
+            for (int j = 0; j < n; j += 4) {
+                float sum1 = (j < n) ? w.get(baseIdx + j) * x.get(j) : 0;
+                float sum2 = (j+1 < n) ? w.get(baseIdx + j+1) * x.get(j+1) : 0;
+                float sum3 = (j+2 < n) ? w.get(baseIdx + j+2) * x.get(j+2) : 0;
+                float sum4 = (j+3 < n) ? w.get(baseIdx + j+3) * x.get(j+3) : 0;
+
+                sum += sum1 + sum2 + sum3 + sum4;
+            }
+
+            // Part 2: SiLU activation and element-wise multiplication
+            // In the original code:
+            // 1. Matrix multiplication results are stored in hb2
+            // 2. hb undergoes SiLU activation and is multiplied by hb2
+
+            // Calculate SiLU on the hb input value: x * sigmoid(x)
+            float hbVal = hb.get(i);
+            float silu = hbVal * (1.0f / (1.0f + TornadoMath.exp(-hbVal)));
+
+            // Multiply SiLU result by the matrix multiplication result (sum)
+            float result = silu * sum;
+
+            // Store the final result back in hb
+            hb.set(i, result);
+        }
+    }
+
+    public static void ffnMatvecSiluFused(FloatArray hb, FloatArray x,
+            FloatArray gate_w, FloatArray up_w,
+            IntArray positionAndLayer, int dim, int hiddenDim) {
+        int layer = positionAndLayer.get(1);
+        int gateOffset = layer * dim * hiddenDim;
+        int upOffset = layer * dim * hiddenDim;
+
+        // Calculate gate and up projections with SiLU in one fused kernel
+        for (@Parallel int i = 0; i < hiddenDim; i++) {
+            float gateSum = 0.0f, upSum = 0.0f;
+
+            // Unrolled loops for better performance
+            for (int j = 0; j < dim; j += 4) {
+                // Gate projection with unrolling
+                gateSum += (j < dim) ? gate_w.get(gateOffset + i * dim + j) * x.get(j) : 0;
+                gateSum += (j+1 < dim) ? gate_w.get(gateOffset + i * dim + j+1) * x.get(j+1) : 0;
+                gateSum += (j+2 < dim) ? gate_w.get(gateOffset + i * dim + j+2) * x.get(j+2) : 0;
+                gateSum += (j+3 < dim) ? gate_w.get(gateOffset + i * dim + j+3) * x.get(j+3) : 0;
+
+                // Up projection with unrolling
+                upSum += (j < dim) ? up_w.get(upOffset + i * dim + j) * x.get(j) : 0;
+                upSum += (j+1 < dim) ? up_w.get(upOffset + i * dim + j+1) * x.get(j+1) : 0;
+                upSum += (j+2 < dim) ? up_w.get(upOffset + i * dim + j+2) * x.get(j+2) : 0;
+                upSum += (j+3 < dim) ? up_w.get(upOffset + i * dim + j+3) * x.get(j+3) : 0;
+            }
+
+            // Apply SiLU activation to gate and multiply with up projection in one step
+            float silu = gateSum * (1.0f / (1.0f + TornadoMath.exp(-gateSum)));
+            hb.set(i, silu * upSum);
         }
     }
 
