@@ -64,7 +64,8 @@ public class TornadoVMLayerPlanner {
                         weights.woFlat,
                         weights.rms_ffn_weightFlat,
                         weights.w1Flat, weights.w2Flat, weights.w3Flat,
-                        state.wrapHb, state.wrapHb2
+                        state.wrapHb
+//                        state.wrapHb2 //<- no need for hb2 in fused
                 )
                 .transferToDevice(DataTransferMode.EVERY_EXECUTION,
                         state.positionAndLayer,
@@ -91,9 +92,13 @@ public class TornadoVMLayerPlanner {
                         state.wrapQ, state.wrapKeyCache, state.wrapValueCache, state.wrapXb,
                         config.numberOfHeads, config.headSize, config.kvDim, config.kvMul, config.vocabularySize,
                         state.positionAndLayer, state.wrapAtt)
-                .task("matmul1", TornadoVMCompute::matmulUnroll4,
-                        state.wrapXb2, state.wrapXb, weights.woFlat, config.dim, config.dim, state.positionAndLayer)
-                .task("residual1", TornadoVMCompute::addInPlace, state.wrapX, state.wrapXb2)
+//                .task("matmul1", TornadoVMCompute::matmulUnroll4,
+//                        state.wrapXb2, state.wrapXb, weights.woFlat, config.dim, config.dim, state.positionAndLayer)
+//                .task("residual1", TornadoVMCompute::addInPlace, state.wrapX, state.wrapXb2)
+
+                .task("matmul1", TornadoVMCompute::matmulUnroll4WithResidual,
+                        state.wrapX, state.wrapXb, weights.woFlat, config.dim, config.dim, state.positionAndLayer)
+
                 .task("reductionsOneBlockFFN", TornadoVMCompute::reductionOneBlockWithLayer, context, state.tempFFN,
                         state.wrapX, config.dim, config.rmsNormEps, state.localSize)
                 .task("mapContextFFN", TornadoVMCompute::reductionOneBlock2WithLayer, context, state.wrapXb,
@@ -104,12 +109,15 @@ public class TornadoVMLayerPlanner {
 //                        state.wrapHb2, state.wrapXb, weights.w3Flat, config.dim, config.hiddenDim, state.positionAndLayer)
 //                .task("silu_elementwise_mul", TornadoVMCompute::siluElemWiseMulActivation,
 //                        config.hiddenDim, state.wrapHb, state.wrapHb2)
+                .task("combinedProjectionAndActivation", TornadoVMCompute::combinedMatmulSiluActivation,context,
+                        state.wrapHb, state.wrapXb, weights.w3Flat, config.dim, config.hiddenDim, state.positionAndLayer)
+//                .task("projectionTwo", TornadoVMCompute::matmulUnroll4,
+//                        state.wrapXb, state.wrapHb, weights.w2Flat, config.hiddenDim, config.dim, state.positionAndLayer)
+//                .task("residual2", TornadoVMCompute::addInPlace, state.wrapX, state.wrapXb)
 
-                .task("combinedProjectionAndActivation", TornadoVMCompute::combinedMatmulSiluActivationTiled, context,
-                        state.wrapHb, state.wrapXb, weights.w3Flat, state.wrapHb2, config.dim, config.hiddenDim, state.positionAndLayer)
-                .task("projectionTwo", TornadoVMCompute::matmulUnroll4,
-                        state.wrapXb, state.wrapHb, weights.w2Flat, config.hiddenDim, config.dim, state.positionAndLayer)
-                .task("residual2", TornadoVMCompute::addInPlace, state.wrapX, state.wrapXb)
+                .task("projectionTwo", TornadoVMCompute::matmulUnroll4WithResidual,
+                state.wrapX, state.wrapHb, weights.w2Flat, config.hiddenDim, config.dim, state.positionAndLayer)
+
                 .persistOnDevice(state.wrapX, context);
         taskGraphs.add(unifiedLayer.snapshot());
 
@@ -169,8 +177,10 @@ public class TornadoVMLayerPlanner {
 
         WorkerGrid projectionThree = new WorkerGrid1D(config.hiddenDim );
         projectionThree.setGlobalWork(config.hiddenDim , 1, 1);
-        projectionThree.setLocalWork(32, 1, 1);
+        projectionThree.setLocalWork(128, 1, 1);
+
         tornadoForwardScheduler.addWorkerGrid("layer.combinedProjectionAndActivation", projectionThree);
+
 //        tornadoForwardScheduler.addWorkerGrid("layer.projectionTwo", projectionTwo);
 
         // In your setupGridSchedulers method

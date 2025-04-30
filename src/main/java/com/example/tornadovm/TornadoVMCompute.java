@@ -469,6 +469,33 @@ public class TornadoVMCompute {
         }
     }
 
+    public static void matmulUnroll4WithResidual(FloatArray xout, FloatArray x, FloatArray w,
+            int n, int d, IntArray positionAndLayer) {
+        int layer = positionAndLayer.get(1);
+        int layerOffset = layer * n * d;
+
+        // Simple mapping to global threads, assuming hardware handles work distribution
+        for (@Parallel int i = 0; i < d; i++) {
+            float sum = 0.0f;
+            int baseIdx = layerOffset + i * n;
+
+            // For very large n, consider chunking this loop
+            for (int j = 0; j < n; j += 4) {
+                // Unrolled to process 4 elements at once
+                float sum1 = (j < n) ? w.get(baseIdx + j) * x.get(j) : 0;
+                float sum2 = (j+1 < n) ? w.get(baseIdx + j+1) * x.get(j+1) : 0;
+                float sum3 = (j+2 < n) ? w.get(baseIdx + j+2) * x.get(j+2) : 0;
+                float sum4 = (j+3 < n) ? w.get(baseIdx + j+3) * x.get(j+3) : 0;
+
+                sum += sum1 + sum2 + sum3 + sum4;
+            }
+
+            // Add to existing output
+            xout.set(i, sum + xout.get(i));
+        }
+    }
+
+
     public static void siluElemWiseMulActivation(int hidenDimSize, FloatArray hb, FloatArray hb2) {
         for (@Parallel int i = 0; i < hidenDimSize; i++) {
             float val = hb.get(i);
@@ -478,55 +505,119 @@ public class TornadoVMCompute {
         }
     }
 
-    public static void combinedMatmulSiluActivationTiled(KernelContext context, FloatArray hb, FloatArray x, FloatArray w, FloatArray hb2,
+    // works but slow    projectionThree.setLocalWork(256, 1, 1);
+//               .task("combinedProjectionAndActivation", TornadoVMCompute::combinedMatmulSiluActivationMinimalTiled, context,
+//            state.wrapHb, state.wrapXb, weights.w3Flat, config.dim, config.hiddenDim, state.positionAndLayer)
+    public static void combinedMatmulSiluActivationMinimalTiled(KernelContext context, FloatArray hb, FloatArray x, FloatArray w,
             int n, int d, IntArray positionAndLayer) {
+
+        // Get thread ID
+        int i = context.globalIdx;
+        int localId = context.localIdx;
+
+        // Bounds check
+//        if (i >= d) return;
+
         int layer = positionAndLayer.get(1);
         int layerOffset = layer * n * d;
+        int baseIdx = layerOffset + i * n;
 
-        final int TILE_SIZE = 32;  // Good balance for RTX 3070
-        float[] xTile = new KernelContext().allocateFloatLocalArray(TILE_SIZE);
+        // Use a small tile size to reduce complexity
+        final int TILE_SIZE = 256;
+        float[] xTile = context.allocateFloatLocalArray(TILE_SIZE);
 
-        for (@Parallel int i = 0; i < d; i++) {
-            float sum = 0.0f;
-            int baseIdx = layerOffset + i * n;
+        float sum = 0.0f;
 
-            for (int j = 0; j < n; j += TILE_SIZE) {
-                // Collaborative loading of x values into shared memory
-                int localId = context.localIdx;
-                if (localId < TILE_SIZE && j + localId < n) {
-                    xTile[localId] = x.get(j + localId);
-                }
-                context.localBarrier();
-
-                // Process this tile with unrolling
-                for (int k = 0; k < TILE_SIZE; k += 4) {
-                    if (j + k >= n) break;
-                    float sum1 = (k < TILE_SIZE) ? w.get(baseIdx + j + k) * xTile[k] : 0;
-                    float sum2 = (k+1 < TILE_SIZE && j+k+1 < n) ? w.get(baseIdx + j + k + 1) * xTile[k+1] : 0;
-                    float sum3 = (k+2 < TILE_SIZE && j+k+2 < n) ? w.get(baseIdx + j + k + 2) * xTile[k+2] : 0;
-                    float sum4 = (k+3 < TILE_SIZE && j+k+3 < n) ? w.get(baseIdx + j + k + 3) * xTile[k+3] : 0;
-
-                    sum += sum1 + sum2 + sum3 + sum4;
-                }
-                context.localBarrier();
+        // Process in tiles
+        for (int tileStart = 0; tileStart < n; tileStart += TILE_SIZE) {
+            // Each thread loads at most one element
+            if (localId < TILE_SIZE && tileStart + localId < n) {
+                xTile[localId] = x.get(tileStart + localId);
             }
 
-            // Apply SiLU activation and element-wise multiplication
-            float hbVal = hb.get(i);
-            float silu = hbVal * (1.0f / (1.0f + TornadoMath.exp(-hbVal)));
-            float result = silu * sum;
+            context.localBarrier();
 
-            hb.set(i, result);
+            // Each thread processes its portion, no unrolling
+            // Simple sequential access pattern
+            for (int k = 0; k < TILE_SIZE && tileStart + k < n; k++) {
+                sum += w.get(baseIdx + tileStart + k) * xTile[k];
+            }
+
+            context.localBarrier();
         }
+
+        // SiLU activation and element-wise multiplication
+        float hbVal = hb.get(i);
+        float silu = hbVal * (1.0f / (1.0f + TornadoMath.exp(-hbVal)));
+        float result = silu * sum;
+
+        // Store final result
+        hb.set(i, result);
     }
 
-    public static void combinedMatmulSiluActivation(KernelContext context, FloatArray hb, FloatArray x, FloatArray w, FloatArray hb2,
+    public static void combinedMatmulSiluActivationOptimized(KernelContext context, FloatArray hb, FloatArray x, FloatArray w,
+            int n, int d, IntArray positionAndLayer) {
+
+        // Get thread ID
+        int i = context.globalIdx;
+        int localId = context.localIdx;
+
+        // Early bounds check (commented out as per your working version)
+        // if (i >= d) return;
+
+        int layer = positionAndLayer.get(1);
+        int layerOffset = layer * n * d;
+        int baseIdx = layerOffset + i * n;
+
+        // Larger tile size for better performance
+        final int TILE_SIZE = 256;
+        float[] xTile = context.allocateFloatLocalArray(TILE_SIZE);
+
+        float sum = 0.0f;
+
+        // Process in tiles
+        for (int tileStart = 0; tileStart < n; tileStart += TILE_SIZE) {
+            // Collaborative loading: Each thread can load multiple elements if needed
+            for (int loadIdx = localId; loadIdx < TILE_SIZE && tileStart + loadIdx < n; loadIdx += 32) {
+                xTile[loadIdx] = x.get(tileStart + loadIdx);
+            }
+
+            context.localBarrier();
+
+            // Determine actual elements to process for this tile
+            int elementsInTile = Math.min(TILE_SIZE, n - tileStart);
+
+            // Process tile with unrolling (4-way for better instruction-level parallelism)
+            int k = 0;
+            for (; k < elementsInTile - 3; k += 4) {
+                sum += w.get(baseIdx + tileStart + k) * xTile[k];
+                sum += w.get(baseIdx + tileStart + k + 1) * xTile[k + 1];
+                sum += w.get(baseIdx + tileStart + k + 2) * xTile[k + 2];
+                sum += w.get(baseIdx + tileStart + k + 3) * xTile[k + 3];
+            }
+
+            // Handle remaining elements
+            for (; k < elementsInTile; k++) {
+                sum += w.get(baseIdx + tileStart + k) * xTile[k];
+            }
+
+            context.localBarrier();
+        }
+
+        // SiLU activation and element-wise multiplication
+        float hbVal = hb.get(i);
+        float silu = hbVal * (1.0f / (1.0f + TornadoMath.exp(-hbVal)));
+        float result = silu * sum;
+
+        // Store final result
+        hb.set(i, result);
+    }
+
+    public static void  combinedMatmulSiluActivation(KernelContext context, FloatArray hb, FloatArray x, FloatArray w,
             int n, int d, IntArray positionAndLayer) {
         // Get thread ID
         int i = context.globalIdx;
 
-        // Bounds check
-//        if (i >= d) return;
 
         int layer = positionAndLayer.get(1);
         int layerOffset = layer * n * d;
@@ -544,9 +635,6 @@ public class TornadoVMCompute {
             sum += sum1 + sum2 + sum3 + sum4;
         }
 
-        // Store intermediate result (optional, can be commented out if not needed)
-        // hb2.set(i, sum);
-
         // SiLU activation and element-wise multiplication
         float hbVal = hb.get(i);
         float silu = hbVal * (1.0f / (1.0f + TornadoMath.exp(-hbVal)));
@@ -556,7 +644,16 @@ public class TornadoVMCompute {
         hb.set(i, result);
     }
 
-    public static void combinedMatmulSiluActivation(FloatArray hb, FloatArray x, FloatArray w, FloatArray hb2,
+//    public static void siluElemWiseMulActivation(int hidenDimSize, FloatArray hb, FloatArray hb2) {
+//        for (@Parallel int i = 0; i < hidenDimSize; i++) {
+//            float val = hb.get(i);
+//            val *= (1.0f / (1.0f + TornadoMath.exp(-val)));
+//            val *= hb2.get(i);
+//            hb.set(i, val);
+//        }
+//    }
+
+    public static void combinedMatmulSiluActivation(FloatArray hb, FloatArray x, FloatArray w,
             int n, int d, IntArray positionAndLayer) {
         int layer = positionAndLayer.get(1);
         int layerOffset = layer * n * d;
