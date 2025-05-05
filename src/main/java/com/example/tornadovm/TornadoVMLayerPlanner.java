@@ -70,8 +70,8 @@ public class TornadoVMLayerPlanner {
                 .transferToDevice(DataTransferMode.EVERY_EXECUTION,
                         state.positionAndLayer,
                         state.temp,
-                        state.tempFFN
-//                        state.tempLogits
+                        state.tempFFN,
+                        state.tempLogits
                         )
                 .task("reductionsOneBlock", TornadoVMCompute::reductionOneBlockWithLayer, context, state.temp,
                         state.wrapX, config.dim, config.rmsNormEps, state.localSize)
@@ -140,26 +140,27 @@ public class TornadoVMLayerPlanner {
 //                .task("projectionTwo", TornadoVMCompute::matmulUnroll4WithResidual, state.wrapX, state.wrapHb,
 //                        weights.w2Flat, config.hiddenDim, config.dim, state.positionAndLayer)
 
-                .persistOnDevice(state.wrapX, context);
+                .persistOnDevice(state.wrapX, state.tempLogits, context);
         taskGraphs.add(unifiedLayer.snapshot());
 
 
         TaskGraph logits = new TaskGraph("logits")
                 .consumeFromDevice(unifiedLayer.getTaskGraphName(),
-                        state.wrapX
+                        state.wrapX, state.tempLogits
                 )
                 .transferToDevice(DataTransferMode.FIRST_EXECUTION,
                         state.wrapLogits,
                         weights.wclsByteArray,
                         weights.rms_final_weight_as_floatArray
                 )
-//                .task("reductionsOneBlockLogits", TornadoVMCompute::reductionOneBlockForLogits, context, state.tempLogits,
-//                        state.wrapX, config.dim, config.rmsNormEps, state.localSize)
-//                .task("mapContextLogits", TornadoVMCompute::applyNormForLogits, context,
-//                        state.wrapX, weights.rms_att_weightFlat, config.dim, state.tempLogits)
-//                        state.wrapX, weights.rms_att_weightFlat, config.dim, state.tempLogits)
-                .task("rmsLogits", TornadoVMCompute::rmsnormInnOut,
-                            state.wrapX, weights.rms_final_weight_as_floatArray, config.dim, config.rmsNormEps)
+
+                .task("reductionsOneBlockLogits", TornadoVMCompute::reductionOneBlockWithLayer, context, state.tempLogits,
+                        state.wrapX, config.dim, config.rmsNormEps, state.localSize)
+                .task("mapContextLogits", TornadoVMCompute::reductionOneBlock2WithLogits, context, state.wrapX,
+                        weights.rms_final_weight_as_floatArray, state.tempLogits, state.positionAndLayer, config.dim)
+
+//                .task("rmsLogits", TornadoVMCompute::rmsnormInnOut,
+//                            state.wrapX, weights.rms_final_weight_as_floatArray, config.dim, config.rmsNormEps)
                 .task("projection", TornadoVMCompute::matmulTornadoQ8Optimized, context, weights.wclsByteArray, state.wrapX, state.wrapLogits, config.dim)
                 .transferToHost(DataTransferMode.EVERY_EXECUTION, state.wrapLogits);
         taskGraphs.add(logits.snapshot());

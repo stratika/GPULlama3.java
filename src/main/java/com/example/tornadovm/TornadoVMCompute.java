@@ -74,7 +74,7 @@ public class TornadoVMCompute {
         if (gid == 0) {
             // Combine partial sums from all workgroups
             float ss = 0.0f;
-            for (int i = 1; i <= 8; i++) {  // Assuming 8 workgroups
+            for (int i = 1; i <= (size/localMemSize); i++) {  // Assuming 8 workgroups
                 ss += output.get(i);
             }
 
@@ -138,18 +138,20 @@ public class TornadoVMCompute {
         }
     }
 
-    public static void reductionOneBlock2WithL(KernelContext context, FloatArray output, FloatArray weights, FloatArray temp, IntArray positionAndLayer, int size) {
+    public static void reductionOneBlock2WithLogits(KernelContext context, FloatArray output,  FloatArray weights, FloatArray temp, IntArray positionAndLayer, int size) {
         int gid = context.globalIdx;
 
         if (gid < size) {
             // Get the layer offset from positionAndLayer
-            int layerOffset = 0 * size;
+            int layerOffset =0  * size;
 
             // Apply normalization with the correct weight for this layer
             float ss = temp.get(0);
             output.set(gid, weights.get(layerOffset + gid) * (ss * output.get(gid)));
         }
     }
+
+
 
     public static void mapContextLogits(KernelContext context, FloatArray output, FloatArray weights, FloatArray tempLogits, int size) {
         int gid = context.globalIdx;
