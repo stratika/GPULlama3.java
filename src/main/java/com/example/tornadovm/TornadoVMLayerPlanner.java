@@ -90,8 +90,8 @@ public class TornadoVMLayerPlanner {
                         state.wrapKeyCache, state.wrapK,  state.wrapValueCache, state.wrapV, state.positionAndLayer)
                 .task("parallel-attention", TornadoVMCompute::processHeadsParallel,
                         state.wrapQ, state.wrapKeyCache, state.wrapValueCache, state.wrapXb,
-                        config.numberOfHeads, config.headSize, config.kvDim, config.kvMul,
-                        state.positionAndLayer, state.wrapAtt, config.vocabularySize)
+                        config.numberOfHeads, config.headSize, config.kvDim, config.kvMul, config.vocabularySize,
+                        state.positionAndLayer, state.wrapAtt)
 //                .task("matmul1", TornadoVMCompute::matmulUnroll4,
 //                        state.wrapXb2, state.wrapXb, weights.woFlat, config.dim, config.dim, state.positionAndLayer)
 //                .task("residual1", TornadoVMCompute::addInPlace, state.wrapX, state.wrapXb2)
@@ -117,8 +117,10 @@ public class TornadoVMLayerPlanner {
 //                .task("residual2", TornadoVMCompute::addInPlace, state.wrapX, state.wrapXb)
 
                 // final matmul (down proj) to get the output of the ffn fused with residual connection back into x
-                .task("projectionTwo", TornadoVMCompute::matmulUnroll4WithResidual,
-                state.wrapX, state.wrapHb, weights.w2Flat, config.hiddenDim, config.dim, state.positionAndLayer)
+//                .task("projectionTwo", TornadoVMCompute::projectionTwoOptimized, context,
+//                state.wrapX, state.wrapHb, weights.w2Flat, config.hiddenDim, config.dim, state.positionAndLayer, 32)
+                .task("projectionTwo", TornadoVMCompute::matmulUnroll4WithResidual, state.wrapX, state.wrapHb,
+                        weights.w2Flat, config.hiddenDim, config.dim, state.positionAndLayer)
 
                 .persistOnDevice(state.wrapX, context);
         taskGraphs.add(unifiedLayer.snapshot());
@@ -163,9 +165,9 @@ public class TornadoVMLayerPlanner {
         ropeWorker.setGlobalWork(config.dim / 2, 1, 1);
         ropeWorker.setLocalWork(128, 1, 1);
 
-//        WorkerGrid projectionTwo = new WorkerGrid1D(config.dim );
-//        projectionTwo.setGlobalWork(config.dim , 1, 1);
-//        projectionTwo.setLocalWork(16, 1, 1);
+//        WorkerGrid projectionTwo = new WorkerGrid1D(config.dim * 32);
+//        projectionTwo.setGlobalWork(config.dim * 32 , 1, 1);
+//        projectionTwo.setLocalWork(32, 1, 1);
 //
 
 

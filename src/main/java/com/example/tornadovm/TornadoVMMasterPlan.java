@@ -49,6 +49,7 @@ public class TornadoVMMasterPlan {
         // Execute the first TornadoVM graph (pre-processing) -> copy-in
         executionPlan.withGraph(0).withGridScheduler(scheduler).execute();
 
+//        executionPlan.copy-in(state.wrapX);
         // Process each transformer layer sequentially
         for (int layer = 0; layer < config.numberOfLayers; layer++) {
             // Calculate offsets for KV cache access

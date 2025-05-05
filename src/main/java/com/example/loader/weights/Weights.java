@@ -5,6 +5,8 @@ import uk.ac.manchester.tornado.api.types.HalfFloat;
 import uk.ac.manchester.tornado.api.types.arrays.ByteArray;
 import uk.ac.manchester.tornado.api.types.arrays.FloatArray;
 import uk.ac.manchester.tornado.api.types.arrays.HalfFloatArray;
+import uk.ac.manchester.tornado.api.types.collections.VectorFloat4;
+import uk.ac.manchester.tornado.api.types.vectors.Float4;
 
 import java.nio.FloatBuffer;
 
@@ -31,6 +33,9 @@ public final class Weights {
     public final FloatArray w1Flat; // (layer, hidden_dim, dim)
     public final FloatArray w2Flat; // (layer, dim, hidden_dim)
     public final FloatArray w3Flat; // (layer, hidden_dim, dim)
+
+
+//    public final VectorFloat4 w2FlatVector; // (layer, dim, hidden_dim)
 
     public final FloatArray freq_cis_realFlat; // (seq_len, head_size/2)
     public final FloatArray freq_cis_imagFlat; // (seq_len, head_size/2)
@@ -99,6 +104,8 @@ public final class Weights {
 
         this.halfFloat = loadToHalfFloatArray(wcls);
         // For each layer's weights
+
+//        this.w2FlatVector = loadToVectorFloat4Array(w2);
 
     }
 
@@ -180,6 +187,45 @@ public final class Weights {
         }
 
         return floatArray;
+    }
+
+    private VectorFloat4 loadToVectorFloat4Array(FloatTensor[] input) {
+        // Calculate total size needed (divide by 4 since each VectorFloat4 holds 4 values)
+        int totalElements = 0;
+        for (FloatTensor tensor : input) {
+            totalElements += tensor.size();
+        }
+
+        // Round up to nearest multiple of 4 if necessary
+        int vectorSize = (totalElements + 3) / 4;
+        VectorFloat4 result = new VectorFloat4(vectorSize);
+
+        int vectorIndex = 0;
+        int valueIndex = 0;
+        float[] buffer = new float[4];
+
+        for (FloatTensor tensor : input) {
+            for (int i = 0; i < tensor.size(); i++) {
+                buffer[valueIndex % 4] = tensor.getFloat(i);
+                valueIndex++;
+
+                if (valueIndex % 4 == 0) {
+                    // We have a complete Float4 vector, add it to the result
+                    result.set(vectorIndex++, new Float4(buffer[0], buffer[1], buffer[2], buffer[3]));
+                }
+            }
+        }
+
+        // Handle any remaining values if tensor size wasn't a multiple of 4
+        if (valueIndex % 4 != 0) {
+            // Fill remaining positions with zeros
+            for (int i = valueIndex % 4; i < 4; i++) {
+                buffer[i] = 0.0f;
+            }
+            result.set(vectorIndex, new Float4(buffer[0], buffer[1], buffer[2], buffer[3]));
+        }
+
+        return result;
     }
 
 }
