@@ -472,31 +472,31 @@ public class TornadoVMCompute {
         }
     }
 
-    public static void matmulUnroll4WithResidual(FloatArray xout, FloatArray x, FloatArray w,
-            int n, int d, IntArray positionAndLayer) {
-        int layer = positionAndLayer.get(1);
-        int layerOffset = layer * n * d;
+        public static void matmulUnroll4WithResidual(FloatArray xout, FloatArray x, FloatArray w,
+                int n, int d, IntArray positionAndLayer) {
+            int layer = positionAndLayer.get(1);
+            int layerOffset = layer * n * d;
 
-        // Simple mapping to global threads, assuming hardware handles work distribution
-        for (@Parallel int i = 0; i < d; i++) { //<--- projectionTwo d = 2048
-            float sum = 0.0f;
-            int baseIdx = layerOffset + i * n;
+            // Simple mapping to global threads, assuming hardware handles work distribution
+            for (@Parallel int i = 0; i < d; i++) { //<--- projectionTwo d = 2048
+                float sum = 0.0f;
+                int baseIdx = layerOffset + i * n;
 
-            // For very large n, consider chunking this loop
-            for (int j = 0; j < n; j += 4) { // <--- projectionTwo n = 8192
-                // Unrolled to process 4 elements at once
-                float sum1 = (j < n) ? w.get(baseIdx + j) * x.get(j) : 0;
-                float sum2 = (j+1 < n) ? w.get(baseIdx + j+1) * x.get(j+1) : 0;
-                float sum3 = (j+2 < n) ? w.get(baseIdx + j+2) * x.get(j+2) : 0;
-                float sum4 = (j+3 < n) ? w.get(baseIdx + j+3) * x.get(j+3) : 0;
+                // For very large n, consider chunking this loop
+                for (int j = 0; j < n; j += 4) { // <--- projectionTwo n = 8192
+                    // Unrolled to process 4 elements at once
+                    float sum1 = (j < n) ? w.get(baseIdx + j) * x.get(j) : 0;
+                    float sum2 = (j+1 < n) ? w.get(baseIdx + j+1) * x.get(j+1) : 0;
+                    float sum3 = (j+2 < n) ? w.get(baseIdx + j+2) * x.get(j+2) : 0;
+                    float sum4 = (j+3 < n) ? w.get(baseIdx + j+3) * x.get(j+3) : 0;
 
-                sum += sum1 + sum2 + sum3 + sum4;
+                    sum += sum1 + sum2 + sum3 + sum4;
+                }
+
+                // Add to existing output
+                xout.set(i, sum + xout.get(i));
             }
-
-            // Add to existing output
-            xout.set(i, sum + xout.get(i));
         }
-    }
 
     public static void matmulUnroll4WithResidual(FloatArray xout, FloatArray x, VectorFloat4 w,
             int n, int d, IntArray positionAndLayer) {
@@ -1854,7 +1854,8 @@ public class TornadoVMCompute {
         }
     }
 
-    public static void projectionTwoOptimized(KernelContext context,  FloatArray x, FloatArray hb, FloatArray w,
+    public static void projectionTwoOptimized(KernelContext context,
+            FloatArray x, FloatArray hb, FloatArray w,
             int n, int d, IntArray positionAndLayer, int localWorkGroupSize) {
         int rowId = context.groupIdx;      // One row per workgroup
         int localId = context.localIdx;    // Thread ID within workgroup
@@ -1866,12 +1867,15 @@ public class TornadoVMCompute {
 
         float[] localSum = context.allocateFloatLocalArray(localSize);
         int layer = positionAndLayer.get(1);
-        int layerOffset = layer * n * d;
-        int rowOffset = layerOffset + rowId * n;
+        // The following line is kept for reference but no longer used directly
+        // int layerOffset = layer * n * d;
+        // The following line is kept for reference but no longer used directly
+        // int rowOffset = layerOffset + rowId * n;
         float partialSum = 0.0f;
 
         for (int j = localId; j < n; j += localSize) {
-            int matrixIdx = rowOffset + j;
+            // Updated matrix index calculation for 3D weight matrix
+            int matrixIdx = layer * (n * d) + rowId * n + j;
             int vecIdx = j;
             float matrixVal = w.get(matrixIdx);
             float vecVal = x.get(vecIdx);
@@ -1895,6 +1899,254 @@ public class TornadoVMCompute {
             float silu = hbVal * (1.0f / (1.0f + TornadoMath.exp(-hbVal)));
             float result = silu * sum;
             hb.set(outIdx, result);
+        }
+    }
+
+    public static void projectionTwoOptimizedX(KernelContext context,
+            FloatArray x, FloatArray hb, FloatArray w,
+            int n, int d, IntArray positionAndLayer, int localWorkGroupSize) {
+        int rowId = context.groupIdx;      // One row per workgroup
+        int localId = context.localIdx;    // Thread ID within workgroup
+        int localSize = localWorkGroupSize;
+
+        if (rowId >= d) {
+            return;
+        }
+
+        float[] localSum = context.allocateFloatLocalArray(localSize);
+        int layer = positionAndLayer.get(1);
+        int layerOffset = layer * n * d;
+        int rowOffset = layerOffset + rowId * n;
+        float partialSum = 0.0f;
+
+        for (int j = localId; j < n; j += localSize) {
+//            int matrixIdx = rowOffset + j;
+            int matrixIdx = layer * (n * d) + rowId * n + j;
+
+            int vecIdx = j;
+            float matrixVal = w.get(matrixIdx);
+            float vecVal = x.get(vecIdx);
+            partialSum += matrixVal * vecVal;
+        }
+
+        localSum[localId] = partialSum;
+        context.localBarrier();
+
+        for (int stride = localSize / 2; stride > 0; stride >>= 1) {
+            if (localId < stride) {
+                localSum[localId] += localSum[localId + stride];
+            }
+            context.localBarrier();
+        }
+
+        if (localId == 0) {
+            float sum = localSum[0];
+            int outIdx = rowId;
+            float hbVal = hb.get(outIdx);
+            float silu = hbVal * (1.0f / (1.0f + TornadoMath.exp(-hbVal)));
+            float result = silu * sum;
+            hb.set(outIdx, result);
+        }
+    }
+
+    public static void matmulDirectIndex(KernelContext context, FloatArray x, FloatArray hb, FloatArray w,
+            int n, int d, IntArray positionAndLayer, int localWorkGroupSize) {
+        // One row per workgroup (not per thread)
+        int rowId = context.groupIdx;
+        int localId = context.localIdx;
+        int localSize = localWorkGroupSize;
+
+        // Early exit if this workgroup is beyond our output dimension
+        if (rowId >= d) {
+            return;
+        }
+
+        // Allocate local memory for reduction
+        float[] localSum = context.allocateFloatLocalArray(localSize);
+
+        // Calculate offsets based on layer
+        int layer = positionAndLayer.get(1);
+        int layerOffset = layer * n * d;
+        int rowOffset = layerOffset + rowId * n;
+
+        // Each thread calculates partial dot product
+        float partialSum = 0.0f;
+        for (int j = localId; j < n; j += localSize) {
+            int matrixIdx = rowOffset + j;
+            partialSum += w.get(matrixIdx) * x.get(j);
+        }
+
+        // Store partial sum in local memory
+        localSum[localId] = partialSum;
+        context.localBarrier();
+
+        // Parallel reduction within workgroup
+        for (int stride = localSize / 2; stride > 0; stride >>= 1) {
+            if (localId < stride) {
+                localSum[localId] += localSum[localId + stride];
+            }
+            context.localBarrier();
+        }
+
+        // Thread 0 in each workgroup writes the final result
+        if (localId == 0) {
+            float sum = localSum[0];
+            float result = hb.get(rowId) + sum;
+            hb.set(rowId, result);
+        }
+    }
+
+    public static void matmulDirectIndexX(KernelContext context, FloatArray x, FloatArray hb, FloatArray w,
+            int n,  int d, IntArray positionAndLayer, int localWorkGroupSize) {
+        // One row per workgroup (not per thread)
+        int rowId = context.groupIdx;
+        int localId = context.localIdx;
+        int localSize = localWorkGroupSize;
+
+        // Early exit if this workgroup is beyond our output dimension
+        if (rowId >= d) {
+            return;
+        }
+
+        // Allocate local memory for reduction
+        float[] localSum = context.allocateFloatLocalArray(localSize);
+
+        // Calculate offsets based on layer
+        int layer = positionAndLayer.get(1);
+        int layerOffset = layer * n * d;
+        int rowOffset = layerOffset + rowId * n;
+
+        // Each thread calculates partial dot product
+        float partialSum = 0.0f;
+        for (int j = localId; j < n; j += localSize) {
+            int matrixIdx = rowOffset + j;
+            partialSum += w.get(matrixIdx) * x.get(j);
+        }
+
+        // Store partial sum in local memory
+        localSum[localId] = partialSum;
+        context.localBarrier();
+
+        // Parallel reduction within workgroup
+        for (int stride = localSize / 2; stride > 0; stride >>= 1) {
+            if (localId < stride) {
+                localSum[localId] += localSum[localId + stride];
+            }
+            context.localBarrier();
+        }
+
+        // Thread 0 in each workgroup writes the final result
+        if (localId == 0) {
+            float sum = localSum[0];
+            float result = hb.get(rowId) + sum;
+            hb.set(rowId, result);
+        }
+    }
+
+    public static void matmulDirectIndexActivation(KernelContext context, FloatArray x, FloatArray hb, FloatArray w,
+            int n,  int d, IntArray positionAndLayer, int localWorkGroupSize) {
+        // One row per workgroup (not per thread)
+        int rowId = context.groupIdx;
+        int localId = context.localIdx;
+        int localSize = localWorkGroupSize;
+
+        // Early exit if this workgroup is beyond our output dimension
+        if (rowId >= d) {
+            return;
+        }
+
+        // Allocate local memory for reduction
+        float[] localSum = context.allocateFloatLocalArray(localSize);
+
+        // Calculate offsets based on layer
+        int layer = positionAndLayer.get(1);
+        int layerOffset = layer * n * d;
+        int rowOffset = layerOffset + rowId * n;
+
+        // Each thread calculates partial dot product
+        float partialSum = 0.0f;
+        for (int j = localId; j < n; j += localSize) {
+            int matrixIdx = rowOffset + j;
+            partialSum += w.get(matrixIdx) * x.get(j);
+        }
+
+        // Store partial sum in local memory
+        localSum[localId] = partialSum;
+        context.localBarrier();
+
+        // Parallel reduction within workgroup
+        for (int stride = localSize / 2; stride > 0; stride >>= 1) {
+            if (localId < stride) {
+                localSum[localId] += localSum[localId + stride];
+            }
+            context.localBarrier();
+        }
+
+
+        // Thread 0 in each workgroup writes the final result
+        if (localId == 0) {
+            float sum = localSum[0];
+
+            float hbVal = hb.get(rowId);
+            float silu = hbVal * (1.0f / (1.0f + TornadoMath.exp(-hbVal)));
+            float result = silu * sum;
+
+
+            hb.set(rowId, result);
+        }
+    }
+
+
+    public static void matmulDirectIndexProjectionOne(KernelContext context, FloatArray x, FloatArray hb, FloatArray w,
+            int n,  int d, IntArray positionAndLayer, int localWorkGroupSize) {
+        // One row per workgroup (not per thread)
+        int rowId = context.groupIdx;
+        int localId = context.localIdx;
+        int localSize = localWorkGroupSize;
+
+        // Early exit if this workgroup is beyond our output dimension
+        if (rowId >= d) {
+            return;
+        }
+
+        // Allocate local memory for reduction
+        float[] localSum = context.allocateFloatLocalArray(localSize);
+
+        // Calculate offsets based on layer
+        int layer = positionAndLayer.get(1);
+        int layerOffset = layer * n * d;
+        int rowOffset = layerOffset + rowId * n;
+
+        // Each thread calculates partial dot product
+        float partialSum = 0.0f;
+        for (int j = localId; j < n; j += localSize) {
+            int matrixIdx = rowOffset + j;
+            partialSum += w.get(matrixIdx) * x.get(j);
+        }
+
+        // Store partial sum in local memory
+        localSum[localId] = partialSum;
+        context.localBarrier();
+
+        // Parallel reduction within workgroup
+        for (int stride = localSize / 2; stride > 0; stride >>= 1) {
+            if (localId < stride) {
+                localSum[localId] += localSum[localId + stride];
+            }
+            context.localBarrier();
+        }
+
+
+        // Thread 0 in each workgroup writes the final result
+        if (localId == 0) {
+            float sum = localSum[0];
+
+//            float hbVal = hb.get(rowId);
+//            float silu = hbVal * (1.0f / (1.0f + TornadoMath.exp(-hbVal)));
+//            float result = silu * sum;
+
+
+            hb.set(rowId, sum);
         }
     }
 }
