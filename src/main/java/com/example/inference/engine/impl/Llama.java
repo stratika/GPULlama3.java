@@ -300,11 +300,11 @@ public record Llama(Configuration configuration, Tokenizer tokenizer, Weights we
                 tokensPerSecond, totalTokens, totalSeconds);
 
         // Add extra GPU performance metrics
-        if (inferenceStartNanos > 0) {
-            double inferenceSeconds = (endNanos - inferenceStartNanos) / 1_000_000_000.0;
-            System.err.printf("GPU generation speed: %.2f tok/s\n",
-                    generatedTokens.size() / inferenceSeconds);
-        }
+//        if (inferenceStartNanos > 0) {
+//            double inferenceSeconds = (endNanos - inferenceStartNanos) / 1_000_000_000.0;
+//            System.err.printf("GPU generation speed: %.2f tok/s\n",
+//                    generatedTokens.size() / inferenceSeconds);
+//        }
 
         // Release GPU resources
         tornadoVMPlan.freeTornadoExecutionPlan();
@@ -406,10 +406,10 @@ public record Llama(Configuration configuration, Tokenizer tokenizer, Weights we
                 totalTokens / totalTimeSeconds, totalTokens, totalTimeSeconds);
 
         // Optional: print more detailed metrics
-        if (inferenceStartNanos > 0) {
-            System.err.printf("Generation speed: %.2f tok/s for %d tokens\n",
-                    generatedCount / inferenceTimeSeconds, generatedCount);
-        }
+//        if (inferenceStartNanos > 0) {
+//            System.err.printf("Generation speed: %.2f tok/s for %d tokens\n",
+//                    generatedCount / inferenceTimeSeconds, generatedCount);
+//        }
 
         // Clean up TornadoVM resources if used
         if (TornadoVMCompute.TORNADOVM) {

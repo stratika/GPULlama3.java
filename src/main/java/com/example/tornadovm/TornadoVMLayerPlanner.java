@@ -77,12 +77,12 @@ public class TornadoVMLayerPlanner {
                         state.wrapX, config.dim, config.rmsNormEps, state.localSize)
                 .task("mapContext", TornadoVMCompute::reductionOneBlock2WithLayer, context, state.wrapXb,
                         state.wrapX, weights.rms_att_weightFlat, state.temp, state.positionAndLayer, config.dim)
-                .task("qmatmul", TornadoVMCompute::matmulUnroll4,
-                        state.wrapQ, state.wrapXb, weights.wqFlat, config.dim, config.dim, state.positionAndLayer)
-                .task("kmatmul", TornadoVMCompute::matmulUnroll4,
-                        state.wrapK, state.wrapXb, weights.wkFlat, config.dim, config.kvDim, state.positionAndLayer)
-                .task("vmatmul", TornadoVMCompute::matmulUnroll4,
-                        state.wrapV, state.wrapXb, weights.wvFlat, config.dim, config.kvDim, state.positionAndLayer)
+                .task("qmatmul", TornadoVMCompute::matmulDirectIndexProjectionOne, context,
+                        state.wrapXb,  state.wrapQ, weights.wqFlat, config.dim, config.dim, state.positionAndLayer, 32)
+                .task("kmatmul", TornadoVMCompute::matmulDirectIndexProjectionOne, context,
+                        state.wrapXb,  state.wrapK, weights.wkFlat, config.dim, config.kvDim, state.positionAndLayer,32)
+                .task("vmatmul", TornadoVMCompute::matmulDirectIndexProjectionOne, context,
+                       state.wrapXb,   state.wrapV, weights.wvFlat, config.dim, config.kvDim, state.positionAndLayer, 32)
                 .task("rope", TornadoVMCompute::ropeRotation,context,
                             state.positionAndLayer, state.wrapQ, state.wrapK, config.kvDim,
                         config.headSize)
@@ -97,8 +97,8 @@ public class TornadoVMLayerPlanner {
 //                .task("residual1", TornadoVMCompute::addInPlace, state.wrapX, state.wrapXb2)
 
                 // final matmul to get the output of the attention fused with residual connection back into x
-                .task("matmul1", TornadoVMCompute::matmulUnroll4WithResidual,
-                        state.wrapX, state.wrapXb, weights.woFlat, config.dim, config.dim, state.positionAndLayer)
+                .task("matmul1", TornadoVMCompute::matmulDirectIndexX, context,
+                        state.wrapXb,  state.wrapX, weights.woFlat, config.dim, config.dim, state.positionAndLayer, 32)
 
                 .task("reductionsOneBlockFFN", TornadoVMCompute::reductionOneBlockWithLayer, context, state.tempFFN,
                         state.wrapX, config.dim, config.rmsNormEps, state.localSize)
@@ -106,19 +106,33 @@ public class TornadoVMLayerPlanner {
                         state.wrapX, weights.rms_ffn_weightFlat, state.tempFFN, state.positionAndLayer, config.dim)
 //                .task("projectOne", TornadoVMCompute::matmulUnroll4,
 //                        state.wrapHb, state.wrapXb, weights.w1Flat, config.dim, config.hiddenDim, state.positionAndLayer)
-                .task("projectOne", TornadoVMCompute::matmulDirectIndexProjectionOne, context,
-                       state.wrapXb,   state.wrapHb, weights.w1Flat, config.dim, config.hiddenDim, state.positionAndLayer, 32)
+
+
+//                //todo: working
+//                .task("projectOne", TornadoVMCompute::matmulDirectIndexProjectionOne, context,
+//                       state.wrapXb,   state.wrapHb, weights.w1Flat, config.dim, config.hiddenDim, state.positionAndLayer, 32)
+//
+//
+
 //                .task("projectionThree", TornadoVMCompute::matmulUnroll4,
 //                        state.wrapHb2, state.wrapXb, weights.w3Flat, config.dim, config.hiddenDim, state.positionAndLayer)
 //                .task("silu_elementwise_mul", TornadoVMCompute::siluElemWiseMulActivation,
 //                        config.hiddenDim, state.wrapHb, state.wrapHb2)
 //                .task("combinedProjectionAndActivation", TornadoVMCompute::combinedMatmulSiluActivation,context,
 //                        state.wrapHb, state.wrapXb, weights.w3Flat, config.dim, config.hiddenDim, state.positionAndLayer)
-                .task("combinedProjectionAndActivation", TornadoVMCompute::matmulDirectIndexActivation,context,
-                        state.wrapXb,  state.wrapHb, weights.w3Flat, config.dim, config.hiddenDim, state.positionAndLayer, 32)
+
+//                //todo: working
+//                .task("combinedProjectionAndActivation", TornadoVMCompute::matmulDirectIndexActivation,context,
+//                        state.wrapXb,  state.wrapHb, weights.w3Flat, config.dim, config.hiddenDim, state.positionAndLayer, 32)
+//
+
 //                .task("projectionTwo", TornadoVMCompute::matmulUnroll4,
 //                        state.wrapXb, state.wrapHb, weights.w2Flat, config.hiddenDim, config.dim, state.positionAndLayer)
 //                .task("residual2", TornadoVMCompute::addInPlace, state.wrapX, state.wrapXb)
+
+                .task("fused_ffn_w1_w3", TornadoVMCompute::fused_ffn_w1_w3_glu_act, context,
+                        state.wrapXb,   state.wrapHb, weights.w1Flat, weights.w3Flat, config.dim, config.hiddenDim, state.positionAndLayer, 32)
+
 
                 // final matmul (down proj) to get the output of the ffn fused with residual connection back into x
                 .task("projectionTwo", TornadoVMCompute::matmulDirectIndexX, context,
@@ -185,9 +199,24 @@ public class TornadoVMLayerPlanner {
 
         tornadoForwardScheduler.addWorkerGrid("layer.projectionTwo", projectionTwo);
 
-        tornadoForwardScheduler.addWorkerGrid("layer.combinedProjectionAndActivation", combinedProjectionAndActivation);
+//        tornadoForwardScheduler.addWorkerGrid("layer.combinedProjectionAndActivation", combinedProjectionAndActivation);
 
-        tornadoForwardScheduler.addWorkerGrid("layer.projectOne", projectionOne);
+//        tornadoForwardScheduler.addWorkerGrid("layer.projectOne", projectionOne);
+
+        tornadoForwardScheduler.addWorkerGrid("layer.fused_ffn_w1_w3", projectionOne);
+
+
+
+        tornadoForwardScheduler.addWorkerGrid("layer.matmul1", projectionTwo);
+
+
+        WorkerGrid kvdimWork = new WorkerGrid1D(config.kvDim * 32);
+        kvdimWork.setLocalWork(32, 1, 1);
+
+        tornadoForwardScheduler.addWorkerGrid("layer.qmatmul", projectionTwo);
+        tornadoForwardScheduler.addWorkerGrid("layer.kmatmul", kvdimWork);
+        tornadoForwardScheduler.addWorkerGrid("layer.vmatmul", kvdimWork);
+
 
 
         tornadoForwardScheduler.addWorkerGrid("logits.projection", vocabWorker);
