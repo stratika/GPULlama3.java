@@ -50,7 +50,6 @@ public class TornadoVMLayerPlanner {
         taskGraphs.add(activationUpdate.snapshot());
 
         // ================ TASK GRAPH 1: RMS NORM ================
-
         TaskGraph unifiedLayer = new TaskGraph("layer")
                 .consumeFromDevice(state.wrapX)
                 .transferToDevice(DataTransferMode.FIRST_EXECUTION,
@@ -65,7 +64,6 @@ public class TornadoVMLayerPlanner {
                         weights.rms_ffn_weightFlat,
                         weights.w1Flat, weights.w2Flat, weights.w3Flat,
                         state.wrapHb
-//                        state.wrapHb2 //<- no need for hb2 in fused
                 )
                 .transferToDevice(DataTransferMode.EVERY_EXECUTION,
                         state.positionAndLayer,
@@ -73,77 +71,39 @@ public class TornadoVMLayerPlanner {
                         state.tempFFN,
                         state.tempLogits
                         )
-                .task("reductionsOneBlock", TornadoVMCompute::reductionOneBlockWithLayer, context, state.temp,
+                .task("reductionsOneBlock", TransformerComputeKernels::reductionOneBlockWithLayer, context, state.temp,
                         state.wrapX, config.dim, config.rmsNormEps, state.localSize)
-                .task("mapContext", TornadoVMCompute::reductionOneBlock2WithLayer, context, state.wrapXb,
+                .task("mapContext", TransformerComputeKernels::reductionOneBlock2WithLayer, context, state.wrapXb,
                         state.wrapX, weights.rms_att_weightFlat, state.temp, state.positionAndLayer, config.dim)
-                .task("qmatmul", TornadoVMCompute::matmulDirectIndexProjectionOne, context,
+                .task("qmatmul", TransformerComputeKernels::matrixVectorGeneric, context,
                         state.wrapXb,  state.wrapQ, weights.wqFlat, config.dim, config.dim, state.positionAndLayer, 32)
-                .task("kmatmul", TornadoVMCompute::matmulDirectIndexProjectionOne, context,
+                .task("kmatmul", TransformerComputeKernels::matrixVectorGeneric, context,
                         state.wrapXb,  state.wrapK, weights.wkFlat, config.dim, config.kvDim, state.positionAndLayer,32)
-                .task("vmatmul", TornadoVMCompute::matmulDirectIndexProjectionOne, context,
+                .task("vmatmul", TransformerComputeKernels::matrixVectorGeneric, context,
                        state.wrapXb,   state.wrapV, weights.wvFlat, config.dim, config.kvDim, state.positionAndLayer, 32)
-                .task("rope", TornadoVMCompute::ropeRotation,context,
+                .task("rope", TransformerComputeKernels::ropeRotation,context,
                             state.positionAndLayer, state.wrapQ, state.wrapK, config.kvDim,
                         config.headSize)
-                .task("copyToCaches", TornadoVMCompute::copyToCache,
+                .task("copyToCaches", TransformerComputeKernels::copyToCache,
                         state.wrapKeyCache, state.wrapK,  state.wrapValueCache, state.wrapV, state.positionAndLayer)
                 .task("parallel-attention", TornadoVMCompute::processHeadsParallel,
                         state.wrapQ, state.wrapKeyCache, state.wrapValueCache, state.wrapXb,
                         config.numberOfHeads, config.headSize, config.kvDim, config.kvMul, config.vocabularySize,
                         state.positionAndLayer, state.wrapAtt)
-//                .task("matmul1", TornadoVMCompute::matmulUnroll4,
-//                        state.wrapXb2, state.wrapXb, weights.woFlat, config.dim, config.dim, state.positionAndLayer)
-//                .task("residual1", TornadoVMCompute::addInPlace, state.wrapX, state.wrapXb2)
-
-                // final matmul to get the output of the attention fused with residual connection back into x
-                .task("matmul1", TornadoVMCompute::matmulDirectIndexX, context,
+                .task("matmul1", TransformerComputeKernels::matrixVectorGenericWithResidual, context,
                         state.wrapXb,  state.wrapX, weights.woFlat, config.dim, config.dim, state.positionAndLayer, 32)
-
-                .task("reductionsOneBlockFFN", TornadoVMCompute::reductionOneBlockWithLayer, context, state.tempFFN,
+                .task("reductionsOneBlockFFN", TransformerComputeKernels::reductionOneBlockWithLayer, context, state.tempFFN,
                         state.wrapX, config.dim, config.rmsNormEps, state.localSize)
-                .task("mapContextFFN", TornadoVMCompute::reductionOneBlock2WithLayer, context, state.wrapXb,
+                .task("mapContextFFN", TransformerComputeKernels::reductionOneBlock2WithLayer, context, state.wrapXb,
                         state.wrapX, weights.rms_ffn_weightFlat, state.tempFFN, state.positionAndLayer, config.dim)
-//                .task("projectOne", TornadoVMCompute::matmulUnroll4,
-//                        state.wrapHb, state.wrapXb, weights.w1Flat, config.dim, config.hiddenDim, state.positionAndLayer)
-
-
-//                //todo: working
-//                .task("projectOne", TornadoVMCompute::matmulDirectIndexProjectionOne, context,
-//                       state.wrapXb,   state.wrapHb, weights.w1Flat, config.dim, config.hiddenDim, state.positionAndLayer, 32)
-//
-//
-
-//                .task("projectionThree", TornadoVMCompute::matmulUnroll4,
-//                        state.wrapHb2, state.wrapXb, weights.w3Flat, config.dim, config.hiddenDim, state.positionAndLayer)
-//                .task("silu_elementwise_mul", TornadoVMCompute::siluElemWiseMulActivation,
-//                        config.hiddenDim, state.wrapHb, state.wrapHb2)
-//                .task("combinedProjectionAndActivation", TornadoVMCompute::combinedMatmulSiluActivation,context,
-//                        state.wrapHb, state.wrapXb, weights.w3Flat, config.dim, config.hiddenDim, state.positionAndLayer)
-
-//                //todo: working
-//                .task("combinedProjectionAndActivation", TornadoVMCompute::matmulDirectIndexActivation,context,
-//                        state.wrapXb,  state.wrapHb, weights.w3Flat, config.dim, config.hiddenDim, state.positionAndLayer, 32)
-//
-
-//                .task("projectionTwo", TornadoVMCompute::matmulUnroll4,
-//                        state.wrapXb, state.wrapHb, weights.w2Flat, config.hiddenDim, config.dim, state.positionAndLayer)
-//                .task("residual2", TornadoVMCompute::addInPlace, state.wrapX, state.wrapXb)
-
-                .task("fused_ffn_w1_w3", TornadoVMCompute::fused_ffn_w1_w3_glu_act, context,
+                .task("fused_ffn_w1_w3", TransformerComputeKernels::fusedFeedForwardWithSiLUAndGLUActivation, context,
                         state.wrapXb,   state.wrapHb, weights.w1Flat, weights.w3Flat, config.dim, config.hiddenDim, state.positionAndLayer, 32)
-
-
-                // final matmul (down proj) to get the output of the ffn fused with residual connection back into x
-                .task("projectionTwo", TornadoVMCompute::matmulDirectIndexX, context,
+                .task("projectionTwo", TransformerComputeKernels::matrixVectorGenericWithResidual, context,
                  state.wrapHb, state.wrapX, weights.w2Flat, config.hiddenDim, config.dim, state.positionAndLayer, 32)
-//                .task("projectionTwo", TornadoVMCompute::matmulUnroll4WithResidual, state.wrapX, state.wrapHb,
-//                        weights.w2Flat, config.hiddenDim, config.dim, state.positionAndLayer)
-
                 .persistOnDevice(state.wrapX, state.tempLogits, context);
         taskGraphs.add(unifiedLayer.snapshot());
 
-
+        //todo: optimize tempLogits move the copy in here -"> reduce from per layer granularity to per token granularity
         TaskGraph logits = new TaskGraph("logits")
                 .consumeFromDevice(unifiedLayer.getTaskGraphName(),
                         state.wrapX, state.tempLogits
@@ -153,14 +113,10 @@ public class TornadoVMLayerPlanner {
                         weights.wclsByteArray,
                         weights.rms_final_weight_as_floatArray
                 )
-
-                .task("reductionsOneBlockLogits", TornadoVMCompute::reductionOneBlockWithLayer, context, state.tempLogits,
+                .task("reductionsOneBlockLogits", TransformerComputeKernels::reductionOneBlockWithLayer, context, state.tempLogits,
                         state.wrapX, config.dim, config.rmsNormEps, state.localSize)
-                .task("mapContextLogits", TornadoVMCompute::reductionOneBlock2WithLogits, context, state.wrapX,
+                .task("mapContextLogits", TransformerComputeKernels::reductionOneBlock2WithLogits, context, state.wrapX,
                         weights.rms_final_weight_as_floatArray, state.tempLogits, state.positionAndLayer, config.dim)
-
-//                .task("rmsLogits", TornadoVMCompute::rmsnormInnOut,
-//                            state.wrapX, weights.rms_final_weight_as_floatArray, config.dim, config.rmsNormEps)
                 .task("projection", TornadoVMCompute::matmulTornadoQ8Optimized, context, weights.wclsByteArray, state.wrapX, state.wrapLogits, config.dim)
                 .transferToHost(DataTransferMode.EVERY_EXECUTION, state.wrapLogits);
         taskGraphs.add(logits.snapshot());
