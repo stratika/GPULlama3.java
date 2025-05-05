@@ -12,13 +12,12 @@ import uk.ac.manchester.tornado.api.TaskGraph;
 import uk.ac.manchester.tornado.api.WorkerGrid;
 import uk.ac.manchester.tornado.api.WorkerGrid1D;
 import uk.ac.manchester.tornado.api.enums.DataTransferMode;
-import uk.ac.manchester.tornado.api.types.arrays.FloatArray;
 
 import java.util.ArrayList;
 import java.util.List;
 
 public class TornadoVMLayerPlanner {
-//    private static final int LOCAL_RMS_MM = Integer.getInteger("logits.projection", 16);
+    private static final int LOCAL_WORK_GROUP_SIZE_ALLOC = 32;
 
     private final State state;
     private final Configuration config;
@@ -28,7 +27,6 @@ public class TornadoVMLayerPlanner {
         this.state = state;
         this.config = model.configuration();
         this.weights = model.weights();
-
     }
 
     public Tuple2<List<ImmutableTaskGraph>, GridScheduler> setupTornadoForwardPlan() {
@@ -68,19 +66,18 @@ public class TornadoVMLayerPlanner {
                 .transferToDevice(DataTransferMode.EVERY_EXECUTION,
                         state.positionAndLayer,
                         state.temp,
-                        state.tempFFN,
-                        state.tempLogits
+                        state.tempFFN
                         )
                 .task("reductionsOneBlock", TransformerComputeKernels::reductionOneBlockWithLayer, context, state.temp,
                         state.wrapX, config.dim, config.rmsNormEps, state.localSize)
                 .task("mapContext", TransformerComputeKernels::reductionOneBlock2WithLayer, context, state.wrapXb,
                         state.wrapX, weights.rms_att_weightFlat, state.temp, state.positionAndLayer, config.dim)
                 .task("qmatmul", TransformerComputeKernels::matrixVectorGeneric, context,
-                        state.wrapXb,  state.wrapQ, weights.wqFlat, config.dim, config.dim, state.positionAndLayer, 32)
+                        state.wrapXb,  state.wrapQ, weights.wqFlat, config.dim, config.dim, state.positionAndLayer, LOCAL_WORK_GROUP_SIZE_ALLOC)
                 .task("kmatmul", TransformerComputeKernels::matrixVectorGeneric, context,
-                        state.wrapXb,  state.wrapK, weights.wkFlat, config.dim, config.kvDim, state.positionAndLayer,32)
+                        state.wrapXb,  state.wrapK, weights.wkFlat, config.dim, config.kvDim, state.positionAndLayer,LOCAL_WORK_GROUP_SIZE_ALLOC)
                 .task("vmatmul", TransformerComputeKernels::matrixVectorGeneric, context,
-                       state.wrapXb,   state.wrapV, weights.wvFlat, config.dim, config.kvDim, state.positionAndLayer, 32)
+                       state.wrapXb,   state.wrapV, weights.wvFlat, config.dim, config.kvDim, state.positionAndLayer, LOCAL_WORK_GROUP_SIZE_ALLOC)
                 .task("rope", TransformerComputeKernels::ropeRotation,context,
                             state.positionAndLayer, state.wrapQ, state.wrapK, config.kvDim,
                         config.headSize)
@@ -91,22 +88,24 @@ public class TornadoVMLayerPlanner {
                         config.numberOfHeads, config.headSize, config.kvDim, config.kvMul, config.vocabularySize,
                         state.positionAndLayer, state.wrapAtt)
                 .task("matmul1", TransformerComputeKernels::matrixVectorGenericWithResidual, context,
-                        state.wrapXb,  state.wrapX, weights.woFlat, config.dim, config.dim, state.positionAndLayer, 32)
+                        state.wrapXb,  state.wrapX, weights.woFlat, config.dim, config.dim, state.positionAndLayer, LOCAL_WORK_GROUP_SIZE_ALLOC)
                 .task("reductionsOneBlockFFN", TransformerComputeKernels::reductionOneBlockWithLayer, context, state.tempFFN,
                         state.wrapX, config.dim, config.rmsNormEps, state.localSize)
                 .task("mapContextFFN", TransformerComputeKernels::reductionOneBlock2WithLayer, context, state.wrapXb,
                         state.wrapX, weights.rms_ffn_weightFlat, state.tempFFN, state.positionAndLayer, config.dim)
                 .task("fused_ffn_w1_w3", TransformerComputeKernels::fusedFeedForwardWithSiLUAndGLUActivation, context,
-                        state.wrapXb,   state.wrapHb, weights.w1Flat, weights.w3Flat, config.dim, config.hiddenDim, state.positionAndLayer, 32)
+                        state.wrapXb,   state.wrapHb, weights.w1Flat, weights.w3Flat, config.dim, config.hiddenDim, state.positionAndLayer, LOCAL_WORK_GROUP_SIZE_ALLOC)
                 .task("projectionTwo", TransformerComputeKernels::matrixVectorGenericWithResidual, context,
-                 state.wrapHb, state.wrapX, weights.w2Flat, config.hiddenDim, config.dim, state.positionAndLayer, 32)
-                .persistOnDevice(state.wrapX, state.tempLogits, context);
+                 state.wrapHb, state.wrapX, weights.w2Flat, config.hiddenDim, config.dim, state.positionAndLayer, LOCAL_WORK_GROUP_SIZE_ALLOC)
+                .persistOnDevice(state.wrapX, context);
         taskGraphs.add(unifiedLayer.snapshot());
 
-        //todo: optimize tempLogits move the copy in here -"> reduce from per layer granularity to per token granularity
         TaskGraph logits = new TaskGraph("logits")
                 .consumeFromDevice(unifiedLayer.getTaskGraphName(),
-                        state.wrapX, state.tempLogits
+                        state.wrapX
+                )
+                .transferToDevice(DataTransferMode.EVERY_EXECUTION,
+                        state.tempLogits
                 )
                 .transferToDevice(DataTransferMode.FIRST_EXECUTION,
                         state.wrapLogits,
@@ -128,65 +127,49 @@ public class TornadoVMLayerPlanner {
     private GridScheduler setupGridSchedulers() {
         GridScheduler tornadoForwardScheduler = new GridScheduler();
 
+        // Single worker for tasks running with a single thread
         WorkerGrid singleWorker = new WorkerGrid1D(1);
         singleWorker.setGlobalWork(1, 1, 1);
         singleWorker.setLocalWork(1, 1, 1);
 
-        WorkerGrid vocabWorker = new WorkerGrid1D(config.vocabularySize);
-        vocabWorker.setGlobalWork(config.vocabularySize, 1, 1);
-        vocabWorker.setLocalWork(16, 1, 1);
-
+        // config.dim / 2 Worker for RoPE
         WorkerGrid ropeWorker = new WorkerGrid1D(config.dim / 2);
         ropeWorker.setGlobalWork(config.dim / 2, 1, 1);
         ropeWorker.setLocalWork(128, 1, 1);
 
-        WorkerGrid projectionTwo = new WorkerGrid1D(config.dim * 32);
-        projectionTwo.setLocalWork(32, 1, 1);
+        // config.dim Worker for Row major access
+        int configDimRowMajorGlobal = config.dim * LOCAL_WORK_GROUP_SIZE_ALLOC;
+        WorkerGrid configDimRowMajorGlobalWorker = new WorkerGrid1D(configDimRowMajorGlobal);
+        configDimRowMajorGlobalWorker.setLocalWork(LOCAL_WORK_GROUP_SIZE_ALLOC, 1, 1);
 
+        // config.kvDim Worker for Row major access
+        int configKvDimRowMajorGlobal = config.kvDim * LOCAL_WORK_GROUP_SIZE_ALLOC;
+        WorkerGrid configKvDimRowMajorGlobalWorker = new WorkerGrid1D(configKvDimRowMajorGlobal);
+        configKvDimRowMajorGlobalWorker.setLocalWork(LOCAL_WORK_GROUP_SIZE_ALLOC, 1, 1);
 
-        WorkerGrid combinedProjectionAndActivation = new WorkerGrid1D(config.hiddenDim * 32);
-        combinedProjectionAndActivation.setLocalWork(32, 1, 1);
+        // config.hiddenDim * 32 Worker for Row major access
+        int configHiddenDimRowMajor = config.hiddenDim * LOCAL_WORK_GROUP_SIZE_ALLOC;
+        WorkerGrid configHiddenDimRowMajorWorker = new WorkerGrid1D(configHiddenDimRowMajor);
+        configHiddenDimRowMajorWorker.setLocalWork(LOCAL_WORK_GROUP_SIZE_ALLOC, 1, 1);
 
-        WorkerGrid projectionOne = new WorkerGrid1D(config.hiddenDim * 32);
-        projectionOne.setLocalWork(32, 1, 1);
-
+        // Map workers to tasks
         tornadoForwardScheduler.addWorkerGrid("activationUpdate.updateX", singleWorker);
-
+        tornadoForwardScheduler.addWorkerGrid("layer.qmatmul", configDimRowMajorGlobalWorker);
+        tornadoForwardScheduler.addWorkerGrid("layer.kmatmul", configKvDimRowMajorGlobalWorker);
+        tornadoForwardScheduler.addWorkerGrid("layer.vmatmul", configKvDimRowMajorGlobalWorker);
         tornadoForwardScheduler.addWorkerGrid("layer.rope", ropeWorker);
+        tornadoForwardScheduler.addWorkerGrid("layer.matmul1", configDimRowMajorGlobalWorker);
+        tornadoForwardScheduler.addWorkerGrid("layer.projectionTwo", configDimRowMajorGlobalWorker);
+        tornadoForwardScheduler.addWorkerGrid("layer.fused_ffn_w1_w3", configHiddenDimRowMajorWorker);
 
-        tornadoForwardScheduler.addWorkerGrid("layer.projectionTwo", projectionTwo);
-
-//        tornadoForwardScheduler.addWorkerGrid("layer.combinedProjectionAndActivation", combinedProjectionAndActivation);
-
-//        tornadoForwardScheduler.addWorkerGrid("layer.projectOne", projectionOne);
-
-        tornadoForwardScheduler.addWorkerGrid("layer.fused_ffn_w1_w3", projectionOne);
-
-
-
-        tornadoForwardScheduler.addWorkerGrid("layer.matmul1", projectionTwo);
-
-
-        WorkerGrid kvdimWork = new WorkerGrid1D(config.kvDim * 32);
-        kvdimWork.setLocalWork(32, 1, 1);
-
-        tornadoForwardScheduler.addWorkerGrid("layer.qmatmul", projectionTwo);
-        tornadoForwardScheduler.addWorkerGrid("layer.kmatmul", kvdimWork);
-        tornadoForwardScheduler.addWorkerGrid("layer.vmatmul", kvdimWork);
-
-
+        // config .vocabularySize Worker for Normaml access MatVec
+        WorkerGrid vocabWorker = new WorkerGrid1D(config.vocabularySize);
+        vocabWorker.setGlobalWork(config.vocabularySize, 1, 1);
+        vocabWorker.setLocalWork(16, 1, 1);
 
         tornadoForwardScheduler.addWorkerGrid("logits.projection", vocabWorker);
 
-
-        WorkerGrid projectionThree = new WorkerGrid1D(config.hiddenDim );
-        projectionThree.setGlobalWork(config.hiddenDim , 1, 1);
-        projectionThree.setLocalWork(128, 1, 1);
-
-//        tornadoForwardScheduler.addWorkerGrid("layer.combinedProjectionAndActivation", projectionThree);
-
-
-        // In your setupGridSchedulers method
+        // Gridscheduler for all RMS normalizations
         WorkerGrid rmsNormWorker = new WorkerGrid1D(config.dim);
         rmsNormWorker.setGlobalWork(config.dim, 1, 1);  // Set global work size to total dimension
         rmsNormWorker.setLocalWork(256, 1, 1);         // Set local work size to 256 (standard efficient size)
@@ -197,11 +180,8 @@ public class TornadoVMLayerPlanner {
         tornadoForwardScheduler.addWorkerGrid("layer.reductionsOneBlockFFN", rmsNormWorker);
         tornadoForwardScheduler.addWorkerGrid("layer.mapContextFFN", rmsNormWorker);
 
-
         tornadoForwardScheduler.addWorkerGrid("logits.reductionsOneBlockLogits", rmsNormWorker);
         tornadoForwardScheduler.addWorkerGrid("logits.mapContextLogits", rmsNormWorker);
-        // Make sure to merge this scheduler with your tornadoForwardScheduler
-
 
         return tornadoForwardScheduler;
     }
