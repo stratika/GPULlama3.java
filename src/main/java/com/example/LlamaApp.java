@@ -12,10 +12,12 @@ import com.example.inference.engine.impl.Options;
 import com.example.loader.weights.ModelLoader;
 import com.example.loader.weights.State;
 import com.example.tornadovm.FloatArrayUtils;
+import com.example.tornadovm.TornadoVMCompute;
 import uk.ac.manchester.tornado.api.types.arrays.FloatArray;
 
 import java.io.IOException;
 import java.util.*;
+import java.util.function.IntConsumer;
 import java.util.random.RandomGenerator;
 import java.util.random.RandomGeneratorFactory;
 
@@ -23,6 +25,8 @@ import java.util.random.RandomGeneratorFactory;
 public class LlamaApp {
     public static final boolean USE_VECTOR_API = Boolean.parseBoolean(System.getProperty("llama.VectorAPI", "true"));
     public static final boolean USE_AOT = Boolean.parseBoolean(System.getProperty("llama.AOT", "false"));
+    public static final boolean TORNADOVM = Boolean.parseBoolean(System.getProperty("use.tornadovm", "false"));
+
 
     static Sampler selectSampler(int vocabularySize, float temperature, float topp, long rngSeed) {
         Sampler sampler;
@@ -122,15 +126,38 @@ public class LlamaApp {
         }
         promptTokens.addAll(chatFormat.encodeMessage(new ChatFormat.Message(ChatFormat.Role.USER, options.prompt())));
         promptTokens.addAll(chatFormat.encodeHeader(new ChatFormat.Message(ChatFormat.Role.ASSISTANT, "")));
+        List<Integer> responseTokens;
 
-        Set<Integer> stopTokens = chatFormat.getStopTokens();
-        List<Integer> responseTokens = Llama.generateTokens(model, state, 0, promptTokens, stopTokens, options.maxTokens(), sampler, options.echo(), token -> {
+        // Define the token consumer
+        IntConsumer tokenConsumer = token -> {
             if (options.stream()) {
                 if (!model.tokenizer().isSpecialToken(token)) {
                     System.out.print(model.tokenizer().decode(List.of(token)));
                 }
             }
-        });
+        };
+
+        Set<Integer> stopTokens = chatFormat.getStopTokens();
+        if (TornadoVMCompute.TORNADOVM) {
+            // Call generateTokensGPU without the token consumer parameter
+            responseTokens = Llama.generateTokensGPU(model, state, 0, promptTokens, stopTokens,
+                    options.maxTokens(), sampler, options.echo());
+
+            // Handle token output separately if needed
+            // You might need to iterate through responseTokens and process them
+            if (options.stream()) {
+                for (Integer token : responseTokens) {
+                    if (!model.tokenizer().isSpecialToken(token)) {
+                        System.out.print(model.tokenizer().decode(List.of(token)));
+                    }
+                }
+            }
+        } else {
+            // CPU path still uses the token consumer
+            responseTokens = Llama.generateTokens(model, state, 0, promptTokens, stopTokens,
+                    options.maxTokens(), sampler, options.echo(), tokenConsumer);
+        }
+
         if (!responseTokens.isEmpty() && stopTokens.contains(responseTokens.getLast())) {
             responseTokens.removeLast();
         }

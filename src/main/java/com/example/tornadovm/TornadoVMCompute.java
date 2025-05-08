@@ -1,7 +1,6 @@
 package com.example.tornadovm;
 
 import com.example.core.model.GGMLType;
-
 import com.example.core.types.Float16;
 import uk.ac.manchester.tornado.api.KernelContext;
 import uk.ac.manchester.tornado.api.annotations.Parallel;
@@ -10,6 +9,8 @@ import uk.ac.manchester.tornado.api.math.TornadoMath;
 import uk.ac.manchester.tornado.api.types.arrays.ByteArray;
 import uk.ac.manchester.tornado.api.types.arrays.FloatArray;
 import uk.ac.manchester.tornado.api.types.arrays.IntArray;
+import uk.ac.manchester.tornado.api.types.collections.VectorFloat4;
+import uk.ac.manchester.tornado.api.types.vectors.Float4;
 
 import java.util.stream.IntStream;
 
@@ -19,8 +20,7 @@ public class TornadoVMCompute {
     public TornadoVMCompute() {
     }
 
-    public static void rmsnorm(FloatArray output, FloatArray input, FloatArray weights, IntArray positionAndLayer,
-            int size, float ermsNorm) {
+    public static void rmsnorm(FloatArray output, FloatArray input, FloatArray weights, IntArray positionAndLayer, int size, float ermsNorm) {
         // Calculate layer offset - weights for this layer start at this offset
         int layerOffset = positionAndLayer.get(1) * size;
 
@@ -31,15 +31,15 @@ public class TornadoVMCompute {
         }
         sumSquares /= size;
         sumSquares += ermsNorm; // Add epsilon for numerical stability
-        float scale = 1.0f / (float)TornadoMath.sqrt(sumSquares);
+        float scale = 1.0f / (float) TornadoMath.sqrt(sumSquares);
 
         // Normalize and scale with weights from the correct layer
         for (int j = 0; j < size; j++) {
-            output.set(j,weights.get(layerOffset + j) * (scale * input.get(j)));
+            output.set(j, weights.get(layerOffset + j) * (scale * input.get(j)));
         }
     }
-    public static void reductionOneBlockWithLayer(KernelContext context, FloatArray output, FloatArray x,
-         int size, float ermsNorm, int localMemSize) {
+
+    public static void reductionOneBlockWithLayer(KernelContext context, FloatArray output, FloatArray x, int size, float ermsNorm, int localMemSize) {
         int gid = context.globalIdx;
         int lid = context.localIdx;
         int groupId = context.groupIdx;
@@ -74,7 +74,7 @@ public class TornadoVMCompute {
         if (gid == 0) {
             // Combine partial sums from all workgroups
             float ss = 0.0f;
-            for (int i = 1; i <= 8; i++) {  // Assuming 8 workgroups
+            for (int i = 1; i <= (size/localMemSize); i++) {  // Assuming 8 workgroups
                 ss += output.get(i);
             }
 
@@ -85,7 +85,6 @@ public class TornadoVMCompute {
         }
     }
 
-
     public static void initTempToZero(FloatArray temp, FloatArray tempFFN) {
         // Zero out all elements (even though in this case we only need first 9 elements)
         for (@Parallel int i = 0; i < temp.getSize(); i++) {
@@ -94,8 +93,7 @@ public class TornadoVMCompute {
         }
     }
 
-    public static void reductionOneBlockWithLayer(KernelContext context, FloatArray output, FloatArray x,
-            IntArray positionAndLayer, int size, float ermsNorm) {
+    public static void reductionOneBlockWithLayer(KernelContext context, FloatArray output, FloatArray x, IntArray positionAndLayer, int size, float ermsNorm) {
         int gid = context.globalIdx;
         int lid = context.localIdx;
         int groupSize = context.localGroupSizeX;
@@ -127,9 +125,7 @@ public class TornadoVMCompute {
         }
     }
 
-    public static void reductionOneBlock2WithLayer(KernelContext context, FloatArray output, FloatArray x,
-            FloatArray weights, FloatArray temp,
-            IntArray positionAndLayer, int size) {
+    public static void reductionOneBlock2WithLayer(KernelContext context, FloatArray output, FloatArray x, FloatArray weights, FloatArray temp, IntArray positionAndLayer, int size) {
         int gid = context.globalIdx;
 
         if (gid < size) {
@@ -142,14 +138,12 @@ public class TornadoVMCompute {
         }
     }
 
-    public static void reductionOneBlock2WithL(KernelContext context, FloatArray output,
-            FloatArray weights, FloatArray temp,
-            IntArray positionAndLayer, int size) {
+    public static void reductionOneBlock2WithLogits(KernelContext context, FloatArray output,  FloatArray weights, FloatArray temp, IntArray positionAndLayer, int size) {
         int gid = context.globalIdx;
 
         if (gid < size) {
             // Get the layer offset from positionAndLayer
-            int layerOffset = 0 * size;
+            int layerOffset =0  * size;
 
             // Apply normalization with the correct weight for this layer
             float ss = temp.get(0);
@@ -158,8 +152,8 @@ public class TornadoVMCompute {
     }
 
 
-    public static void mapContextLogits(KernelContext context, FloatArray output,
-            FloatArray weights, FloatArray tempLogits, int size) {
+
+    public static void mapContextLogits(KernelContext context, FloatArray output, FloatArray weights, FloatArray tempLogits, int size) {
         int gid = context.globalIdx;
 
         if (gid < size) {
@@ -169,14 +163,10 @@ public class TornadoVMCompute {
         }
     }
 
-
-
-
-//                    .task("reduce", TornadoVMCompute::reduce, ss, state.wrapX)
-//                .task("singleNorm", TornadoVMCompute::singleNorm, ss, config.dim, config.rmsNormEps)
-//                .task("mapWithScale", TornadoVMCompute::mapWithScaleAndNorm, state.wrapXb, weights.rms_att_weightFlat,
-//            state.wrapX, ss, state.positionAndLayer, config.dim)
-
+    //                    .task("reduce", TornadoVMCompute::reduce, ss, state.wrapX)
+    //                .task("singleNorm", TornadoVMCompute::singleNorm, ss, config.dim, config.rmsNormEps)
+    //                .task("mapWithScale", TornadoVMCompute::mapWithScaleAndNorm, state.wrapXb, weights.rms_att_weightFlat,
+    //            state.wrapX, ss, state.positionAndLayer, config.dim)
 
     public static void reduce(@Reduce FloatArray output, FloatArray x) {
         output.set(0, 0.0f);
@@ -186,7 +176,6 @@ public class TornadoVMCompute {
         }
     }
 
-
     public static void singleNorm(FloatArray output, int size, float ermsNorm) {
         float ss = output.get(0);
         ss /= size;
@@ -195,16 +184,15 @@ public class TornadoVMCompute {
         output.set(0, ss);
     }
 
-//    public static void mapWithScaleAndNorm(FloatArray output, FloatArray weights, FloatArray input, FloatArray normFactor) {
-//        float scale = normFactor.get(0);  // Get the scale computed by singleNorm
-//        for (@Parallel int i = 0; i < input.getSize(); i++) {
-//            // Now we apply both the scale and the weights
-//            output.set(i, weights.get(i) * (scale * input.get(i)));
-//        }
-//    }
+    //    public static void mapWithScaleAndNorm(FloatArray output, FloatArray weights, FloatArray input, FloatArray normFactor) {
+    //        float scale = normFactor.get(0);  // Get the scale computed by singleNorm
+    //        for (@Parallel int i = 0; i < input.getSize(); i++) {
+    //            // Now we apply both the scale and the weights
+    //            output.set(i, weights.get(i) * (scale * input.get(i)));
+    //        }
+    //    }
 
-    public static void mapWithScaleAndNorm(FloatArray output, FloatArray weights, FloatArray input,
-            FloatArray normFactor, IntArray positionAndLayer, int size) {
+    public static void mapWithScaleAndNorm(FloatArray output, FloatArray weights, FloatArray input, FloatArray normFactor, IntArray positionAndLayer, int size) {
         float scale = normFactor.get(0);  // Get the scale computed by singleNorm
         int layerOffset = positionAndLayer.get(1) * size;
 
@@ -214,8 +202,7 @@ public class TornadoVMCompute {
         }
     }
 
-    public static void rmsnormInnOut(FloatArray output, FloatArray weights,
-            int size, float ermsNorm) {
+    public static void rmsnormInnOut(FloatArray output, FloatArray weights, int size, float ermsNorm) {
         // Calculate layer offset - weights for this layer start at this offset
         int layerOffset = 0 * size;
 
@@ -226,11 +213,11 @@ public class TornadoVMCompute {
         }
         sumSquares /= size;
         sumSquares += ermsNorm; // Add epsilon for numerical stability
-        float scale = 1.0f / (float)TornadoMath.sqrt(sumSquares);
+        float scale = 1.0f / (float) TornadoMath.sqrt(sumSquares);
 
         // Normalize and scale with weights from the correct layer
         for (int j = 0; j < size; j++) {
-            output.set(j,weights.get(layerOffset + j) * (scale * output.get(j)));
+            output.set(j, weights.get(layerOffset + j) * (scale * output.get(j)));
         }
     }
 
@@ -263,7 +250,6 @@ public class TornadoVMCompute {
         int layer = positionAndLayer.get(1);
         int layerOffset = layer * n * d;  // Correctly calculates offset based on dimensions
 
-
         for (@Parallel int i = 0; i < d; i++) {
             float sum = 0.0f;
             for (int j = 0; j < n; j++) {
@@ -290,18 +276,10 @@ public class TornadoVMCompute {
         }
     }
 
-
     /**
      * SiLU activation function
      */
-    public static void siluElemWiseMulActivation(int hidenDimSize, FloatArray hb, FloatArray hb2) {
-        for (@Parallel int i = 0; i < hidenDimSize; i++) {
-            float val = hb.get(i);
-            val *= (1.0f / (1.0f + TornadoMath.exp(-val)));
-            val *= hb2.get(i);
-            hb.set(i, val);
-        }
-    }
+
     private static void reductionOneBlock(KernelContext context, FloatArray output, FloatArray x) {
         int gid = context.globalIdx;
         int lid = context.localIdx;
@@ -417,8 +395,7 @@ public class TornadoVMCompute {
         }
     }
 
-    public static void matmulHybrid(KernelContext context, FloatArray xout, FloatArray x, FloatArray w,
-            int n, int d, IntArray positionAndLayer) {
+    public static void matmulHybrid(KernelContext context, FloatArray xout, FloatArray x, FloatArray w, int n, int d, IntArray positionAndLayer) {
         int globalIdx = context.globalIdx;
 
         if (globalIdx < d) {
@@ -437,9 +414,9 @@ public class TornadoVMCompute {
                 // Process this chunk directly, no local memory for simplicity
                 for (int j = start; j < end; j += 4) {
                     float sum1 = (j < n) ? w.get(baseIdx + j) * x.get(j) : 0;
-                    float sum2 = (j+1 < n) ? w.get(baseIdx + j+1) * x.get(j+1) : 0;
-                    float sum3 = (j+2 < n) ? w.get(baseIdx + j+2) * x.get(j+2) : 0;
-                    float sum4 = (j+3 < n) ? w.get(baseIdx + j+3) * x.get(j+3) : 0;
+                    float sum2 = (j + 1 < n) ? w.get(baseIdx + j + 1) * x.get(j + 1) : 0;
+                    float sum3 = (j + 2 < n) ? w.get(baseIdx + j + 2) * x.get(j + 2) : 0;
+                    float sum4 = (j + 3 < n) ? w.get(baseIdx + j + 3) * x.get(j + 3) : 0;
                     sum += sum1 + sum2 + sum3 + sum4;
                 }
             }
@@ -448,6 +425,8 @@ public class TornadoVMCompute {
         }
     }
 
+    //    [1 1 1
+    //     1  1  1]  X  [1 1 1]
 
     public static void matmulUnroll4(FloatArray xout, FloatArray x, FloatArray w, int n, int d, IntArray positionAndLayer) {
         int layer = positionAndLayer.get(1);
@@ -462,9 +441,9 @@ public class TornadoVMCompute {
             for (int j = 0; j < n; j += 4) {
                 // Unrolled to process 4 elements at once (adjust based on your vector width)
                 float sum1 = (j < n) ? w.get(baseIdx + j) * x.get(j) : 0;
-                float sum2 = (j+1 < n) ? w.get(baseIdx + j+1) * x.get(j+1) : 0;
-                float sum3 = (j+2 < n) ? w.get(baseIdx + j+2) * x.get(j+2) : 0;
-                float sum4 = (j+3 < n) ? w.get(baseIdx + j+3) * x.get(j+3) : 0;
+                float sum2 = (j + 1 < n) ? w.get(baseIdx + j + 1) * x.get(j + 1) : 0;
+                float sum3 = (j + 2 < n) ? w.get(baseIdx + j + 2) * x.get(j + 2) : 0;
+                float sum4 = (j + 3 < n) ? w.get(baseIdx + j + 3) * x.get(j + 3) : 0;
 
                 sum += sum1 + sum2 + sum3 + sum4;
             }
@@ -473,19 +452,211 @@ public class TornadoVMCompute {
         }
     }
 
+    public static void matmulUnroll4WithResidual(FloatArray xout, FloatArray x, FloatArray w, int n, int d, IntArray positionAndLayer) {
+        int layer = positionAndLayer.get(1);
+        int layerOffset = layer * n * d;
+
+        // Simple mapping to global threads, assuming hardware handles work distribution
+        for (@Parallel int i = 0; i < d; i++) { //<--- projectionTwo d = 2048
+            float sum = 0.0f;
+            int baseIdx = layerOffset + i * n;
+
+            // For very large n, consider chunking this loop
+            for (int j = 0; j < n; j += 4) { // <--- projectionTwo n = 8192
+                // Unrolled to process 4 elements at once
+                float sum1 = (j < n) ? w.get(baseIdx + j) * x.get(j) : 0;
+                float sum2 = (j + 1 < n) ? w.get(baseIdx + j + 1) * x.get(j + 1) : 0;
+                float sum3 = (j + 2 < n) ? w.get(baseIdx + j + 2) * x.get(j + 2) : 0;
+                float sum4 = (j + 3 < n) ? w.get(baseIdx + j + 3) * x.get(j + 3) : 0;
+
+                sum += sum1 + sum2 + sum3 + sum4;
+            }
+
+            // Add to existing output
+            xout.set(i, sum + xout.get(i));
+        }
+    }
+
+    public static void matmulUnroll4WithResidual(FloatArray xout, FloatArray x, VectorFloat4 w, int n, int d, IntArray positionAndLayer) {
+        int layer = positionAndLayer.get(1);
+        int layerOffset = layer * n * d / 4; // Divide by 4 since we're using VectorFloat4
+
+        for (@Parallel int i = 0; i < d; i++) {
+            float sum = 0.0f;
+            int baseIdx = layerOffset + i * n / 4; // Divide by 4 since each VectorFloat4 contains 4 values
+
+            for (int j = 0; j < n / 4; j++) {
+                // Get 4 input values at once
+                float x0 = x.get(j * 4);
+                float x1 = x.get(j * 4 + 1);
+                float x2 = x.get(j * 4 + 2);
+                float x3 = x.get(j * 4 + 3);
+
+                // Get 4 weight values at once
+                Float4 weights = w.get(baseIdx + j);
+
+                // Process 4 elements at once using vector operations
+                sum += weights.getX() * x0 + weights.getY() * x1 + weights.getZ() * x2 + weights.getW() * x3;
+            }
+
+            // Add to existing output (residual connection)
+            xout.set(i, sum + xout.get(i));
+        }
+    }
+
+    public static void matmulUnroll4WithResidualX(FloatArray xout, FloatArray x, VectorFloat4 w, int n, int d, IntArray positionAndLayer) {
+        int layer = positionAndLayer.get(1);
+        int layerOffset = layer * n * d / 4; // Divide by 4 since we're using VectorFloat4
+
+        for (@Parallel int i = 0; i < d; i++) {
+            float sum = 0.0f;
+            int baseIdx = layerOffset + i * n / 4; // Divide by 4 since each VectorFloat4 contains 4 values
+
+            for (int j = 0; j < n / 4; j++) {
+                // Get 4 input values at once
+                Float4 xLoad = new Float4(x.get(j * 4), x.get(j * 4 + 1), x.get(j * 4 + 2), x.get(j * 4 + 3));
+                // Get 4 weight values at once
+                Float4 weights = w.get(baseIdx + j);
+
+                Float4.dot(weights, xLoad);
+                sum += Float4.dot(weights, xLoad);
+            }
+
+            // Add to existing output (residual connection)
+            xout.set(i, sum + xout.get(i));
+        }
+    }
+
+    public static void siluElemWiseMulActivation(int hidenDimSize, FloatArray hb, FloatArray hb2) {
+        for (@Parallel int i = 0; i < hidenDimSize; i++) {
+            float val = hb.get(i);
+            val *= (1.0f / (1.0f + TornadoMath.exp(-val)));
+            val *= hb2.get(i);
+            hb.set(i, val);
+        }
+    }
+
+    public static void combinedMatmulSiluActivation(KernelContext context, FloatArray hb, FloatArray x, FloatArray w, int n, int d, IntArray positionAndLayer) {
+        // Get thread ID
+        int i = context.globalIdx;
+
+        int layer = positionAndLayer.get(1);
+        int layerOffset = layer * n * d;
+        int baseIdx = layerOffset + i * n;
+
+        // Matrix multiplication - without tiling for now to ensure correctness
+        float sum = 0.0f;
+        for (int j = 0; j < n; j += 4) {
+            // Process 4 elements at a time (unrolled)
+            float sum1 = (j < n) ? w.get(baseIdx + j) * x.get(j) : 0;
+            float sum2 = (j + 1 < n) ? w.get(baseIdx + j + 1) * x.get(j + 1) : 0;
+            float sum3 = (j + 2 < n) ? w.get(baseIdx + j + 2) * x.get(j + 2) : 0;
+            float sum4 = (j + 3 < n) ? w.get(baseIdx + j + 3) * x.get(j + 3) : 0;
+
+            sum += sum1 + sum2 + sum3 + sum4;
+        }
+
+        // SiLU activation and element-wise multiplication
+        float hbVal = hb.get(i);
+        float silu = hbVal * (1.0f / (1.0f + TornadoMath.exp(-hbVal)));
+        float result = silu * sum;
+
+        // Store final result
+        hb.set(i, result);
+    }
+
+    //    public static void siluElemWiseMulActivation(int hidenDimSize, FloatArray hb, FloatArray hb2) {
+    //        for (@Parallel int i = 0; i < hidenDimSize; i++) {
+    //            float val = hb.get(i);
+    //            val *= (1.0f / (1.0f + TornadoMath.exp(-val)));
+    //            val *= hb2.get(i);
+    //            hb.set(i, val);
+    //        }
+    //    }
+
+    public static void combinedMatmulSiluActivation(FloatArray hb, FloatArray x, FloatArray w, int n, int d, IntArray positionAndLayer) {
+        int layer = positionAndLayer.get(1);
+        int layerOffset = layer * n * d;
+
+        // Parallel processing for each output element
+        for (@Parallel int i = 0; i < d; i++) {
+            // Part 1: Matrix multiplication (equivalent to matmulUnroll4)
+            float sum = 0.0f;
+            int baseIdx = layerOffset + i * n;
+
+            for (int j = 0; j < n; j += 4) {
+                float sum1 = (j < n) ? w.get(baseIdx + j) * x.get(j) : 0;
+                float sum2 = (j + 1 < n) ? w.get(baseIdx + j + 1) * x.get(j + 1) : 0;
+                float sum3 = (j + 2 < n) ? w.get(baseIdx + j + 2) * x.get(j + 2) : 0;
+                float sum4 = (j + 3 < n) ? w.get(baseIdx + j + 3) * x.get(j + 3) : 0;
+
+                sum += sum1 + sum2 + sum3 + sum4;
+            }
+
+            // Part 2: SiLU activation and element-wise multiplication
+            // In the original code:
+            // 1. Matrix multiplication results are stored in hb2
+            // 2. hb undergoes SiLU activation and is multiplied by hb2
+
+            // Calculate SiLU on the hb input value: x * sigmoid(x)
+            float hbVal = hb.get(i);
+            float silu = hbVal * (1.0f / (1.0f + TornadoMath.exp(-hbVal)));
+
+            // Multiply SiLU result by the matrix multiplication result (sum)
+            float result = silu * sum;
+
+            // Store the final result back in hb
+            hb.set(i, result);
+        }
+    }
+
+    public static void ffnMatvecSiluFused(FloatArray hb, FloatArray x, FloatArray gate_w, FloatArray up_w, IntArray positionAndLayer, int dim, int hiddenDim) {
+        int layer = positionAndLayer.get(1);
+        int gateOffset = layer * dim * hiddenDim;
+        int upOffset = layer * dim * hiddenDim;
+
+        // Calculate gate and up projections with SiLU in one fused kernel
+        for (@Parallel int i = 0; i < hiddenDim; i++) {
+            float gateSum = 0.0f, upSum = 0.0f;
+
+            // Unrolled loops for better performance
+            for (int j = 0; j < dim; j += 4) {
+                // Gate projection with unrolling
+                gateSum += (j < dim) ? gate_w.get(gateOffset + i * dim + j) * x.get(j) : 0;
+                gateSum += (j + 1 < dim) ? gate_w.get(gateOffset + i * dim + j + 1) * x.get(j + 1) : 0;
+                gateSum += (j + 2 < dim) ? gate_w.get(gateOffset + i * dim + j + 2) * x.get(j + 2) : 0;
+                gateSum += (j + 3 < dim) ? gate_w.get(gateOffset + i * dim + j + 3) * x.get(j + 3) : 0;
+
+                // Up projection with unrolling
+                upSum += (j < dim) ? up_w.get(upOffset + i * dim + j) * x.get(j) : 0;
+                upSum += (j + 1 < dim) ? up_w.get(upOffset + i * dim + j + 1) * x.get(j + 1) : 0;
+                upSum += (j + 2 < dim) ? up_w.get(upOffset + i * dim + j + 2) * x.get(j + 2) : 0;
+                upSum += (j + 3 < dim) ? up_w.get(upOffset + i * dim + j + 3) * x.get(j + 3) : 0;
+            }
+
+            // Apply SiLU activation to gate and multiply with up projection in one step
+            float silu = gateSum * (1.0f / (1.0f + TornadoMath.exp(-gateSum)));
+            hb.set(i, silu * upSum);
+        }
+    }
+
     /**
-     * Optimized matrix multiplication kernel using tiling and local memory
-     * techniques observed in the TornadoVM framework examples.
+     * Optimized matrix multiplication kernel using tiling and local memory techniques observed in the TornadoVM framework examples.
      *
-     * @param xout Output matrix array
-     * @param x Input vector
-     * @param w Weight matrix
-     * @param n Size of input dimension
-     * @param d Size of output dimension
-     * @param positionAndLayer Layer position information
+     * @param xout
+     *         Output matrix array
+     * @param x
+     *         Input vector
+     * @param w
+     *         Weight matrix
+     * @param n
+     *         Size of input dimension
+     * @param d
+     *         Size of output dimension
+     * @param positionAndLayer
+     *         Layer position information
      */
-    public static void matmulOptimized(KernelContext context, FloatArray xout, FloatArray x, FloatArray w,
-            int n, int d, IntArray positionAndLayer) {
+    public static void matmulOptimized(KernelContext context, FloatArray xout, FloatArray x, FloatArray w, int n, int d, IntArray positionAndLayer) {
         // Get thread identification from KernelContext
         int globalIdx = context.globalIdx;
 
@@ -523,14 +694,18 @@ public class TornadoVMCompute {
                     // Use local memory for input vector access
                     int localOffset = j - tileStart;
 
-                    if (j < tileEnd)
+                    if (j < tileEnd) {
                         sum1 = w.get(baseIdx + j) * localX[localOffset];
-                    if (j+1 < tileEnd)
-                        sum2 = w.get(baseIdx + j+1) * localX[localOffset+1];
-                    if (j+2 < tileEnd)
-                        sum3 = w.get(baseIdx + j+2) * localX[localOffset+2];
-                    if (j+3 < tileEnd)
-                        sum4 = w.get(baseIdx + j+3) * localX[localOffset+3];
+                    }
+                    if (j + 1 < tileEnd) {
+                        sum2 = w.get(baseIdx + j + 1) * localX[localOffset + 1];
+                    }
+                    if (j + 2 < tileEnd) {
+                        sum3 = w.get(baseIdx + j + 2) * localX[localOffset + 2];
+                    }
+                    if (j + 3 < tileEnd) {
+                        sum4 = w.get(baseIdx + j + 3) * localX[localOffset + 3];
+                    }
 
                     sum += sum1 + sum2 + sum3 + sum4;
                 }
@@ -544,8 +719,7 @@ public class TornadoVMCompute {
         }
     }
 
-    public static void matmulCollaborative(KernelContext context, FloatArray xout, FloatArray x, FloatArray w,
-            int n, int d, IntArray positionAndLayer) {
+    public static void matmulCollaborative(KernelContext context, FloatArray xout, FloatArray x, FloatArray w, int n, int d, IntArray positionAndLayer) {
         // Get thread identification
         int globalIdx = context.globalIdx;
         int localIdx = context.localIdx;
@@ -583,9 +757,9 @@ public class TornadoVMCompute {
             for (int j = 0; j < tileSize; j += 4) {
                 // Bounds-checked unrolled computation
                 float sum1 = (j < tileSize) ? w.get(baseIdx + tileStart + j) * xLocal[j] : 0.0f;
-                float sum2 = (j+1 < tileSize) ? w.get(baseIdx + tileStart + j+1) * xLocal[j+1] : 0.0f;
-                float sum3 = (j+2 < tileSize) ? w.get(baseIdx + tileStart + j+2) * xLocal[j+2] : 0.0f;
-                float sum4 = (j+3 < tileSize) ? w.get(baseIdx + tileStart + j+3) * xLocal[j+3] : 0.0f;
+                float sum2 = (j + 1 < tileSize) ? w.get(baseIdx + tileStart + j + 1) * xLocal[j + 1] : 0.0f;
+                float sum3 = (j + 2 < tileSize) ? w.get(baseIdx + tileStart + j + 2) * xLocal[j + 2] : 0.0f;
+                float sum4 = (j + 3 < tileSize) ? w.get(baseIdx + tileStart + j + 3) * xLocal[j + 3] : 0.0f;
 
                 sum += sum1 + sum2 + sum3 + sum4;
             }
@@ -600,21 +774,17 @@ public class TornadoVMCompute {
         }
     }
 
-
     /**
-     * Optimized implementation with work-group collaboration
-     * This version uses collaborative loading to improve memory access patterns
+     * Optimized implementation with work-group collaboration This version uses collaborative loading to improve memory access patterns
      */
-    public static void matmulCollaborativXe(KernelContext context, FloatArray xout,
-            FloatArray x, FloatArray w,
-            int n, int d, IntArray positionAndLayer) {
+    public static void matmulCollaborativXe(KernelContext context, FloatArray xout, FloatArray x, FloatArray w, int n, int d, IntArray positionAndLayer) {
         int globalIdx = context.globalIdx;
         int localIdx = context.localIdx;
         int localSize = context.localGroupSizeX;
         int groupId = context.groupIdx;
 
         // Exit if thread is out of bounds
-//        if (globalIdx >= d) return;
+        //        if (globalIdx >= d) return;
 
         int layer = positionAndLayer.get(1);
         int layerOffset = layer << 24;
@@ -666,13 +836,13 @@ public class TornadoVMCompute {
             for (int j = 0; j < n; j += 8) {
                 // Unrolled to process 4 elements at once (adjust based on your vector width)
                 float sum1 = (j < n) ? w.get(baseIdx + j) * x.get(j) : 0;
-                float sum2 = (j+1 < n) ? w.get(baseIdx + j+1) * x.get(j+1) : 0;
-                float sum3 = (j+2 < n) ? w.get(baseIdx + j+2) * x.get(j+2) : 0;
-                float sum4 = (j+3 < n) ? w.get(baseIdx + j+3) * x.get(j+3) : 0;
-                float sum5 = (j+4 < n) ? w.get(baseIdx + j+4) * x.get(j+4) : 0;
-                float sum6 = (j+5 < n) ? w.get(baseIdx + j+5) * x.get(j+5) : 0;
-                float sum7 = (j+6 < n) ? w.get(baseIdx + j+6) * x.get(j+6) : 0;
-                float sum8 = (j+7 < n) ? w.get(baseIdx + j+7) * x.get(j+7) : 0;
+                float sum2 = (j + 1 < n) ? w.get(baseIdx + j + 1) * x.get(j + 1) : 0;
+                float sum3 = (j + 2 < n) ? w.get(baseIdx + j + 2) * x.get(j + 2) : 0;
+                float sum4 = (j + 3 < n) ? w.get(baseIdx + j + 3) * x.get(j + 3) : 0;
+                float sum5 = (j + 4 < n) ? w.get(baseIdx + j + 4) * x.get(j + 4) : 0;
+                float sum6 = (j + 5 < n) ? w.get(baseIdx + j + 5) * x.get(j + 5) : 0;
+                float sum7 = (j + 6 < n) ? w.get(baseIdx + j + 6) * x.get(j + 6) : 0;
+                float sum8 = (j + 7 < n) ? w.get(baseIdx + j + 7) * x.get(j + 7) : 0;
 
                 sum += sum1 + sum2 + sum3 + sum4 + sum5 + sum6 + sum7 + sum8;
             }
@@ -694,24 +864,23 @@ public class TornadoVMCompute {
             for (int j = 0; j < n; j += 16) {
                 // Unrolled to process 16 elements at once
                 float sum1 = (j < n) ? w.get(baseIdx + j) * x.get(j) : 0;
-                float sum2 = (j+1 < n) ? w.get(baseIdx + j+1) * x.get(j+1) : 0;
-                float sum3 = (j+2 < n) ? w.get(baseIdx + j+2) * x.get(j+2) : 0;
-                float sum4 = (j+3 < n) ? w.get(baseIdx + j+3) * x.get(j+3) : 0;
-                float sum5 = (j+4 < n) ? w.get(baseIdx + j+4) * x.get(j+4) : 0;
-                float sum6 = (j+5 < n) ? w.get(baseIdx + j+5) * x.get(j+5) : 0;
-                float sum7 = (j+6 < n) ? w.get(baseIdx + j+6) * x.get(j+6) : 0;
-                float sum8 = (j+7 < n) ? w.get(baseIdx + j+7) * x.get(j+7) : 0;
-                float sum9 = (j+8 < n) ? w.get(baseIdx + j+8) * x.get(j+8) : 0;
-                float sum10 = (j+9 < n) ? w.get(baseIdx + j+9) * x.get(j+9) : 0;
-                float sum11 = (j+10 < n) ? w.get(baseIdx + j+10) * x.get(j+10) : 0;
-                float sum12 = (j+11 < n) ? w.get(baseIdx + j+11) * x.get(j+11) : 0;
-                float sum13 = (j+12 < n) ? w.get(baseIdx + j+12) * x.get(j+12) : 0;
-                float sum14 = (j+13 < n) ? w.get(baseIdx + j+13) * x.get(j+13) : 0;
-                float sum15 = (j+14 < n) ? w.get(baseIdx + j+14) * x.get(j+14) : 0;
-                float sum16 = (j+15 < n) ? w.get(baseIdx + j+15) * x.get(j+15) : 0;
+                float sum2 = (j + 1 < n) ? w.get(baseIdx + j + 1) * x.get(j + 1) : 0;
+                float sum3 = (j + 2 < n) ? w.get(baseIdx + j + 2) * x.get(j + 2) : 0;
+                float sum4 = (j + 3 < n) ? w.get(baseIdx + j + 3) * x.get(j + 3) : 0;
+                float sum5 = (j + 4 < n) ? w.get(baseIdx + j + 4) * x.get(j + 4) : 0;
+                float sum6 = (j + 5 < n) ? w.get(baseIdx + j + 5) * x.get(j + 5) : 0;
+                float sum7 = (j + 6 < n) ? w.get(baseIdx + j + 6) * x.get(j + 6) : 0;
+                float sum8 = (j + 7 < n) ? w.get(baseIdx + j + 7) * x.get(j + 7) : 0;
+                float sum9 = (j + 8 < n) ? w.get(baseIdx + j + 8) * x.get(j + 8) : 0;
+                float sum10 = (j + 9 < n) ? w.get(baseIdx + j + 9) * x.get(j + 9) : 0;
+                float sum11 = (j + 10 < n) ? w.get(baseIdx + j + 10) * x.get(j + 10) : 0;
+                float sum12 = (j + 11 < n) ? w.get(baseIdx + j + 11) * x.get(j + 11) : 0;
+                float sum13 = (j + 12 < n) ? w.get(baseIdx + j + 12) * x.get(j + 12) : 0;
+                float sum14 = (j + 13 < n) ? w.get(baseIdx + j + 13) * x.get(j + 13) : 0;
+                float sum15 = (j + 14 < n) ? w.get(baseIdx + j + 14) * x.get(j + 14) : 0;
+                float sum16 = (j + 15 < n) ? w.get(baseIdx + j + 15) * x.get(j + 15) : 0;
 
-                sum += sum1 + sum2 + sum3 + sum4 + sum5 + sum6 + sum7 + sum8 +
-                        sum9 + sum10 + sum11 + sum12 + sum13 + sum14 + sum15 + sum16;
+                sum += sum1 + sum2 + sum3 + sum4 + sum5 + sum6 + sum7 + sum8 + sum9 + sum10 + sum11 + sum12 + sum13 + sum14 + sum15 + sum16;
             }
 
             xout.set(i, sum);
@@ -736,7 +905,7 @@ public class TornadoVMCompute {
 
     public static void rmsNorm_Step2(KernelContext context, FloatArray scaleFactor, FloatArray partialSums, int totalSize, float epsilon) {
         // Only needs to be executed by a single thread
-            // Combine all partial sums
+        // Combine all partial sums
         float sumSquares = 0.0f;
         for (int i = 0; i < partialSums.getSize(); i++) {
             sumSquares += partialSums.get(i);
@@ -763,11 +932,11 @@ public class TornadoVMCompute {
         output.set(gid, weights.get(layerOffset + gid) * (scale * input.get(gid)));
     }
 
-//    private static void reductionOneBlock2(KernelContext context, FloatArray output, FloatArray x, FloatArray weights, FloatArray temp) {
-//        int gid = context.globalIdx;
-//        float ss = temp.get(0);
-//        output.set(gid, weights.get(gid) * (ss * x.get(gid)));
-//    }
+    //    private static void reductionOneBlock2(KernelContext context, FloatArray output, FloatArray x, FloatArray weights, FloatArray temp) {
+    //        int gid = context.globalIdx;
+    //        float ss = temp.get(0);
+    //        output.set(gid, weights.get(gid) * (ss * x.get(gid)));
+    //    }
 
     public static void reductionOneBlock(KernelContext context, FloatArray output, FloatArray x, int localSize, float rmsNormEps) {
         int gid = context.globalIdx;
@@ -864,12 +1033,10 @@ public class TornadoVMCompute {
         }
     }
 
-
     public static void forcePropagationTwoArrays(FloatArray x, FloatArray y) {
         x.set(0, x.get(0));
         y.set(0, y.get(0));
     }
-
 
     public static void ropeRotation(KernelContext context, IntArray positionNlayer, FloatArray sq, FloatArray sk, int kv_dim, int head_size) {
         int i = context.globalIdx * 2;
@@ -899,10 +1066,7 @@ public class TornadoVMCompute {
 
     }
 
-    public static void ropeRotationSerial(IntArray position, FloatArray sq, FloatArray sk,
-            int n_heads, int n_kv_heads, int head_size,
-            FloatArray freq_cis_real, FloatArray freq_cis_imag)
-    {
+    public static void ropeRotationSerial(IntArray position, FloatArray sq, FloatArray sk, int n_heads, int n_kv_heads, int head_size, FloatArray freq_cis_real, FloatArray freq_cis_imag) {
         int pos = position.get(0);
 
         // Loop over all heads
@@ -936,7 +1100,6 @@ public class TornadoVMCompute {
             }
         }
     }
-
 
     public static void ropeRotationSerialX(IntArray position, FloatArray sq, FloatArray sk, int kv_dim, int head_size) {
         // Process each pair of adjacent values
@@ -1200,8 +1363,7 @@ public class TornadoVMCompute {
     }
 
     /**
-     * Fused multiply-add operation that maps to OpenCL's native fma
-     * This will optimize to the fma instruction in OpenCL
+     * Fused multiply-add operation that maps to OpenCL's native fma This will optimize to the fma instruction in OpenCL
      */
     private static float fma(float a, float b, float c) {
         return a * b + c;
@@ -1422,8 +1584,6 @@ public class TornadoVMCompute {
         });
     }
 
-
-
     public static void copyToCache(FloatArray destKeyCache, FloatArray srcKey, FloatArray destValueCache, FloatArray srcValue, IntArray positioNlayer) {
         int destOffset = positioNlayer.get(2);
         for (@Parallel int i = 0; i < srcValue.getSize(); i++) {
@@ -1432,9 +1592,7 @@ public class TornadoVMCompute {
         }
     }
 
-    public static void processHeadsParallel(
-            FloatArray q, FloatArray key_cache, FloatArray value_cache, FloatArray xb,
-            int nHeads, int headSize, int kvDim, int kvMul, int seqLen,
+    public static void processHeadsParallel(FloatArray q, FloatArray key_cache, FloatArray value_cache, FloatArray xb, int nHeads, int headSize, int kvDim, int kvMul, int seqLen,
             IntArray positionNlayer, FloatArray wrapAtt) {
 
         int pos = positionNlayer.get(0);
@@ -1447,68 +1605,65 @@ public class TornadoVMCompute {
         }
     }
 
-    private static void processHeadTornado(
-            FloatArray allQ, FloatArray key_cache, FloatArray value_cache, FloatArray allXb,
-            int h, int headSize, int kvDim, int kvMul, long loff, int pos, FloatArray wrapAtt) {
+    private static void processHeadTornado(FloatArray allQ, FloatArray key_cache, FloatArray value_cache, FloatArray allXb, int h, int headSize, int kvDim, int kvMul, long loff, int pos,
+            FloatArray wrapAtt) {
 
         // Base index for this head's attention weights
         int headOffset = h * (pos + 1);
 
-            // STEP 1: Calculate attention scores for all timesteps
+        // STEP 1: Calculate attention scores for all timesteps
+        for (int t = 0; t <= pos; t++) {
+            int kvHeadIdx = h / kvMul;
+            int keyOffset = (int) (loff + t * kvDim + kvHeadIdx * headSize);
+
+            float score = 0.0f;
+            for (int i = 0; i < headSize; i++) {
+                score += allQ.get(h * headSize + i) * key_cache.get(keyOffset + i);
+            }
+            score = score / TornadoMath.sqrt(headSize);
+
+            // Store in attention buffer
+            wrapAtt.set(headOffset + t, score);
+        }
+
+        // STEP 2: Find max score for softmax stability
+        float maxScore = wrapAtt.get(headOffset);
+        for (int t = 1; t <= pos; t++) {
+            float val = wrapAtt.get(headOffset + t);
+            if (val > maxScore) {
+                maxScore = val;
+            }
+        }
+
+        // STEP 3: Compute exponentials and sum
+        float sum = 0.0f;
+        for (int t = 0; t <= pos; t++) {
+            int idx = headOffset + t;
+            float expScore = TornadoMath.exp(wrapAtt.get(idx) - maxScore);
+            wrapAtt.set(idx, expScore);
+            sum += expScore;
+        }
+
+        // STEP 4: Normalize
+        float normFactor = (sum > 0.0f) ? (1.0f / sum) : (1.0f / (pos + 1));
+        for (int t = 0; t <= pos; t++) {
+            int idx = headOffset + t;
+            wrapAtt.set(idx, wrapAtt.get(idx) * normFactor);
+        }
+
+        // STEP 5: Compute weighted sum of values for each dimension
+        for (int i = 0; i < headSize; i++) {
+            float weightedSum = 0.0f;
             for (int t = 0; t <= pos; t++) {
                 int kvHeadIdx = h / kvMul;
-                int keyOffset = (int) (loff + t * kvDim + kvHeadIdx * headSize);
-
-                float score = 0.0f;
-                for (int i = 0; i < headSize; i++) {
-                    score += allQ.get(h * headSize + i) * key_cache.get(keyOffset + i);
-                }
-                score = score / TornadoMath.sqrt(headSize);
-
-                // Store in attention buffer
-                wrapAtt.set(headOffset + t, score);
+                int valueOffset = (int) (loff + t * kvDim + kvHeadIdx * headSize);
+                weightedSum += wrapAtt.get(headOffset + t) * value_cache.get(valueOffset + i);
             }
-
-            // STEP 2: Find max score for softmax stability
-            float maxScore = wrapAtt.get(headOffset);
-            for (int t = 1; t <= pos; t++) {
-                float val = wrapAtt.get(headOffset + t);
-                if (val > maxScore) {
-                    maxScore = val;
-                }
-            }
-
-            // STEP 3: Compute exponentials and sum
-            float sum = 0.0f;
-            for (int t = 0; t <= pos; t++) {
-                int idx = headOffset + t;
-                float expScore =  TornadoMath.exp(wrapAtt.get(idx) - maxScore);
-                wrapAtt.set(idx, expScore);
-                sum += expScore;
-            }
-
-            // STEP 4: Normalize
-            float normFactor = (sum > 0.0f) ? (1.0f / sum) : (1.0f / (pos + 1));
-            for (int t = 0; t <= pos; t++) {
-                int idx = headOffset + t;
-                wrapAtt.set(idx, wrapAtt.get(idx) * normFactor);
-            }
-
-            // STEP 5: Compute weighted sum of values for each dimension
-            for (int i = 0; i < headSize; i++) {
-                float weightedSum = 0.0f;
-                for (int t = 0; t <= pos; t++) {
-                    int kvHeadIdx = h / kvMul;
-                    int valueOffset = (int) (loff + t * kvDim + kvHeadIdx * headSize);
-                    weightedSum += wrapAtt.get(headOffset + t) * value_cache.get(valueOffset + i);
-                }
-                allXb.set(h * headSize + i, weightedSum);
-            }
+            allXb.set(h * headSize + i, weightedSum);
+        }
     }
 
-    public static void processHeadsParallel(
-            FloatArray q, FloatArray key_cache, FloatArray value_cache, FloatArray xb,
-            int nHeads, int headSize, int kvDim, int kvMul, int seqLen,
+    public static void processHeadsParallel(FloatArray q, FloatArray key_cache, FloatArray value_cache, FloatArray xb, int nHeads, int headSize, int kvDim, int kvMul, int seqLen,
             IntArray positionNlayer) {
 
         int pos = positionNlayer.get(0);
@@ -1521,9 +1676,7 @@ public class TornadoVMCompute {
         }
     }
 
-    private static void processHeadTornadoOptimized(
-            FloatArray allQ, FloatArray key_cache, FloatArray value_cache, FloatArray allXb,
-            int h, int headSize, int kvDim, int kvMul, long loff, int pos) {
+    private static void processHeadTornadoOptimized(FloatArray allQ, FloatArray key_cache, FloatArray value_cache, FloatArray allXb, int h, int headSize, int kvDim, int kvMul, long loff, int pos) {
 
         // Store only the attention scores, which is much smaller than the full wrapAtt array
         float[] scores = new float[pos + 1];
@@ -1577,9 +1730,7 @@ public class TornadoVMCompute {
         }
     }
 
-
-    public static void reductionOneBlockForLogits(KernelContext context, FloatArray output, FloatArray x,
-            int size, float ermsNorm, int localMemSize) {
+    public static void reductionOneBlockForLogits(KernelContext context, FloatArray output, FloatArray x, int size, float ermsNorm, int localMemSize) {
         int gid = context.globalIdx;
         int lid = context.localIdx;
         int groupId = context.groupIdx;
@@ -1626,16 +1777,15 @@ public class TornadoVMCompute {
     }
 
     // Second task: Apply normalization with weights
-    public static void applyNormForLogits(KernelContext context, FloatArray output, FloatArray weights,
-            int size, FloatArray tempLogits) {
-//        int gid = context.globalIdx;
-//
-//        if (gid < size) {
-//            // Apply normalization with weights
-//            float ss = output.get(size);  // Get scale factor stored at position size
-//            float val = output.get(gid);
-//            output.set(gid, weights.get(gid) * (ss * val));
-//        }
+    public static void applyNormForLogits(KernelContext context, FloatArray output, FloatArray weights, int size, FloatArray tempLogits) {
+        //        int gid = context.globalIdx;
+        //
+        //        if (gid < size) {
+        //            // Apply normalization with weights
+        //            float ss = output.get(size);  // Get scale factor stored at position size
+        //            float val = output.get(gid);
+        //            output.set(gid, weights.get(gid) * (ss * val));
+        //        }
         int gid = context.globalIdx;
 
         if (gid < size) {
@@ -1654,5 +1804,346 @@ public class TornadoVMCompute {
             // Store the result back to the same position
             output.set(gid, normalized);
         }
+    }
+
+    public static void projectionTwoOptimized(KernelContext context, FloatArray x, FloatArray hb, FloatArray w, int n, int d, IntArray positionAndLayer, int localWorkGroupSize) {
+        int rowId = context.groupIdx;      // One row per workgroup
+        int localId = context.localIdx;    // Thread ID within workgroup
+        int localSize = localWorkGroupSize;
+
+        if (rowId >= d) {
+            return;
+        }
+
+        float[] localSum = context.allocateFloatLocalArray(localSize);
+        int layer = positionAndLayer.get(1);
+        // The following line is kept for reference but no longer used directly
+        // int layerOffset = layer * n * d;
+        // The following line is kept for reference but no longer used directly
+        // int rowOffset = layerOffset + rowId * n;
+        float partialSum = 0.0f;
+
+        for (int j = localId; j < n; j += localSize) {
+            // Updated matrix index calculation for 3D weight matrix
+            int matrixIdx = layer * (n * d) + rowId * n + j;
+            int vecIdx = j;
+            float matrixVal = w.get(matrixIdx);
+            float vecVal = x.get(vecIdx);
+            partialSum += matrixVal * vecVal;
+        }
+
+        localSum[localId] = partialSum;
+        context.localBarrier();
+
+        for (int stride = localSize / 2; stride > 0; stride >>= 1) {
+            if (localId < stride) {
+                localSum[localId] += localSum[localId + stride];
+            }
+            context.localBarrier();
+        }
+
+        if (localId == 0) {
+            float sum = localSum[0];
+            int outIdx = rowId;
+            float hbVal = hb.get(outIdx);
+            float silu = hbVal * (1.0f / (1.0f + TornadoMath.exp(-hbVal)));
+            float result = silu * sum;
+            hb.set(outIdx, result);
+        }
+    }
+
+    public static void projectionTwoOptimizedX(KernelContext context, FloatArray x, FloatArray hb, FloatArray w, int n, int d, IntArray positionAndLayer, int localWorkGroupSize) {
+        int rowId = context.groupIdx;      // One row per workgroup
+        int localId = context.localIdx;    // Thread ID within workgroup
+        int localSize = localWorkGroupSize;
+
+        if (rowId >= d) {
+            return;
+        }
+
+        float[] localSum = context.allocateFloatLocalArray(localSize);
+        int layer = positionAndLayer.get(1);
+        int layerOffset = layer * n * d;
+        int rowOffset = layerOffset + rowId * n;
+        float partialSum = 0.0f;
+
+        for (int j = localId; j < n; j += localSize) {
+            //            int matrixIdx = rowOffset + j;
+            int matrixIdx = layer * (n * d) + rowId * n + j;
+
+            int vecIdx = j;
+            float matrixVal = w.get(matrixIdx);
+            float vecVal = x.get(vecIdx);
+            partialSum += matrixVal * vecVal;
+        }
+
+        localSum[localId] = partialSum;
+        context.localBarrier();
+
+        for (int stride = localSize / 2; stride > 0; stride >>= 1) {
+            if (localId < stride) {
+                localSum[localId] += localSum[localId + stride];
+            }
+            context.localBarrier();
+        }
+
+        if (localId == 0) {
+            float sum = localSum[0];
+            int outIdx = rowId;
+            float hbVal = hb.get(outIdx);
+            float silu = hbVal * (1.0f / (1.0f + TornadoMath.exp(-hbVal)));
+            float result = silu * sum;
+            hb.set(outIdx, result);
+        }
+    }
+
+    public static void matmulDirectIndex(KernelContext context, FloatArray x, FloatArray hb, FloatArray w, int n, int d, IntArray positionAndLayer, int localWorkGroupSize) {
+        // One row per workgroup (not per thread)
+        int rowId = context.groupIdx;
+        int localId = context.localIdx;
+        int localSize = localWorkGroupSize;
+
+        // Early exit if this workgroup is beyond our output dimension
+        if (rowId >= d) {
+            return;
+        }
+
+        // Allocate local memory for reduction
+        float[] localSum = context.allocateFloatLocalArray(localSize);
+
+        // Calculate offsets based on layer
+        int layer = positionAndLayer.get(1);
+        int layerOffset = layer * n * d;
+        int rowOffset = layerOffset + rowId * n;
+
+        // Each thread calculates partial dot product
+        float partialSum = 0.0f;
+        for (int j = localId; j < n; j += localSize) {
+            int matrixIdx = rowOffset + j;
+            partialSum += w.get(matrixIdx) * x.get(j);
+        }
+
+        // Store partial sum in local memory
+        localSum[localId] = partialSum;
+        context.localBarrier();
+
+        // Parallel reduction within workgroup
+        for (int stride = localSize / 2; stride > 0; stride >>= 1) {
+            if (localId < stride) {
+                localSum[localId] += localSum[localId + stride];
+            }
+            context.localBarrier();
+        }
+
+        // Thread 0 in each workgroup writes the final result
+        if (localId == 0) {
+            float sum = localSum[0];
+            float result = hb.get(rowId) + sum;
+            hb.set(rowId, result);
+        }
+    }
+
+    public static void matmulDirectIndexX(KernelContext context, FloatArray x, FloatArray hb, FloatArray w, int n, int d, IntArray positionAndLayer, int localWorkGroupSize) {
+        // One row per workgroup (not per thread)
+        int rowId = context.groupIdx;
+        int localId = context.localIdx;
+        int localSize = localWorkGroupSize;
+
+        // Early exit if this workgroup is beyond our output dimension
+        if (rowId >= d) {
+            return;
+        }
+
+        // Allocate local memory for reduction
+        float[] localSum = context.allocateFloatLocalArray(localSize);
+
+        // Calculate offsets based on layer
+        int layer = positionAndLayer.get(1);
+        int layerOffset = layer * n * d;
+        int rowOffset = layerOffset + rowId * n;
+
+        // Each thread calculates partial dot product
+        float partialSum = 0.0f;
+        for (int j = localId; j < n; j += localSize) {
+            int matrixIdx = rowOffset + j;
+            partialSum += w.get(matrixIdx) * x.get(j);
+        }
+
+        // Store partial sum in local memory
+        localSum[localId] = partialSum;
+        context.localBarrier();
+
+        // Parallel reduction within workgroup
+        for (int stride = localSize / 2; stride > 0; stride >>= 1) {
+            if (localId < stride) {
+                localSum[localId] += localSum[localId + stride];
+            }
+            context.localBarrier();
+        }
+
+        // Thread 0 in each workgroup writes the final result
+        if (localId == 0) {
+            float sum = localSum[0];
+            float result = hb.get(rowId) + sum;
+            hb.set(rowId, result);
+        }
+    }
+
+    public static void matmulDirectIndexActivation(KernelContext context, FloatArray x, FloatArray hb, FloatArray w, int n, int d, IntArray positionAndLayer, int localWorkGroupSize) {
+        // One row per workgroup (not per thread)
+        int rowId = context.groupIdx;
+        int localId = context.localIdx;
+        int localSize = localWorkGroupSize;
+
+        // Early exit if this workgroup is beyond our output dimension
+        if (rowId >= d) {
+            return;
+        }
+
+        // Allocate local memory for reduction
+        float[] localSum = context.allocateFloatLocalArray(localSize);
+
+        // Calculate offsets based on layer
+        int layer = positionAndLayer.get(1);
+        int layerOffset = layer * n * d;
+        int rowOffset = layerOffset + rowId * n;
+
+        // Each thread calculates partial dot product
+        float partialSum = 0.0f;
+        for (int j = localId; j < n; j += localSize) {
+            int matrixIdx = rowOffset + j;
+            partialSum += w.get(matrixIdx) * x.get(j);
+        }
+
+        // Store partial sum in local memory
+        localSum[localId] = partialSum;
+        context.localBarrier();
+
+        // Parallel reduction within workgroup
+        for (int stride = localSize / 2; stride > 0; stride >>= 1) {
+            if (localId < stride) {
+                localSum[localId] += localSum[localId + stride];
+            }
+            context.localBarrier();
+        }
+
+        // Thread 0 in each workgroup writes the final result
+        if (localId == 0) {
+            float sum = localSum[0];
+
+            float hbVal = hb.get(rowId);
+            float silu = hbVal * (1.0f / (1.0f + TornadoMath.exp(-hbVal)));
+            float result = silu * sum;
+
+            hb.set(rowId, result);
+        }
+    }
+
+    public static void matmulDirectIndexProjectionOne(KernelContext context, FloatArray x, FloatArray hb, FloatArray w, int n, int d, IntArray positionAndLayer, int localWorkGroupSize) {
+        // One row per workgroup (not per thread)
+        int rowId = context.groupIdx;
+        int localId = context.localIdx;
+        int localSize = localWorkGroupSize;
+
+        // Early exit if this workgroup is beyond our output dimension
+        if (rowId >= d) {
+            return;
+        }
+
+        // Allocate local memory for reduction
+        float[] localSum = context.allocateFloatLocalArray(localSize);
+
+        // Calculate offsets based on layer
+        int layer = positionAndLayer.get(1);
+        int layerOffset = layer * n * d;
+        int rowOffset = layerOffset + rowId * n;
+
+        // Each thread calculates partial dot product
+        float partialSum = 0.0f;
+        for (int j = localId; j < n; j += localSize) {
+            int matrixIdx = rowOffset + j;
+            partialSum += w.get(matrixIdx) * x.get(j);
+        }
+
+        // Store partial sum in local memory
+        localSum[localId] = partialSum;
+        context.localBarrier();
+
+        // Parallel reduction within workgroup
+        for (int stride = localSize / 2; stride > 0; stride >>= 1) {
+            if (localId < stride) {
+                localSum[localId] += localSum[localId + stride];
+            }
+            context.localBarrier();
+        }
+
+        // Thread 0 in each workgroup writes the final result
+        if (localId == 0) {
+            float sum = localSum[0];
+
+            //            float hbVal = hb.get(rowId);
+            //            float silu = hbVal * (1.0f / (1.0f + TornadoMath.exp(-hbVal)));
+            //            float result = silu * sum;
+
+            hb.set(rowId, sum);
+        }
+    }
+
+    public static void fused_ffn_w1_w3_glu_act(KernelContext context, FloatArray x, FloatArray hb, FloatArray w1, FloatArray w3,
+
+            int n, int d, IntArray positionAndLayer, int localWorkGroupSize) {
+        // One row per workgroup (not per thread)
+        int rowId = context.groupIdx;
+        int localId = context.localIdx;
+
+        if (rowId >= d) {
+            return;
+        }
+
+        float sum1 = mamulrow(context, localWorkGroupSize, x, w1, n, d, positionAndLayer);
+        float sum3 = mamulrow(context, localWorkGroupSize, x, w3, n, d, positionAndLayer);
+
+        // Thread 0 in each workgroup writes the final result
+        if (localId == 0) {
+            float silu = sum1 * (1.0f / (1.0f + TornadoMath.exp(-sum1)));
+            float result = silu * sum3;
+            hb.set(rowId, result);
+        }
+    }
+
+    public static float mamulrow(KernelContext context, int localSize, FloatArray x, FloatArray w, int n, int d, IntArray positionAndLayer) {
+        int rowId = context.groupIdx;
+        int localId = context.localIdx;
+
+        // Early exit if this workgroup is beyond our output dimension
+
+        // Allocate local memory for reduction
+        float[] localSum = context.allocateFloatLocalArray(localSize);
+
+        // Calculate offsets based on layer
+        int layer = positionAndLayer.get(1);
+        int layerOffset = layer * n * d;
+        int rowOffset = layerOffset + rowId * n;
+
+        // Each thread calculates partial dot product
+        float partialSum = 0.0f;
+        for (int j = localId; j < n; j += localSize) {
+            int matrixIdx = rowOffset + j;
+            partialSum += w.get(matrixIdx) * x.get(j);
+        }
+
+        // Store partial sum in local memory
+        localSum[localId] = partialSum;
+        context.localBarrier();
+
+        // Parallel reduction within workgroup
+        for (int stride = localSize / 2; stride > 0; stride >>= 1) {
+            if (localId < stride) {
+                localSum[localId] += localSum[localId + stride];
+            }
+            context.localBarrier();
+        }
+
+        return localSum[0];
     }
 }

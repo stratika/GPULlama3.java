@@ -66,12 +66,15 @@ CMD+=("-Dtornado.load.annotation.parallel=uk.ac.manchester.tornado.api.annotatio
 CMD+=("-Dtornado.threadInfo=false")
 CMD+=("-Dtornado.debug=false")
 CMD+=("-Dtornado.fullDebug=false")
-CMD+=("-Dtornado.print.kernel=false")
+CMD+=("-Dtornado.printKernel=false")
 CMD+=("-Dtornado.print.bytecodes=false")
 CMD+=("-Dtornado.device.memory=7GB")
 CMD+=("-Dtornado.profiler=false")
 CMD+=("-Dtornado.log.profiler=false")
-#CMD+=("-Dtornado.profiler.dump.dir=/home/mikepapadim/repos/gpu-llama3.java/prof.json")
+
+CMD+=("-Dlogits.projection=16")
+
+CMD+=("-Dtornado.profiler.dump.dir=/home/mikepapadim/repos/gpu-llama3.java/prof.json")
 
 # By default, the following are all enabled
 CMD+=("-Dttornado.enable.fastMathOptimizations=true")
@@ -86,28 +89,35 @@ CMD+=("-Dtornado.eventpool.maxwaitevents=32000")
 CMD+=("-Dtornado.eventpool.maxwaitevents=32000")
 
 
-CMD+=("-Dlayer.projectOne.global.workgroup.size=8192")
-CMD+=("-Dlayer.projectionTwo.global.workgroup.size=2048")
-CMD+=("-Dlayer.projectionThree.global.workgroup.size=8192")
-CMD+=("-Dlayer.matmul1.global.workgroup.size=2048")
-CMD+=("-Dlayer.qmatmul.global.workgroup.size=2048")
-CMD+=("-Dlayer.kmatmul.global.workgroup.size=512")
-CMD+=("-Dlayer.vmatmul.global.workgroup.size=512")
-CMD+=("-Dlayer.silu_elementwise_mul.global.workgroup.size=8192")
-CMD+=("-Dlayer.residual1.global.workgroup.size=2048")
-CMD+=("-Dlayer.residual2.global.workgroup.size=2048")
+#CMD+=("-Dlayer.projectOne.global.workgroup.size=8192")
+#CMD+=("-Dlayer.projectionTwo.global.workgroup.size=2048")
+#CMD+=("-Dlayer.projectionThree.global.workgroup.size=8192")
+#CMD+=("-Dlayer.matmul1.global.workgroup.size=2048")
+#CMD+=("-Dlayer.qmatmul.global.workgroup.size=2048")
+#CMD+=("-Dlayer.kmatmul.global.workgroup.size=512")
+#CMD+=("-Dlayer.vmatmul.global.workgroup.size=512")
+
+#CMD+=("-Dlayer.combinedProjectionAndActivation.global.workgroup.size=8192")
+
+#CMD+=("-Dlayer.residual1.global.workgroup.size=2048")
+#CMD+=("-Dlayer.residual2.global.workgroup.size=2048")
 CMD+=("-Dlayer.copyToCaches.global.workgroup.size=2048")
 
-CMD+=("-Dlayer.projectOne.local.workgroup.size=64")
-CMD+=("-Dlayer.projectionTwo.local.workgroup.size=32")
-CMD+=("-Dlayer.projectionThree.local.workgroup.size=64")
-CMD+=("-Dlayer.matmul1.local.workgroup.size=32")
-CMD+=("-Dlayer.qmatmul.local.workgroup.size=32")
-CMD+=("-Dlayer.kmatmul.local.workgroup.size=32")
-CMD+=("-Dlayer.vmatmul.local.workgroup.size=32")
-CMD+=("-Dlayer.silu_elementwise_mul.local.workgroup.size=128")
-CMD+=("-Dlayer.residual1.local.workgroup.size=128")
-CMD+=("-Dlayer.residual2.local.workgroup.size=128")
+CMD+=("-Dlayer.parallel-attention.local.workgroup.size=4")
+
+
+#CMD+=("-Dlayer.projectOne.local.workgroup.size=64")
+#CMD+=("-Dlayer.projectionTwo.local.workgroup.size=32")
+#CMD+=("-Dlayer.combinedProjectionAndActivation.local.workgroup.size=128")
+
+# CMD+=("-Dlayer.projectionThree.local.workgroup.size=64")
+#CMD+=("-Dlayer.matmul1.local.workgroup.size=16")
+#CMD+=("-Dlayer.qmatmul.local.workgroup.size=32")
+#CMD+=("-Dlayer.kmatmul.local.workgroup.size=32")
+#CMD+=("-Dlayer.vmatmul.local.workgroup.size=32")
+#CMD+=("-Dlayer.silu_elementwise_mul.local.workgroup.size=128")
+#CMD+=("-Dlayer.residual1.local.workgroup.size=128")
+#CMD+=("-Dlayer.residual2.local.workgroup.size=128")
 CMD+=("-Dlayer.copyToCaches.local.workgroup.size=128")
 
 
@@ -134,7 +144,7 @@ CMD+=("--stream" "$STREAM")
 CMD+=("--echo" "$ECHO")
 [ "$INTERACTIVE" = true ] && CMD+=("--interactive")
 [ "$INSTRUCT" = true ] && CMD+=("--instruct")
-echo "Executing command:"
+#echo "Executing command:"
 #printf "  %s\n" "${CMD[@]}"
 # Execute command
 "${CMD[@]}"

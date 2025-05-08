@@ -1,7 +1,6 @@
 package com.example.tornadovm;
 
 import com.example.aux.Tuple2;
-import com.example.core.model.tensor.FloatTensor;
 import com.example.inference.engine.impl.Configuration;
 import com.example.inference.engine.impl.Llama;
 import com.example.loader.weights.State;
@@ -50,6 +49,7 @@ public class TornadoVMMasterPlan {
         // Execute the first TornadoVM graph (pre-processing) -> copy-in
         executionPlan.withGraph(0).withGridScheduler(scheduler).execute();
 
+//        executionPlan.copy-in(state.wrapX);
         // Process each transformer layer sequentially
         for (int layer = 0; layer < config.numberOfLayers; layer++) {
             // Calculate offsets for KV cache access
@@ -69,10 +69,17 @@ public class TornadoVMMasterPlan {
         // Execute the final TornadoVM graph (projection to logits)
         executionPlan.withGraph(2).withGridScheduler(scheduler).execute();
 
-        // Copy the computed logits from the TornadoVM buffer to the output tensor
-//        state.logits.asMemorySegment().copyFrom(state.wrapLogits.getSegment());
-
         return state.wrapLogits;
+    }
+
+    // Force copy-in read-only weights
+    public void forceCopyInReadOnlyData() {
+        // Execute the first TornadoVM graph (pre-processing) -> copy-in
+        state.wrapX.init(0.0f);
+        state.positionAndLayer.init(0);
+        executionPlan.withGraph(0).withGridScheduler(scheduler).execute();
+        executionPlan.withGraph(1).withGridScheduler(scheduler).execute();
+        executionPlan.withGraph(2).withGridScheduler(scheduler).execute();
     }
 
     public void freeTornadoExecutionPlan() {
