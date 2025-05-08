@@ -103,6 +103,9 @@ CMD+=("-Dtornado.eventpool.maxwaitevents=32000")
 #CMD+=("-Dlayer.residual2.global.workgroup.size=2048")
 CMD+=("-Dlayer.copyToCaches.global.workgroup.size=2048")
 
+CMD+=("-Dlayer.parallel-attention.local.workgroup.size=4")
+
+
 #CMD+=("-Dlayer.projectOne.local.workgroup.size=64")
 #CMD+=("-Dlayer.projectionTwo.local.workgroup.size=32")
 #CMD+=("-Dlayer.combinedProjectionAndActivation.local.workgroup.size=128")
