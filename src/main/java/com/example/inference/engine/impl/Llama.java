@@ -387,6 +387,10 @@ public record Llama(Configuration configuration, Tokenizer tokenizer, Weights we
                 }
             }
 
+//            if (startNanos == 0) {
+//                startNanos = System.nanoTime();
+//            }
+
             // Update for next iteration
             currentToken = nextToken;
             state.latestToken = currentToken;

@@ -25,6 +25,8 @@ import java.util.random.RandomGeneratorFactory;
 public class LlamaApp {
     public static final boolean USE_VECTOR_API = Boolean.parseBoolean(System.getProperty("llama.VectorAPI", "true"));
     public static final boolean USE_AOT = Boolean.parseBoolean(System.getProperty("llama.AOT", "false"));
+    public static final boolean TORNADOVM = Boolean.parseBoolean(System.getProperty("use.tornadovm", "false"));
+
 
     static Sampler selectSampler(int vocabularySize, float temperature, float topp, long rngSeed) {
         Sampler sampler;
