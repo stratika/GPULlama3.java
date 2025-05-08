@@ -58,7 +58,7 @@ public final class Weights {
 
     public final FloatArray tokenEmbeddingTable; // (vocab_size, dim)
 
-    public final HalfFloatArray halfFloat;
+//    public final HalfFloatArray halfFloat;
 
 
 
@@ -102,7 +102,7 @@ public final class Weights {
 
         this.rms_final_weight_as_floatArray = FloatArray.fromFloatBuffer(rms_final_weight);
 
-        this.halfFloat = loadToHalfFloatArray(wcls);
+//        this.halfFloat = loadToHalfFloatArray(wcls);
         // For each layer's weights
 
 //        this.w2FlatVector = loadToVectorFloat4Array(w2);
