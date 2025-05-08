@@ -43,7 +43,7 @@ public class TornadoVMLayerPlanner {
         // ================ TASK GRAPH 0: BUFFER INITIALIZATION ================
         TaskGraph activationUpdate = new TaskGraph("activationUpdate")
                 .transferToDevice(DataTransferMode.EVERY_EXECUTION, state.wrapX)
-                .task("updateX", TornadoVMCompute::emptyTaskToForceCopyIn, state.wrapX)
+                .task("updateX", TransformerComputeKernels::emptyTaskToForceCopyIn, state.wrapX)
                 .persistOnDevice(state.wrapX);
         taskGraphs.add(activationUpdate.snapshot());
 
@@ -83,10 +83,13 @@ public class TornadoVMLayerPlanner {
                         config.headSize)
                 .task("copyToCaches", TransformerComputeKernels::copyToCache,
                         state.wrapKeyCache, state.wrapK,  state.wrapValueCache, state.wrapV, state.positionAndLayer)
-                .task("parallel-attention", TornadoVMCompute::processHeadsParallel,
+
+                .task("parallel-attention", TransformerComputeKernels::processHeadsParallel,
                         state.wrapQ, state.wrapKeyCache, state.wrapValueCache, state.wrapXb,
                         config.numberOfHeads, config.headSize, config.kvDim, config.kvMul, config.vocabularySize,
                         state.positionAndLayer, state.wrapAtt)
+
+
                 .task("matmul1", TransformerComputeKernels::matrixVectorGenericWithResidual, context,
                         state.wrapXb,  state.wrapX, weights.woFlat, config.dim, config.dim, state.positionAndLayer, LOCAL_WORK_GROUP_SIZE_ALLOC)
                 .task("reductionsOneBlockFFN", TransformerComputeKernels::reductionOneBlockWithLayer, context, state.tempFFN,
@@ -116,7 +119,8 @@ public class TornadoVMLayerPlanner {
                         state.wrapX, config.dim, config.rmsNormEps, state.localSize)
                 .task("mapContextLogits", TransformerComputeKernels::reductionOneBlock2WithLogits, context, state.wrapX,
                         weights.rms_final_weight_as_floatArray, state.tempLogits, state.positionAndLayer, config.dim)
-                .task("projection", TornadoVMCompute::matmulTornadoQ8Optimized, context, weights.wclsByteArray, state.wrapX, state.wrapLogits, config.dim)
+                .task("projection", TransformerComputeKernels::matmulTornadoQ8Optimized, context,
+                        weights.wclsByteArray, state.wrapX, state.wrapLogits, config.dim)
                 .transferToHost(DataTransferMode.EVERY_EXECUTION, state.wrapLogits);
         taskGraphs.add(logits.snapshot());
         // @formatter:on
@@ -167,6 +171,11 @@ public class TornadoVMLayerPlanner {
         vocabWorker.setGlobalWork(config.vocabularySize, 1, 1);
         vocabWorker.setLocalWork(16, 1, 1);
 
+//        WorkerGrid matrixQ8Worker = new WorkerGrid1D(config.vocabularySize * LOCAL_WORK_GROUP_SIZE_ALLOC);
+//        matrixQ8Worker.setGlobalWork(config.vocabularySize * LOCAL_WORK_GROUP_SIZE_ALLOC, 1, 1);
+//        matrixQ8Worker.setLocalWork(LOCAL_WORK_GROUP_SIZE_ALLOC, 1, 1);
+//
+//        tornadoForwardScheduler.addWorkerGrid("logits.projection", matrixQ8Worker);
         tornadoForwardScheduler.addWorkerGrid("logits.projection", vocabWorker);
 
         // Gridscheduler for all RMS normalizations
@@ -182,6 +191,13 @@ public class TornadoVMLayerPlanner {
 
         tornadoForwardScheduler.addWorkerGrid("logits.reductionsOneBlockLogits", rmsNormWorker);
         tornadoForwardScheduler.addWorkerGrid("logits.mapContextLogits", rmsNormWorker);
+
+//        // Add this to your GridScheduler configuration
+//        WorkerGrid mhaWorker = new WorkerGrid1D(config.numberOfHeads);
+//        mhaWorker.setGlobalWork(config.numberOfHeads, 1, 1);  // One workgroup per attention head
+//        mhaWorker.setLocalWork(8, 1, 1);                   // 8 threads per workgroup
+//
+//        tornadoForwardScheduler.addWorkerGrid("parallel-attention", mhaWorker);
 
         return tornadoForwardScheduler;
     }

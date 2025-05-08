@@ -10,7 +10,6 @@ import uk.ac.manchester.tornado.api.types.arrays.IntArray;
 public class TransformerComputeKernels {
 
     public TransformerComputeKernels() {
-
     }
 
     public static void emptyTaskToForceCopyIn(FloatArray buffer) {
@@ -69,24 +68,24 @@ public class TransformerComputeKernels {
     public static void reductionOneBlock2WithLayer(KernelContext context, FloatArray output, FloatArray x, FloatArray weights, FloatArray temp, IntArray positionAndLayer, int size) {
         int gid = context.globalIdx;
 
-        if (gid < size) {
+//        if (gid < size) {
             // Get the layer offset from positionAndLayer
             int layerOffset = positionAndLayer.get(1) * size;
 
             // Apply normalization with the correct weight for this layer
             float ss = temp.get(0);
             output.set(gid, weights.get(layerOffset + gid) * (ss * x.get(gid)));
-        }
+//        }
     }
 
     public static void reductionOneBlock2WithLogits(KernelContext context, FloatArray output, FloatArray weights, FloatArray temp, IntArray positionAndLayer, int size) {
         int gid = context.globalIdx;
 
-        if (gid < size) {
+//        if (gid < size) {
             // Apply normalization with the correct weight for this layer
             float ss = temp.get(0);
             output.set(gid, weights.get(gid) * (ss * output.get(gid)));
-        }
+//        }
     }
 
     public static void copyToCache(FloatArray destKeyCache, FloatArray srcKey, FloatArray destValueCache, FloatArray srcValue, IntArray positioNlayer) {
@@ -206,7 +205,6 @@ public class TransformerComputeKernels {
         if (rowId >= d) {
             return;
         }
-
         float sum = matrixVectorRowMajorOptimized(context, localSize, x, w, n, d, positionAndLayer);
 
         // Thread 0 in each workgroup writes the final result
@@ -254,6 +252,11 @@ public class TransformerComputeKernels {
             float result = silu * sum3;
             hb.set(rowId, result);
         }
+    }
+
+    public static float geluActivation(float x) {
+        float x3 = x * x * x;
+        return 0.5f * x * (1.0f + TornadoMath.tanh((0.797885f * (x + 0.044715f * x3))));
     }
 
     public static float siluActivation(float x) {
