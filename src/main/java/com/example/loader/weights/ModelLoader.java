@@ -1,23 +1,19 @@
 package com.example.loader.weights;
 
-
 import com.example.aux.Timer;
 import com.example.core.model.GGMLType;
 import com.example.core.model.GGUF;
-//import com.example.core.model.tensor.BF16FloatTensor;
 import com.example.core.model.tensor.F16FloatTensor;
 import com.example.core.model.tensor.FloatTensor;
 import com.example.core.model.tensor.GGMLTensorEntry;
 import com.example.core.model.tensor.Q4_0FloatTensor;
 import com.example.core.model.tensor.Q8_0FloatTensor;
-
 import com.example.core.types.Pair;
 import com.example.inference.engine.impl.Configuration;
 import com.example.inference.engine.impl.Llama;
 import com.example.inference.operation.RoPE;
 import com.example.tokenizer.impl.Tokenizer;
 import com.example.tokenizer.vocabulary.Vocabulary;
-
 
 import java.io.IOException;
 import java.nio.ByteOrder;
@@ -50,21 +46,13 @@ public final class ModelLoader {
             Vocabulary vocabulary = Vocabulary.loadVocabulary(metadata);
             Tokenizer tokenizer = createTokenizer(metadata, vocabulary);
 
-            Configuration config = new Configuration(
-                    (int) metadata.get("llama.embedding_length"),
-                    (int) metadata.get("llama.feed_forward_length"),
-                    (int) metadata.get("llama.block_count"),
+            Configuration config = new Configuration((int) metadata.get("llama.embedding_length"), (int) metadata.get("llama.feed_forward_length"), (int) metadata.get("llama.block_count"),
                     (int) metadata.get("llama.attention.head_count"),
 
-                    metadata.containsKey("llama.attention.head_count_kv")
-                            ? (int) metadata.get("llama.attention.head_count_kv")
-                            : (int) metadata.get("llama.attention.head_count"),
+                    metadata.containsKey("llama.attention.head_count_kv") ? (int) metadata.get("llama.attention.head_count_kv") : (int) metadata.get("llama.attention.head_count"),
 
-                    vocabulary.size(),
-                    (int) metadata.get("llama.context_length"),
-                    (float) metadata.getOrDefault("llama.attention.layer_norm_rms_epsilon", 1e-5f),
-                    (float) metadata.getOrDefault("llama.rope.freq_base", 10000f)
-            ).withContextLength(contextLength);
+                    vocabulary.size(), (int) metadata.get("llama.context_length"), (float) metadata.getOrDefault("llama.attention.layer_norm_rms_epsilon", 1e-5f),
+                    (float) metadata.getOrDefault("llama.rope.freq_base", 10000f)).withContextLength(contextLength);
 
             Weights weights = null;
             if (loadWeights) {
@@ -77,19 +65,27 @@ public final class ModelLoader {
 
     public static Weights loadWeights(Map<String, GGMLTensorEntry> tensorEntries, Configuration config) {
         boolean ropeScaling = tensorEntries.containsKey("rope_freqs");
-        float scaleFactor = 8;
-        float loFreqFactor = 1;
-        float hiFreqFactor = 3;
-        int oldContextLength = 8192;
-        Pair<float[], float[]> ropeFreqs = RoPE.precomputeFreqsCis(config.contextLength, config.headSize, config.ropeTheta,
-                ropeScaling, scaleFactor, loFreqFactor, hiFreqFactor, oldContextLength);
+        RopeConfig ropeConfig = new RopeConfig(8.0f,         // scaleFactor
+                1.0f,                    // loFreqFactor
+                3.0f,                    // hiFreqFactor
+                8192                     // oldContextLength
+        );
+
+        Pair<float[], float[]> ropeFreqs = RoPE.precomputeFreqsCis(config.contextLength,      // Maximum sequence length the model can process
+                config.headSize,           // Dimension of each attention head
+                config.ropeTheta,          // Base frequency parameter (typically 10000.0)
+                ropeScaling,               // Whether to apply frequency scaling (determined by model type)
+                ropeConfig.scaleFactor,    // Scale factor for extending context length (NTK-aware scaling)
+                ropeConfig.loFreqFactor,   // Low frequency scaling factor for better long-range dependencies
+                ropeConfig.hiFreqFactor,   // High frequency scaling factor for preserving local precision
+                ropeConfig.oldContextLength // Original context length the model was trained with
+        );
+
         float[] ropeFreqsReal = ropeFreqs.first();
         float[] ropeFreqsImag = ropeFreqs.second();
 
         GGMLTensorEntry tokenEmbeddings = tensorEntries.get("token_embd.weight");
-        Weights qw = new Weights(
-                loadQuantized(tokenEmbeddings),
-                loadArrayOfFloatBuffer(config.numberOfLayers, i -> tensorEntries.get("blk." + i + ".attn_norm.weight")),
+        Weights qw = new Weights(loadQuantized(tokenEmbeddings), loadArrayOfFloatBuffer(config.numberOfLayers, i -> tensorEntries.get("blk." + i + ".attn_norm.weight")),
                 loadArrayOfQuantized(config.numberOfLayers, i -> tensorEntries.get("blk." + i + ".attn_q.weight")),
                 loadArrayOfQuantized(config.numberOfLayers, i -> tensorEntries.get("blk." + i + ".attn_k.weight")),
                 loadArrayOfQuantized(config.numberOfLayers, i -> tensorEntries.get("blk." + i + ".attn_v.weight")),
@@ -98,38 +94,39 @@ public final class ModelLoader {
                 loadArrayOfQuantized(config.numberOfLayers, i -> tensorEntries.get("blk." + i + ".ffn_gate.weight")), // w1
                 loadArrayOfQuantized(config.numberOfLayers, i -> tensorEntries.get("blk." + i + ".ffn_down.weight")), // w2
                 loadArrayOfQuantized(config.numberOfLayers, i -> tensorEntries.get("blk." + i + ".ffn_up.weight")), // w3
+                // final layer normalization that's applied after all transformer blocks but before the final projection to vocabulary logits.
                 toFloatBuffer(tensorEntries.get("output_norm.weight")),
-                FloatBuffer.wrap(ropeFreqsReal),
-                FloatBuffer.wrap(ropeFreqsImag),
-                // If "output.weight" is not present then the embedding weights are tied/shared with the decoder.
-                // This is commonly referred as "tie word embeddings".
-                loadQuantized(tensorEntries.getOrDefault("output.weight", tokenEmbeddings))
-        );
-        
-        if (VALIDATE_MODEL_TO_TORNADOVM_TYPES) {
-            WeightsValidator validator = new WeightsValidator(qw, config.dim, config.kvDim, config.hiddenDim, config.numberOfLayers);
-            // Run validation
-            boolean isValid = validator.validateAll();
-            if (isValid) {
-                System.out.println("✅ Validation Passed: Flattened data matches input tensors.");
-            } else {
-                System.err.println("❌ Validation Failed: Mismatches detected.");
-            }
-        }
+                FloatBuffer.wrap(ropeFreqsReal), //
+                FloatBuffer.wrap(ropeFreqsImag), //
+                // If "output.weight" is not present, then the embedding weights are tied/shared with the decoder.
+                // This is commonly referred to as "tie word embeddings".
+                loadQuantized(tensorEntries.getOrDefault("output.weight", tokenEmbeddings)));
+
+        validateWeightsIfEnabled(qw, config); //Validate tha loading to TornadoVM data structures preserves initial data
+
         return qw;
     }
 
+    // Helper method for optional validation
+    private static void validateWeightsIfEnabled(Weights weights, Configuration config) {
+        if (VALIDATE_MODEL_TO_TORNADOVM_TYPES) {
+            WeightsValidator validator = new WeightsValidator(weights, config.dim, config.kvDim, config.hiddenDim, config.numberOfLayers);
 
+            boolean isValid = validator.validateAll();
+            String message = isValid ? "✅ Validation Passed: Flattened data matches input tensors." : "❌ Validation Failed: Mismatches detected.";
+
+            if (isValid) {
+                System.out.println(message);
+            } else {
+                System.err.println(message);
+            }
+        }
+    }
 
     private static Tokenizer createTokenizer(Map<String, Object> metadata, Vocabulary vocabulary) {
         String[] mergeLines = (String[]) metadata.get("tokenizer.ggml.merges");
-        List<Pair<Integer, Integer>> merges = Arrays.stream(mergeLines)
-                .map(line -> line.split(" "))
-                .map(parts ->
-                        new Pair<>(
-                                vocabulary.getIndex(parts[0]).orElseThrow(),
-                                vocabulary.getIndex(parts[1]).orElseThrow())
-                ).toList();
+        List<Pair<Integer, Integer>> merges = Arrays.stream(mergeLines).map(line -> line.split(" "))
+                .map(parts -> new Pair<>(vocabulary.getIndex(parts[0]).orElseThrow(), vocabulary.getIndex(parts[1]).orElseThrow())).toList();
 
         int allTokens = vocabulary.size();
         int baseTokens = 128000; // assume all tokens after the base ones are special.
@@ -138,24 +135,19 @@ public final class ModelLoader {
 
         assert specialTokensList.stream().allMatch(token -> vocabulary.getIndex(token).isPresent());
 
-        Map<String, Integer> specialTokens =
-                IntStream.range(0, specialTokensList.size())
-                        .boxed()
-                        .collect(Collectors.toMap(
-                                i -> specialTokensList.get(i),
-                                i -> baseTokens + i)
-                        );
+        Map<String, Integer> specialTokens = IntStream.range(0, specialTokensList.size()).boxed().collect(Collectors.toMap(i -> specialTokensList.get(i), i -> baseTokens + i));
 
         return new Tokenizer(vocabulary, merges, LLAMA_3_PATTERN, specialTokens);
     }
 
     public static FloatTensor loadQuantized(GGMLTensorEntry entry) {
         GGMLType ggmlType = entry.ggmlType();
+        System.out.println("Tensor type: " + ggmlType + " " + entry.name() + " " + entry.shape().length);
         return switch (ggmlType) {
-//            case F32 -> new F32FloatTensor(FloatTensor.numberOfElements(entry.shape()), entry.memorySegment());
+            //            case F32 -> new F32FloatTensor(FloatTensor.numberOfElements(entry.shape()), entry.memorySegment());
             case Q8_0 -> new Q8_0FloatTensor(FloatTensor.numberOfElements(entry.shape()), entry.memorySegment());
             case Q4_0 -> new Q4_0FloatTensor(FloatTensor.numberOfElements(entry.shape()), entry.memorySegment());
-//            case BF16 -> new BF16FloatTensor(FloatTensor.numberOfElements(entry.shape()), entry.memorySegment());
+            //            case BF16 ->  new BF16FloatTensor(FloatTensor.numberOfElements(entry.shape()), entry.memorySegment());
             case F16 -> new F16FloatTensor(FloatTensor.numberOfElements(entry.shape()), entry.memorySegment());
             default -> throw new UnsupportedOperationException("Quantization format " + ggmlType);
         };
@@ -177,7 +169,6 @@ public final class ModelLoader {
         return array;
     }
 
-
     public static FloatBuffer toFloatBuffer(GGMLTensorEntry tensorEntry) {
         GGMLType ggmlType = tensorEntry.ggmlType();
         System.out.println("Tensor type: " + ggmlType);
@@ -185,6 +176,21 @@ public final class ModelLoader {
             case F32 -> tensorEntry.memorySegment().asByteBuffer().order(ByteOrder.LITTLE_ENDIAN).asFloatBuffer();
             default -> throw new UnsupportedOperationException("Conversion to " + ggmlType);
         };
+    }
+
+    // Helper class to encapsulate RoPE configuration parameters
+    private static class RopeConfig {
+        final float scaleFactor;
+        final float loFreqFactor;
+        final float hiFreqFactor;
+        final int oldContextLength;
+
+        RopeConfig(float scaleFactor, float loFreqFactor, float hiFreqFactor, int oldContextLength) {
+            this.scaleFactor = scaleFactor;
+            this.loFreqFactor = loFreqFactor;
+            this.hiFreqFactor = hiFreqFactor;
+            this.oldContextLength = oldContextLength;
+        }
     }
 
 }
