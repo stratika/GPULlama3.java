@@ -1,5 +1,6 @@
 package com.example.loader.weights;
 
+import com.example.LlamaApp;
 import com.example.core.model.tensor.FloatTensor;
 import uk.ac.manchester.tornado.api.types.HalfFloat;
 import uk.ac.manchester.tornado.api.types.arrays.ByteArray;
@@ -83,24 +84,47 @@ public final class Weights {
         this.rms_att_weightFlat = loadToSingleFloatArray(rms_att_weight); // (layer, dim) rmsnorm weights
         this.rms_ffn_weightFlat = loadToSingleFloatArray(rms_ffn_weight); // (layer, dim)
 
-        this.wqFlat = loadToContinuesFloatArray(wq); // [layer * dim * dim] - (layer, dim, dim)
-        this.wkFlat = loadToContinuesFloatArray(wk); // [layer * dim * kvDim] - (layer, dim, kvDim)
-        this.wvFlat = loadToContinuesFloatArray(wv); // [layer * dim * kvDim] - (layer, dim, kvDim)
-        this.woFlat = loadToContinuesFloatArray(wo); // [layer * dim * dim] - (layer, dim, dim)
+        if (LlamaApp.TORNADOVM) {
+            System.out.println("Loading weights...");
+            System.out.println("Loading wq weights...");
+            this.wqFlat = loadToContinuesFloatArray(wq);// [layer * dim * dim] - (layer, dim, dim)
+            System.out.println("Loading wk weights...");
+            this.wkFlat = loadToContinuesFloatArray(wk); // [layer * dim * kvDim] - (layer, dim, kvDim)
+            System.out.println("Loading wv weights...");
+            this.wvFlat = loadToContinuesFloatArray(wv); // [layer * dim * kvDim] - (layer, dim, kvDim)
+            System.out.println("Loading wo weights...");
+            this.woFlat = loadToContinuesFloatArray(wo); // [layer * dim * dim] - (layer, dim, dim)
 
-        this.w1Flat = loadToContinuesFloatArray(w1); // (layer, hidden_dim, dim)
-        this.w2Flat = loadToContinuesFloatArray(w2); // (layer, dim, hidden_dim)
-        this.w3Flat = loadToContinuesFloatArray(w3);
-        ; // (layer, hidden_dim, dim)
+            System.out.println("Loading w1 weights..." + w1.length +  " " + w1[0].size());
+            this.w1Flat = loadToContinuesFloatArray(w1); // (layer, hidden_dim, dim)
+            System.out.println("Loading w2 weights...");
+            this.w2Flat = loadToContinuesFloatArray(w2); // (layer, dim, hidden_dim)
+            System.out.println("Loading w3 weights...");
+            this.w3Flat = loadToContinuesFloatArray(w3);
+            ; // (layer, hidden_dim, dim)
 
-        this.freq_cis_imagFlat = loadToSingleFloatArray(freq_cis_imag);
-        this.freq_cis_realFlat = loadToSingleFloatArray(freq_cis_real);
+            this.freq_cis_imagFlat = loadToSingleFloatArray(freq_cis_imag);
+            this.freq_cis_realFlat = loadToSingleFloatArray(freq_cis_real);
 
-        // Store read-only weight as a ByteArray in TornadoVM
-        this.wclsByteArray = ByteArray.fromSegment(wcls.asMemorySegment());
+            // Store read-only weight as a ByteArray in TornadoVM
+            this.wclsByteArray = ByteArray.fromSegment(wcls.asMemorySegment());
 
 
-        this.rms_final_weight_as_floatArray = FloatArray.fromFloatBuffer(rms_final_weight);
+            this.rms_final_weight_as_floatArray = FloatArray.fromFloatBuffer(rms_final_weight);
+        } else {
+            this.wqFlat = null;
+            this.wkFlat = null;
+            this.wvFlat = null;
+            this.woFlat = null;
+            this.w1Flat = null;
+            this.w2Flat = null;
+            this.w3Flat = null;
+            this.freq_cis_imagFlat = null;
+            this.freq_cis_realFlat = null;
+            this.wclsByteArray = null;
+            this.rms_final_weight_as_floatArray = null;
+        }
+  
 
 //        this.halfFloat = loadToHalfFloatArray(wcls);
         // For each layer's weights
@@ -110,7 +134,14 @@ public final class Weights {
     }
 
     private static FloatArray loadToContinuesFloatArray(FloatTensor[] input) {
-        FloatArray all = new FloatArray(input.length * input[0].size());
+        System.out.println("Loading to continues float array..." +  input.length + " " + input[0].size());
+
+        int allocationSize = input.length * input[0].size();
+        if (allocationSize < 0) {
+            throw new IllegalArgumentException("Allocation size is negative: " + allocationSize);
+        }
+
+        FloatArray all = new FloatArray(allocationSize);
 
         int index = 0;
         for (FloatTensor tensor : input) {
