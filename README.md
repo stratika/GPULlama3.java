@@ -33,7 +33,7 @@ Ensure you have the following installed and configured:
 When cloning this repository, use the `--recursive` flag to ensure all submodules are properly included:
 
 ```bash
-git clone --recursive https://github.com/yourusername/tornado-llama3.git
+git clone --recursive https://github.com/mikepapadim/tornado-llama3.git
 ```
 
 Before running the project, you must build the Tornado external submodule first. The environment variables like `TORNADO_SDK` need to point to this submodule directory where the OpenCL backend is installed. This is critical for the GPU acceleration to work properly. After proper setup, you will use the `tornado-llama-opencl` command when targeting GPU devices.
