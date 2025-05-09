@@ -1,4 +1,4 @@
-R# TornadoVM Llama3 Java Integration
+# TornadoVM Llama3 Java Integration
 
 Integration of **Llama3 models** with **TornadoVM** to enable accelerated inference on Java using GPUs and CPUs. This project allows you to run Llama3 inference efficiently, leveraging TornadoVM's parallel computing features for enhanced performance.
 
