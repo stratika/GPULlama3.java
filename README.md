@@ -1,4 +1,4 @@
-# TornadoVM Llama3 Java Integration
+R# TornadoVM Llama3 Java Integration
 
 Integration of **Llama3 models** with **TornadoVM** to enable accelerated inference on Java using GPUs and CPUs. This project allows you to run Llama3 inference efficiently, leveraging TornadoVM's parallel computing features for enhanced performance.
 
@@ -14,7 +14,7 @@ Previous intergration of TornadoVM and Llama2 it can be found in [llama2.tornado
 - TornadoVM-accelerated Llama 3 inference with Java
 - Supports GGUF format models
 - Instruction-following and chat modes
-- Optimized for TornadoVM’s GPU and CPU modes
+- Optimized for TornadoVM's GPU and CPU modes
 - Interactive CLI with `--chat` and `--instruct` options
 
 ## Setup
@@ -27,6 +27,16 @@ Ensure you have the following installed and configured:
 - **TornadoVM**: To install **TornadoVM**, you'll need to set up the environment variables `TORNADO_ROOT` and `TORNADO_SDK` as part of the configuration process.
   For detailed installation instructions, visit the [TornadoVM GitHub repository](https://github.com/beehive-lab/TornadoVM).
 - **Maven**: For building the Java project.
+
+### TornadoVM External Submodule Setup
+
+When cloning this repository, use the `--recursive` flag to ensure all submodules are properly included:
+
+```bash
+git clone --recursive https://github.com/yourusername/tornado-llama3.git
+```
+
+Before running the project, you must build the Tornado external submodule first. The environment variables like `TORNADO_SDK` need to point to this submodule directory where the OpenCL backend is installed. This is critical for the GPU acceleration to work properly. After proper setup, you will use the `tornado-llama-opencl` command when targeting GPU devices.
 
 ### Download Model Files
 
@@ -71,7 +81,7 @@ mvn clean install
 
 ## Running Llama3 Models
 
-The `tornado-llama` script executes Llama3 models on TornadoVM. By default, models run on the CPU; specify `--gpu` to enable GPU acceleration.
+The `tornado-llama-opencl` script executes Llama3 models on TornadoVM. By default, models run on the CPU; specify `--gpu` to enable GPU acceleration.
 
 ### Usage Examples
 
@@ -79,28 +89,28 @@ The `tornado-llama` script executes Llama3 models on TornadoVM. By default, mode
 Run a model with a text prompt:
 
 ```bash
-./tornado-llama --model Llama-3.2-1B-Instruct-Q4_0.gguf --prompt "Explain the benefits of GPU acceleration."
+./tornado-llama-opencl --model Llama-3.2-1B-Instruct-Q4_0.gguf --prompt "Explain the benefits of GPU acceleration."
 ```
 
 #### GPU Execution
 Enable GPU acceleration by adding the `--gpu` flag:
 
 ```bash
-./tornado-llama --gpu --model Llama-3.2-1B-Instruct-Q4_0.gguf --prompt "What is TornadoVM?"
+tornado-llama-opencl --gpu --model Llama-3.2-1B-Instruct-Q8_0.gguf --prompt "tell me a joke"
 ```
 
 #### Interactive Chat Mode
 Start an interactive session:
 
 ```bash
-./tornado-llama --model Llama-3.2-1B-Instruct-Q4_0.gguf --interactive
+./tornado-llama-opencl --model Llama-3.2-1B-Instruct-Q4_0.gguf --interactive
 ```
 
 #### Instruction-following with Streaming
 Run the model in instruction-following mode with token streaming:
 
 ```bash
-./tornado-llama --model Llama-3.2-1B-Instruct-Q4_0.gguf --prompt "List Java advantages." --instruct --stream true
+./tornado-llama-opencl --model Llama-3.2-1B-Instruct-Q4_0.gguf --prompt "List Java advantages." --instruct --stream true
 ```
 
 ## Command Line Options
