@@ -32,7 +32,6 @@ public final class ModelLoader {
     private static final String TOKENIZER_LLAMA_3_MODEL = "gpt2";
 
     private static final String LLAMA_3_PATTERN = "(?i:'s|'t|'re|'ve|'m|'ll|'d)|[^\\r\\n\\p{L}\\p{N}]?\\p{L}+|\\p{N}{1,3}| ?[^\\s\\p{L}\\p{N}]+[\\r\\n]*|\\s*[\\r\\n]+|\\s+(?!\\S)|\\s+";
-    private static final boolean VALIDATE_MODEL_TO_TORNADOVM_TYPES = false;
 
     public static Llama loadModel(Path ggufPath, int contextLength, boolean loadWeights) throws IOException {
         GGUF gguf = GGUF.loadModel(ggufPath);
