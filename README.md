@@ -1,4 +1,4 @@
-# GPULlama.java power with TornadoVM
+# GPULlama3.java powered by TornadoVM
 <img src="docs/java-tornado-gpu.jpg" width="30%">
 
 Integration of **Llama3 models** with **TornadoVM** to enable accelerated inference on Java using GPUs and CPUs. This project allows you to run Llama3 inference efficiently, leveraging TornadoVM's parallel computing features for enhanced performance.
@@ -6,17 +6,27 @@ Integration of **Llama3 models** with **TornadoVM** to enable accelerated infere
 
 This project builds on [Llama3.java](https://github.com/mukel/llama3.java), based on the original [Llama 3](https://github.com/meta-llama/llama3), [3.1](https://llama.meta.com/docs/model-cards-and-prompt-formats/llama3_1), and [3.2](https://ai.meta.com/blog/llama-3-2-connect-2024-vision-edge-mobile-devices/) models, with TornadoVM support for parallelism and hardware acceleration.
 
+Thanks to @mukel for the original implementation of LLama3.java.
+
 Previous intergration of TornadoVM and Llama2 it can be found in [llama2.tornadovm](https://github.com/mikepapadim/llama2.tornadovm.java).
 
 ---
 
 ## Features
 
-- TornadoVM-accelerated Llama 3 inference with Java
-- Supports GGUF format models
-- Instruction-following and chat modes
-- Optimized for TornadoVM's GPU and CPU modes
-- Interactive CLI with `--chat` and `--instruct` options
+- **TornadoVM-accelerated Llama 3 inference** with pure Java
+- **Support for GGUF format models** with Q8_0 and Q4_0 quantization
+- **Instruction-following and chat modes** for various use cases
+- **Multiple GPU backends**:
+  - OpenCL backend (NVIDIA, Intel, AMD GPUs, Apple Silicon M-series)
+  - PTX backend (NVIDIA GPUs)
+- **Cross-platform compatibility**:
+  - ✅ NVIDIA GPUs (OpenCL & PTX)
+  - ✅ Intel GPUs (OpenCL)
+  - ✅ AMD GPUs (OpenCL)
+  - ✅ Apple Silicon M-series (OpenCL)
+- **Interactive CLI** with `--interactive` and `--instruct` modes
+- **Flexible backend switching** - choose OpenCL or PTX at runtime (need to build TornadoVM with both enabled)
 
 ## Setup
 
