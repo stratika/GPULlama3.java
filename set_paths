@@ -1,7 +1,35 @@
 #!/bin/bash
 
+# Environment setup script for running LLaMA3 with TornadoVM GPU acceleration
+# This script configures all necessary environment variables for development and runtime
+
+# ===== TornadoVM Configuration =====
+# Set the root directory for TornadoVM installation
+# TornadoVM enables Java programs to run on GPUs, FPGAs, and multi-core CPUs
 export TORNADO_ROOT=/home/mikepapadim/manchester/TornadoVM
+
+# Set the path to TornadoVM SDK binaries
+# The SDK contains essential tools and scripts for TornadoVM development
 export TORNADO_SDK=${TORNADO_ROOT}/bin/sdk
+
+# ===== LLaMA3 Project Configuration =====
+# Set the root directory for the GPU-accelerated LLaMA3 Java implementation
 export LLAMA_ROOT=/home/mikepapadim/repos/gpu-llama3.java
+
+# ===== PATH Configuration =====
+# First PATH export is empty/incomplete - may be a typo or placeholder
 export PATH=${PATH}:
+
+# Add LLaMA binary directory to PATH
+# This allows running LLaMA executables/scripts from anywhere
+# Note: Uses safe ${LLAMA_ROOT=} syntax with default value handling
 export PATH="${PATH}:${LLAMA_ROOT=}/bin"
+
+# ===== Notes =====
+# After sourcing this script:
+# 1. TornadoVM will be available for GPU computation
+# 2. LLaMA3 command-line tools will be in your PATH
+# 3. You can run LLaMA3 with GPU acceleration using TornadoVM
+#
+# To use this script: source ./setup_environment.sh
+# or: . ./setup_environment.sh

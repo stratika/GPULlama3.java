@@ -1,6 +1,7 @@
 package com.example.loader.weights;
 
 import com.example.LlamaApp;
+import com.example.core.model.GGMLType;
 import com.example.core.model.tensor.FloatTensor;
 import uk.ac.manchester.tornado.api.types.arrays.ByteArray;
 import uk.ac.manchester.tornado.api.types.arrays.FloatArray;
@@ -47,7 +48,7 @@ public class Weights {
     public FloatArray freq_cis_realFlat; // (seq_len, head_size/2)
     public FloatArray freq_cis_imagFlat; // (seq_len, head_size/2)
     // (optional) classifier weights for the logits, on the last layer
-
+    public GGMLType weightType;
     /**
      * Constructor to initialize all weight tensors for the model. Automatically creates TornadoVM-compatible versions when needed.
      *
@@ -81,7 +82,7 @@ public class Weights {
      *         Classifier weights for output logits
      */
     public Weights(FloatTensor token_embedding_table, FloatBuffer[] rms_att_weight, FloatTensor[] wq, FloatTensor[] wk, FloatTensor[] wv, FloatTensor[] wo, FloatBuffer[] rms_ffn_weight,
-            FloatTensor[] w1, FloatTensor[] w2, FloatTensor[] w3, FloatBuffer rms_final_weight, FloatBuffer freq_cis_real, FloatBuffer freq_cis_imag, FloatTensor wcls) {
+            FloatTensor[] w1, FloatTensor[] w2, FloatTensor[] w3, FloatBuffer rms_final_weight, FloatBuffer freq_cis_real, FloatBuffer freq_cis_imag, FloatTensor wcls, GGMLType weightType) {
         this.token_embedding_table = token_embedding_table;
         this.rms_att_weight = rms_att_weight;
         this.wq = wq;
@@ -132,7 +133,7 @@ public class Weights {
             this.w2Layered = null;
             this.w3Layered = null;
         }
-
+        this.weightType = weightType;
     }
 
     /**
@@ -173,13 +174,13 @@ public class Weights {
                 float value = array[i].get();
                 result[i].set(j, value);
             }
-
             // Reset buffer position
             array[i].position(originalPosition);
         }
 
         return result;
     }
+
 
     /**
      * Converts a single FloatBuffer to a TornadoVM FloatArray. Creates a duplicate buffer to avoid modifying the original.

@@ -152,14 +152,49 @@ public class TornadoVMLayerPlanner {
                 .task("reductionsOneBlockLogits", TransformerComputeKernels::reductionOneBlockWithLayer, context, state.tempLogits,
                         state.wrapX, config.dim, config.rmsNormEps, state.localSize)
                 .task("mapContextLogits", TransformerComputeKernels::reductionOneBlock2WithLogits, context, state.wrapX,
-                        weights.rms_final_weight_as_floatArray, state.tempLogits)
-                .task("projection", TransformerComputeKernels::matmulTornadoQ8Optimized, context,
-                        weights.wclsByteArray, state.wrapX, state.wrapLogits, config.dim)
-                .transferToHost(DataTransferMode.EVERY_EXECUTION, state.wrapLogits);
+                        weights.rms_final_weight_as_floatArray, state.tempLogits);
+                logits = configureQuantizedMatrixVectorFinalWeight(logits);
+                logits.transferToHost(DataTransferMode.EVERY_EXECUTION, state.wrapLogits);
         taskGraphs.add(logits.snapshot());
         // @formatter:on
 
         return new Tuple2<>(taskGraphs, setupGridSchedulersLayered());
+    }
+
+    // @formatter:off
+    /**
+     * Configures the final projection layer in the task graph based on weight quantization type.
+     *
+     * This method adds a "projection" task to compute the final logits by performing a
+     * matrix-vector multiplication between the model's output embeddings and the classifier
+     * weights (wcls). The computation kernel used depends on the quantization format.
+     *
+     * Supported quantization types:
+     * - Q8_0: 8-bit quantization with uniform scaling per 32-element block
+     * - Q4_0: 4-bit quantization with uniform scaling per 32-element block
+     *
+     * The task multiplies:
+     * - weights.wclsByteArray: Quantized classifier weights (vocab_size x dim)
+     * - state.wrapX: Current layer output (dim)
+     * - Result: state.wrapLogits: Raw logits (vocab_size)
+     *
+     * @param logits The existing task graph to extend with the projection operation
+     * @return The modified task graph with the projection task added
+     * @throws UnsupportedOperationException If weights.weightType is not Q8_0 or Q4_0
+     */
+    // @formatter:on
+    private TaskGraph configureQuantizedMatrixVectorFinalWeight(TaskGraph logits) {
+        switch (weights.weightType) {
+            case Q8_0:
+                logits.task("projection", TransformerComputeKernels::matmulTornadoQ8Optimized, context, weights.wclsByteArray, state.wrapX, state.wrapLogits, config.dim);
+                break;
+            case Q4_0:
+                logits.task("projection", TransformerComputeKernels::matmulTornadoQ4Optimized, context, weights.wclsByteArray, state.wrapX, state.wrapLogits, config.dim);
+                break;
+            default:
+                throw new UnsupportedOperationException("Unsupported weight quantization type: " + weights.weightType + ". Only Q8_0 and Q4_0 are supported.");
+        }
+        return logits;
     }
 
     // @formatter:off
