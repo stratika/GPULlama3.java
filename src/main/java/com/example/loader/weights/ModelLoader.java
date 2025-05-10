@@ -1,5 +1,6 @@
 package com.example.loader.weights;
 
+import com.example.LlamaApp;
 import com.example.aux.Timer;
 import com.example.core.model.GGMLType;
 import com.example.core.model.GGUF;
@@ -14,6 +15,7 @@ import com.example.inference.engine.impl.Llama;
 import com.example.inference.operation.RoPE;
 import com.example.tokenizer.impl.Tokenizer;
 import com.example.tokenizer.vocabulary.Vocabulary;
+import uk.ac.manchester.tornado.api.types.arrays.FloatArray;
 
 import java.io.IOException;
 import java.nio.ByteOrder;
@@ -80,11 +82,20 @@ public final class ModelLoader {
                 ropeConfig.oldContextLength // Original context length the model was trained with
         );
 
+        GGMLTensorEntry tokenEmbeddings = tensorEntries.get("token_embd.weight");
+
+        return createRegularWeights(tensorEntries, config, ropeFreqs, tokenEmbeddings);
+    }
+
+    // Create weights optimized for TornadoVM
+
+    private static Weights createRegularWeights(Map<String, GGMLTensorEntry> tensorEntries,
+            Configuration config,
+            Pair<float[], float[]> ropeFreqs,
+            GGMLTensorEntry tokenEmbeddings) {
         float[] ropeFreqsReal = ropeFreqs.first();
         float[] ropeFreqsImag = ropeFreqs.second();
-
-        GGMLTensorEntry tokenEmbeddings = tensorEntries.get("token_embd.weight");
-        Weights qw = new Weights(loadQuantized(tokenEmbeddings), loadArrayOfFloatBuffer(config.numberOfLayers, i -> tensorEntries.get("blk." + i + ".attn_norm.weight")),
+        return  new Weights(loadQuantized(tokenEmbeddings), loadArrayOfFloatBuffer(config.numberOfLayers, i -> tensorEntries.get("blk." + i + ".attn_norm.weight")),
                 loadArrayOfQuantized(config.numberOfLayers, i -> tensorEntries.get("blk." + i + ".attn_q.weight")),
                 loadArrayOfQuantized(config.numberOfLayers, i -> tensorEntries.get("blk." + i + ".attn_k.weight")),
                 loadArrayOfQuantized(config.numberOfLayers, i -> tensorEntries.get("blk." + i + ".attn_v.weight")),
@@ -100,8 +111,26 @@ public final class ModelLoader {
                 // If "output.weight" is not present, then the embedding weights are tied/shared with the decoder.
                 // This is commonly referred to as "tie word embeddings".
                 loadQuantized(tensorEntries.getOrDefault("output.weight", tokenEmbeddings)));
-
-        return qw;
+    }
+    private static FloatArray loadTensorAsFloatArray(GGMLTensorEntry entry) {
+        if (entry.ggmlType() == GGMLType.F32) {
+            // For F32, we can directly create FloatArray from memory
+            FloatBuffer buffer = entry.memorySegment().asByteBuffer()
+                    .order(ByteOrder.LITTLE_ENDIAN).asFloatBuffer();
+            FloatArray array = new FloatArray(buffer.remaining());
+            for (int i = 0; i < buffer.remaining(); i++) {
+                array.set(i, buffer.get());
+            }
+            return array;
+        } else {
+            // For quantized formats, we need to load through FloatTensor
+            FloatTensor tensor = loadQuantized(entry);
+            FloatArray array = new FloatArray(tensor.size());
+            for (int i = 0; i < tensor.size(); i++) {
+                array.set(i, tensor.getFloat(i));
+            }
+            return array;
+        }
     }
 
     private static Tokenizer createTokenizer(Map<String, Object> metadata, Vocabulary vocabulary) {
@@ -152,7 +181,6 @@ public final class ModelLoader {
 
     public static FloatBuffer toFloatBuffer(GGMLTensorEntry tensorEntry) {
         GGMLType ggmlType = tensorEntry.ggmlType();
-//        System.out.println("Tensor type: " + ggmlType);
         return switch (ggmlType) {
             case F32 -> tensorEntry.memorySegment().asByteBuffer().order(ByteOrder.LITTLE_ENDIAN).asFloatBuffer();
             default -> throw new UnsupportedOperationException("Conversion to " + ggmlType);

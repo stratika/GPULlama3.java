@@ -11,7 +11,7 @@ import uk.ac.manchester.tornado.api.types.vectors.Float4;
 
 import java.nio.FloatBuffer;
 
-public final class Weights {
+public class Weights {
     // token embedding table
     public final FloatTensor token_embedding_table; // (vocab_size, dim)
     // weights for rmsnorms
@@ -28,40 +28,28 @@ public final class Weights {
     public final FloatTensor[] w2; // (layer, dim, hidden_dim)
     public final FloatTensor[] w3; // (layer, hidden_dim, dim)
 
-    // Flatten Structure
-//    public final FloatArray rms_att_weightFlat; // (layer, dim) rmsnorm weights
-//    public final FloatArray wqFlat; // (layer, n_heads * head_size)
-//    public final FloatArray wkFlat; // (layer, n_kv_heads, head_size)
-//    public final FloatArray wvFlat; // (layer, n_kv_heads * head_size)
-//    public final FloatArray woFlat; // (layer, n_heads * head_size, dim)
-//    public final FloatArray rms_ffn_weightFlat; // (layer, dim)
-//
-//    public final FloatArray w1Flat; // (layer, hidden_dim, dim)
-//    public final FloatArray w2Flat; // (layer, dim, hidden_dim)
-//    public final FloatArray w3Flat; // (layer, hidden_dim, dim)
-//
 //    // Layered Data structures
-    public final FloatArray[] rms_att_weightLayered; // (layer, dim) rmsnorm weights
-    public final FloatArray[] wqLayered; // (layer, n_heads * head_size)
-    public final FloatArray[] wkLayered; // (layer, n_kv_heads, head_size)
-    public final FloatArray[] wvLayered; // (layer, n_kv_heads * head_size)
-    public final FloatArray[] woLayered; // (layer, n_heads * head_size, dim)
-    public final FloatArray[] rms_ffn_weightLayered; // (layer, dim)
+    public FloatArray[] rms_att_weightLayered; // (layer, dim) rmsnorm weights
+    public FloatArray[] wqLayered; // (layer, n_heads * head_size)
+    public FloatArray[] wkLayered; // (layer, n_kv_heads, head_size)
+    public FloatArray[] wvLayered; // (layer, n_kv_heads * head_size)
+    public FloatArray[] woLayered; // (layer, n_heads * head_size, dim)
+    public FloatArray[] rms_ffn_weightLayered; // (layer, dim)
 
-    public final FloatArray[] w1Layered; // (layer, hidden_dim, dim)
-    public final FloatArray[] w2Layered; // (layer, dim, hidden_dim)
-    public final FloatArray[] w3Layered; // (layer, hidden_dim, dim)
+    public FloatArray[] w1Layered; // (layer, hidden_dim, dim)
+    public FloatArray[] w2Layered; // (layer, dim, hidden_dim)
+    public FloatArray[] w3Layered; // (layer, hidden_dim, dim)
 
     //
     public final FloatTensor wcls; // (vocab_size, dim)
     public final ByteArray wclsByteArray;
-    public final FloatArray rms_final_weight_as_floatArray;
+    public FloatArray rms_final_weight_as_floatArray;
 
-    public final FloatArray tokenEmbeddingTable; // (vocab_size, dim)
+    public FloatArray tokenEmbeddingTable; // (vocab_size, dim)
     //
 
-    public final FloatArray freq_cis_realFlat; // (seq_len, head_size/2)
-    public final FloatArray freq_cis_imagFlat; // (seq_len, head_size/2)
+    public FloatArray freq_cis_realFlat; // (seq_len, head_size/2)
+    public FloatArray freq_cis_imagFlat; // (seq_len, head_size/2)
 
 
     // public final rmsnorm
@@ -151,7 +139,6 @@ public final class Weights {
         FloatArray[] floatArrays = new FloatArray[array.length];
         for (int i = 0; i < array.length; i++) {
             floatArrays[i] = FloatArray.fromSegment(array[i].asMemorySegment());
-            System.out.println("SizeXXX;  " + floatArrays[i].getSize() + " " + array[i].size());
         }
         return floatArrays;
     }
@@ -323,45 +310,6 @@ public final class Weights {
         }
 
         return floatArray;
-    }
-
-    private VectorFloat4 loadToVectorFloat4Array(FloatTensor[] input) {
-        // Calculate total size needed (divide by 4 since each VectorFloat4 holds 4 values)
-        int totalElements = 0;
-        for (FloatTensor tensor : input) {
-            totalElements += tensor.size();
-        }
-
-        // Round up to nearest multiple of 4 if necessary
-        int vectorSize = (totalElements + 3) / 4;
-        VectorFloat4 result = new VectorFloat4(vectorSize);
-
-        int vectorIndex = 0;
-        int valueIndex = 0;
-        float[] buffer = new float[4];
-
-        for (FloatTensor tensor : input) {
-            for (int i = 0; i < tensor.size(); i++) {
-                buffer[valueIndex % 4] = tensor.getFloat(i);
-                valueIndex++;
-
-                if (valueIndex % 4 == 0) {
-                    // We have a complete Float4 vector, add it to the result
-                    result.set(vectorIndex++, new Float4(buffer[0], buffer[1], buffer[2], buffer[3]));
-                }
-            }
-        }
-
-        // Handle any remaining values if tensor size wasn't a multiple of 4
-        if (valueIndex % 4 != 0) {
-            // Fill remaining positions with zeros
-            for (int i = valueIndex % 4; i < 4; i++) {
-                buffer[i] = 0.0f;
-            }
-            result.set(vectorIndex, new Float4(buffer[0], buffer[1], buffer[2], buffer[3]));
-        }
-
-        return result;
     }
 
 }
