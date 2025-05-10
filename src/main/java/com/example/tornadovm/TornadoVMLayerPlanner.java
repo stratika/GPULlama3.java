@@ -104,9 +104,9 @@ public class TornadoVMLayerPlanner {
                 .consumeFromDevice(lastUnifiedLayer.getTaskGraphName(),
                         state.wrapX
                 )
-                .transferToDevice(DataTransferMode.EVERY_EXECUTION,
-                        state.tempLogits
-                )
+//                .transferToDevice(DataTransferMode.EVERY_EXECUTION,
+////                        state.tempLogits
+//                )
                 .transferToDevice(DataTransferMode.FIRST_EXECUTION,
                         context,
                         state.wrapLogits,
