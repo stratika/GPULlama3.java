@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-tornado-llama: GPU-accelerated LLaMA runner with TornadoVM
+llama-tornado: GPU-accelerated LLaMA.java runner with TornadoVM
 Run LLaMA models using either OpenCL or PTX backends.
 """
 
@@ -76,19 +76,27 @@ class LlamaRunner:
             cmd.append("-Duse.tornadovm=true")
 
         # Debug options
+        debug_config = []
+
         if args.debug:
-            cmd.extend([
+            debug_config.extend([
                 "-Dtornado.debug=true",
-                "-Dtornado.threadInfo=true"
+                "-Dtornado.threadInfo=True" if args.threads else "-Dtornado.threadInfo=false"
             ])
         else:
-            cmd.extend([
-                "-Dtornado.threadInfo=false",
-                "-Dtornado.debug=false",
-                "-Dtornado.fullDebug=false",
-                "-Dtornado.printKernel=false",
-                "-Dtornado.print.bytecodes=false"
+            debug_config.extend([
+                "-Dtornado.threadInfo=True" if args.threads else "-Dtornado.threadInfo=false",
+                "-Dtornado.debug=false"
             ])
+
+        # Additional debug options
+        debug_config.extend([
+            "-Dtornado.fullDebug=True" if args.full_dump else "-Dtornado.fullDebug=false",
+            "-Dtornado.printKernel=True" if args.print_kernel else "-Dtornado.printKernel=false",
+            "-Dtornado.print.bytecodes=True" if args.print_bytecodes else "-Dtornado.print.bytecodes=false"
+        ])
+
+        cmd.extend(debug_config)
 
         # Additional TornadoVM settings
         tornado_runtime_config = [
@@ -192,7 +200,7 @@ class LlamaRunner:
 def create_parser() -> argparse.ArgumentParser:
     """Create and configure the argument parser."""
     parser = argparse.ArgumentParser(
-        prog="tornado-llama",
+        prog="llama-tornado",
         description="GPU-accelerated LLaMA.java model runner using TornadoVM",
         formatter_class=argparse.ArgumentDefaultsHelpFormatter
     )
@@ -249,6 +257,17 @@ def create_parser() -> argparse.ArgumentParser:
     debug_group.add_argument("--profiler-dump-dir",
                            default="/home/mikepapadim/repos/gpu-llama3.java/prof.json",
                            help="Directory for profiler output")
+
+    # TornadoVM Execution Verbose options
+    verbose_group = parser.add_argument_group("TornadoVM Execution Verbose")
+    verbose_group.add_argument("--print-bytecodes", dest="print_bytecodes", action="store_true",
+                             help="Print bytecodes (tornado.print.bytecodes=true)")
+    verbose_group.add_argument("--print-threads", dest="threads", action="store_true",
+                             help="Print thread information (tornado.threadInfo=true)")
+    verbose_group.add_argument("--print-kernel", dest="print_kernel", action="store_true",
+                             help="Print kernel information (tornado.printKernel=true)")
+    verbose_group.add_argument("--full-dump", dest="full_dump", action="store_true",
+                             help="Enable full debug dump (tornado.fullDebug=true)")
 
     # Advanced options
     advanced_group = parser.add_argument_group("Advanced Options")
