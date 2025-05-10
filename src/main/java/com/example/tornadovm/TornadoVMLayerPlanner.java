@@ -210,20 +210,30 @@ public class TornadoVMLayerPlanner {
         return unifiedLayer;
     }
 
+    // @formatter:off
     /**
      * Sets up the grid scheduler configuration for a layered neural network forward pass.
      *
-     * This method creates and configures worker grids for different types of GPU operations in the transformer/ML model pipeline. Each worker grid defines how work should be distributed across GPU
-     * threads (OpenCL work-items or CUDA threads).
+     * This method creates and configures worker grids for different types of GPU operations
+     * in the transformer/ML model pipeline. Each worker grid defines how work should be
+     * distributed across GPU threads (OpenCL work-items or CUDA threads).
      *
-     * The method creates several worker profiles: - Single thread operations (activation updates) - RoPE (Rotary Position Embedding) operations - Matrix multiplications with different dimensions -
-     * RMS normalization operations - Parallel attention computations - Cache copying operations - Vocabulary projections
+     * The method creates several worker profiles:
+     * - Single thread operations (activation updates)
+     * - RoPE (Rotary Position Embedding) operations
+     * - Matrix multiplications with different dimensions
+     * - RMS normalization operations
+     * - Parallel attention computations
+     * - Cache copying operations
+     * - Vocabulary projections
      *
-     * Each worker grid maps to equivalent OpenCL NDRange or CUDA grid/block configurations: - setGlobalWork() ≈ OpenCL global_work_size ≈ CUDA grid dimensions × block dimensions - setLocalWork() ≈
-     * OpenCL local_work_size ≈ CUDA block dimensions
+     * Each worker grid maps to equivalent OpenCL NDRange or CUDA grid/block configurations:
+     * - setGlobalWork() ≈ OpenCL global_work_size ≈ CUDA grid dimensions × block dimensions
+     * - setLocalWork() ≈ OpenCL local_work_size ≈ CUDA block dimensions
      *
      * @return GridScheduler configured with all necessary worker grids for the model layers
      */
+    // @formatter:on
     private GridScheduler setupGridSchedulersLayered() {
         GridScheduler tornadoForwardScheduler = new GridScheduler();
 
