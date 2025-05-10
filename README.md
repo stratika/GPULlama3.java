@@ -1,4 +1,5 @@
-# TornadoVM Llama3 Java Integration
+# GPULlama.java power with TornadoVM
+<img src="docs/java-tornado-gpu.jpg" width="30%">
 
 Integration of **Llama3 models** with **TornadoVM** to enable accelerated inference on Java using GPUs and CPUs. This project allows you to run Llama3 inference efficiently, leveraging TornadoVM's parallel computing features for enhanced performance.
 
@@ -181,7 +182,7 @@ Advanced Options:
 
 ```
 
-## 🔍 Don't Take Our Word for It - Check the Java Command - Just P lain Old Java with Some Sauce
+## 🔍 Don't Take Our Word for It - Check the Java Command - Just Plain Old Java with Some Sauce
 
 Want to see exactly what's happening under the hood? Our `llama-tornado` wrapper script makes it crystal clear. Just add the `--show-command` flag and witness the beauty of the underlying Java invocation:
 
