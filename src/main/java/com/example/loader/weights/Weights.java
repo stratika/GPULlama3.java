@@ -1,17 +1,14 @@
 package com.example.loader.weights;
 
 import com.example.LlamaApp;
+import com.example.core.model.GGMLType;
 import com.example.core.model.tensor.FloatTensor;
-import uk.ac.manchester.tornado.api.types.HalfFloat;
 import uk.ac.manchester.tornado.api.types.arrays.ByteArray;
 import uk.ac.manchester.tornado.api.types.arrays.FloatArray;
-import uk.ac.manchester.tornado.api.types.arrays.HalfFloatArray;
-import uk.ac.manchester.tornado.api.types.collections.VectorFloat4;
-import uk.ac.manchester.tornado.api.types.vectors.Float4;
 
 import java.nio.FloatBuffer;
 
-public final class Weights {
+public class Weights {
     // token embedding table
     public final FloatTensor token_embedding_table; // (vocab_size, dim)
     // weights for rmsnorms
@@ -23,48 +20,69 @@ public final class Weights {
     public final FloatTensor[] wo; // (layer, n_heads * head_size, dim)
     public final FloatBuffer[] rms_ffn_weight; // (layer, dim)
 
-    // Flatten Structure
-    public final FloatArray rms_att_weightFlat; // (layer, dim) rmsnorm weights
-    public final FloatArray wqFlat; // (layer, n_heads * head_size)
-    public final FloatArray wkFlat; // (layer, n_kv_heads, head_size)
-    public final FloatArray wvFlat; // (layer, n_kv_heads * head_size)
-    public final FloatArray woFlat; // (layer, n_heads * head_size, dim)
-    public final FloatArray rms_ffn_weightFlat; // (layer, dim)
-
-    public final FloatArray w1Flat; // (layer, hidden_dim, dim)
-    public final FloatArray w2Flat; // (layer, dim, hidden_dim)
-    public final FloatArray w3Flat; // (layer, hidden_dim, dim)
-
-
-//    public final VectorFloat4 w2FlatVector; // (layer, dim, hidden_dim)
-
-    public final FloatArray freq_cis_realFlat; // (seq_len, head_size/2)
-    public final FloatArray freq_cis_imagFlat; // (seq_len, head_size/2)
-
     // weights for ffn
     public final FloatTensor[] w1; // (layer, hidden_dim, dim)
     public final FloatTensor[] w2; // (layer, dim, hidden_dim)
     public final FloatTensor[] w3; // (layer, hidden_dim, dim)
+    //
+    public final FloatTensor wcls; // (vocab_size, dim)
+    public final ByteArray wclsByteArray;
     // public final rmsnorm
     public final FloatBuffer rms_final_weight; // (dim,)
     // freq_cis for RoPE relatively positional embeddings
     public final FloatBuffer freq_cis_real; // (seq_len, head_size/2)
     public final FloatBuffer freq_cis_imag; // (seq_len, head_size/2)
+    //    // Layered Data structures
+    public FloatArray[] rms_att_weightLayered; // (layer, dim) rmsnorm weights
+    public FloatArray[] wqLayered; // (layer, n_heads * head_size)
+    public FloatArray[] wkLayered; // (layer, n_kv_heads, head_size)
+    public FloatArray[] wvLayered; // (layer, n_kv_heads * head_size)
+    public FloatArray[] woLayered; // (layer, n_heads * head_size, dim)
+    public FloatArray[] rms_ffn_weightLayered; // (layer, dim)
+    public FloatArray[] w1Layered; // (layer, hidden_dim, dim)
+    public FloatArray[] w2Layered; // (layer, dim, hidden_dim)
+    //
+    public FloatArray[] w3Layered; // (layer, hidden_dim, dim)
+    public FloatArray rms_final_weight_as_floatArray;
+    public FloatArray tokenEmbeddingTable; // (vocab_size, dim)
+    public FloatArray freq_cis_realFlat; // (seq_len, head_size/2)
+    public FloatArray freq_cis_imagFlat; // (seq_len, head_size/2)
     // (optional) classifier weights for the logits, on the last layer
-    public final FloatTensor wcls; // (vocab_size, dim)
-
-    //    public final TensorQ8 wclsTornadoQ8;
-    public final ByteArray wclsByteArray;
-    public final FloatArray rms_final_weight_as_floatArray;
-
-    public final FloatArray tokenEmbeddingTable; // (vocab_size, dim)
-
-//    public final HalfFloatArray halfFloat;
-
-
-
+    public GGMLType weightType;
+    /**
+     * Constructor to initialize all weight tensors for the model. Automatically creates TornadoVM-compatible versions when needed.
+     *
+     * @param token_embedding_table
+     *         Token embeddings matrix
+     * @param rms_att_weight
+     *         RMSNorm weights for attention layers
+     * @param wq
+     *         Query weight matrices
+     * @param wk
+     *         Key weight matrices
+     * @param wv
+     *         Value weight matrices
+     * @param wo
+     *         Output projection matrices
+     * @param rms_ffn_weight
+     *         RMSNorm weights for FFN layers
+     * @param w1
+     *         First FFN weight matrices
+     * @param w2
+     *         Second FFN weight matrices
+     * @param w3
+     *         Third FFN weight matrices (gate)
+     * @param rms_final_weight
+     *         Final layer normalization weights
+     * @param freq_cis_real
+     *         RoPE cosine components
+     * @param freq_cis_imag
+     *         RoPE sine components
+     * @param wcls
+     *         Classifier weights for output logits
+     */
     public Weights(FloatTensor token_embedding_table, FloatBuffer[] rms_att_weight, FloatTensor[] wq, FloatTensor[] wk, FloatTensor[] wv, FloatTensor[] wo, FloatBuffer[] rms_ffn_weight,
-            FloatTensor[] w1, FloatTensor[] w2, FloatTensor[] w3, FloatBuffer rms_final_weight, FloatBuffer freq_cis_real, FloatBuffer freq_cis_imag, FloatTensor wcls) {
+            FloatTensor[] w1, FloatTensor[] w2, FloatTensor[] w3, FloatBuffer rms_final_weight, FloatBuffer freq_cis_real, FloatBuffer freq_cis_imag, FloatTensor wcls, GGMLType weightType) {
         this.token_embedding_table = token_embedding_table;
         this.rms_att_weight = rms_att_weight;
         this.wq = wq;
@@ -81,113 +99,99 @@ public final class Weights {
         this.wcls = wcls;
         this.tokenEmbeddingTable = loadToFloatArray(token_embedding_table); // (vocab_size, dim)
 
-        this.rms_att_weightFlat = loadToSingleFloatArray(rms_att_weight); // (layer, dim) rmsnorm weights
-        this.rms_ffn_weightFlat = loadToSingleFloatArray(rms_ffn_weight); // (layer, dim)
-
         if (LlamaApp.TORNADOVM) {
-//            System.out.println("Loading weights...");
-//            System.out.println("Loading wq weights...");
-            this.wqFlat = loadToContinuesFloatArray(wq);// [layer * dim * dim] - (layer, dim, dim)
-//            System.out.println("Loading wk weights...");
-            this.wkFlat = loadToContinuesFloatArray(wk); // [layer * dim * kvDim] - (layer, dim, kvDim)
-//            System.out.println("Loading wv weights...");
-            this.wvFlat = loadToContinuesFloatArray(wv); // [layer * dim * kvDim] - (layer, dim, kvDim)
-//            System.out.println("Loading wo weights...");
-            this.woFlat = loadToContinuesFloatArray(wo); // [layer * dim * dim] - (layer, dim, dim)
-
-//            System.out.println("Loading w1 weights..." + w1.length +  " " + w1[0].size());
-            this.w1Flat = loadToContinuesFloatArray(w1); // (layer, hidden_dim, dim)
-//            System.out.println("Loading w2 weights...");
-            this.w2Flat = loadToContinuesFloatArray(w2); // (layer, dim, hidden_dim)
-//            System.out.println("Loading w3 weights...");
-            this.w3Flat = loadToContinuesFloatArray(w3);
-            ; // (layer, hidden_dim, dim)
-
             this.freq_cis_imagFlat = loadToSingleFloatArray(freq_cis_imag);
             this.freq_cis_realFlat = loadToSingleFloatArray(freq_cis_real);
 
             // Store read-only weight as a ByteArray in TornadoVM
             this.wclsByteArray = ByteArray.fromSegment(wcls.asMemorySegment());
-
-
             this.rms_final_weight_as_floatArray = FloatArray.fromFloatBuffer(rms_final_weight);
+
+            this.rms_att_weightLayered = loadToFloatArray(rms_att_weight);
+
+            this.wqLayered = loadToFloatArray(wq);
+            this.wkLayered = loadToFloatArray(wk);
+            this.wvLayered = loadToFloatArray(wv);
+            this.woLayered = loadToFloatArray(wo);
+            this.rms_ffn_weightLayered = loadToFloatArray(rms_ffn_weight);
+            this.w1Layered = loadToFloatArray(w1);
+            this.w2Layered = loadToFloatArray(w2);
+            this.w3Layered = loadToFloatArray(w3);
+
         } else {
-            this.wqFlat = null;
-            this.wkFlat = null;
-            this.wvFlat = null;
-            this.woFlat = null;
-            this.w1Flat = null;
-            this.w2Flat = null;
-            this.w3Flat = null;
             this.freq_cis_imagFlat = null;
             this.freq_cis_realFlat = null;
             this.wclsByteArray = null;
             this.rms_final_weight_as_floatArray = null;
+            this.rms_att_weightLayered = null;
+            this.wqLayered = null;
+            this.wkLayered = null;
+            this.wvLayered = null;
+            this.woLayered = null;
+            this.rms_ffn_weightLayered = null;
+            this.w1Layered = null;
+            this.w2Layered = null;
+            this.w3Layered = null;
         }
-  
-
-//        this.halfFloat = loadToHalfFloatArray(wcls);
-        // For each layer's weights
-
-//        this.w2FlatVector = loadToVectorFloat4Array(w2);
-
+        this.weightType = weightType;
     }
 
-    private static FloatArray loadToContinuesFloatArray(FloatTensor[] input) {
-//        System.out.println("Loading to continues float array..." +  input.length + " " + input[0].size());
-
-        int allocationSize = input.length * input[0].size();
-        if (allocationSize < 0) {
-            throw new IllegalArgumentException("Allocation size is negative: " + allocationSize);
-        }
-
-        FloatArray all = new FloatArray(allocationSize);
-
-        int index = 0;
-        for (FloatTensor tensor : input) {
-            for (int i = 0; i < tensor.size(); i++) {
-                all.set(index++, tensor.getFloat(i));
-            }
-        }
-
-        return all;
-    }
-
+    /**
+     * Converts an array of FloatTensor objects to TornadoVM FloatArray format. This enables efficient GPU computation by flattening multi-dimensional tensors.
+     *
+     * @param array
+     *         Array of FloatTensors to convert
+     * @return Array of FloatArrays with the same data
+     */
     private static FloatArray[] loadToFloatArray(FloatTensor[] array) {
         FloatArray[] floatArrays = new FloatArray[array.length];
         for (int i = 0; i < array.length; i++) {
-            floatArrays[i] = FloatArray.fromSegment(array[i].asMemorySegment());
-        }
-        return floatArrays;
-    }
-
-    private static FloatArray[] loadToFloatArray(FloatBuffer[] array) {
-        FloatArray[] floatArrays = new FloatArray[array.length];
-        for (int i = 0; i < array.length; i++) {
-            floatArrays[i] = FloatArray.fromFloatBuffer(array[i]);
-        }
-        return floatArrays;
-    }
-
-    private static FloatArray loadToSingleFloatArray(FloatBuffer[] array) {
-        int totalSize = 0;
-        for (FloatBuffer buffer : array) {
-            totalSize += buffer.remaining();
-        }
-
-        FloatArray result = new FloatArray(totalSize);
-        int index = 0;
-        for (FloatBuffer buffer : array) {
-            while (buffer.hasRemaining()) {
-                result.set(index++, buffer.get());
+            floatArrays[i] = new FloatArray(array[i].size());
+            for (int j = 0; j < array[i].size(); j++) {
+                floatArrays[i].set(j, array[i].getFloat(j));
             }
+        }
+        return floatArrays;
+    }
+
+    /**
+     * Converts an array of FloatBuffer objects to TornadoVM FloatArray format. Preserves the original buffer position after conversion.
+     *
+     * @param array
+     *         Array of FloatBuffers to convert
+     * @return Array of FloatArrays with the same data
+     */
+    private static FloatArray[] loadToFloatArray(FloatBuffer[] array) {
+        FloatArray[] result = new FloatArray[array.length];
+        for (int i = 0; i < array.length; i++) {
+            int size = array[i].remaining();
+            result[i] = new FloatArray(size);
+
+            // Save and restore buffer position to avoid side effects
+            int originalPosition = array[i].position();
+
+            for (int j = 0; j < size; j++) {
+                float value = array[i].get();
+                result[i].set(j, value);
+            }
+            // Reset buffer position
+            array[i].position(originalPosition);
         }
 
         return result;
     }
 
+
+    /**
+     * Converts a single FloatBuffer to a TornadoVM FloatArray. Creates a duplicate buffer to avoid modifying the original.
+     *
+     * @param input
+     *         FloatBuffer to convert
+     * @return FloatArray with the same data
+     */
     private static FloatArray loadToSingleFloatArray(FloatBuffer input) {
-        FloatBuffer copy = input.duplicate(); // Prevent modifying the original buffer
+        // Create a duplicate to prevent modifying the original buffer
+        FloatBuffer copy = input.duplicate();
         int totalSize = copy.remaining();
 
         FloatArray result = new FloatArray(totalSize);
@@ -200,16 +204,13 @@ public final class Weights {
         return result;
     }
 
-    public HalfFloatArray loadToHalfFloatArray(FloatTensor input) {
-        HalfFloatArray halfFloatArray = new HalfFloatArray(input.size());
-
-        for (int i = 0; i < input.size(); i++) {
-            halfFloatArray.set(i, new HalfFloat(input.getFloat(i)));
-        }
-
-        return halfFloatArray;
-    }
-
+    /**
+     * Converts a FloatTensor to a TornadoVM FloatArray.
+     *
+     * @param input
+     *         FloatTensor to convert
+     * @return FloatArray with the same data
+     */
     public FloatArray loadToFloatArray(FloatTensor input) {
         FloatArray floatArray = new FloatArray(input.size());
 
@@ -218,45 +219,6 @@ public final class Weights {
         }
 
         return floatArray;
-    }
-
-    private VectorFloat4 loadToVectorFloat4Array(FloatTensor[] input) {
-        // Calculate total size needed (divide by 4 since each VectorFloat4 holds 4 values)
-        int totalElements = 0;
-        for (FloatTensor tensor : input) {
-            totalElements += tensor.size();
-        }
-
-        // Round up to nearest multiple of 4 if necessary
-        int vectorSize = (totalElements + 3) / 4;
-        VectorFloat4 result = new VectorFloat4(vectorSize);
-
-        int vectorIndex = 0;
-        int valueIndex = 0;
-        float[] buffer = new float[4];
-
-        for (FloatTensor tensor : input) {
-            for (int i = 0; i < tensor.size(); i++) {
-                buffer[valueIndex % 4] = tensor.getFloat(i);
-                valueIndex++;
-
-                if (valueIndex % 4 == 0) {
-                    // We have a complete Float4 vector, add it to the result
-                    result.set(vectorIndex++, new Float4(buffer[0], buffer[1], buffer[2], buffer[3]));
-                }
-            }
-        }
-
-        // Handle any remaining values if tensor size wasn't a multiple of 4
-        if (valueIndex % 4 != 0) {
-            // Fill remaining positions with zeros
-            for (int i = valueIndex % 4; i < 4; i++) {
-                buffer[i] = 0.0f;
-            }
-            result.set(vectorIndex, new Float4(buffer[0], buffer[1], buffer[2], buffer[3]));
-        }
-
-        return result;
     }
 
 }

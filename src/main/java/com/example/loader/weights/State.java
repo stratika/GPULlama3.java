@@ -42,7 +42,7 @@ public final class State {
     public final FloatArray wrapAtt; // FloatArray wrapper for the attention scores, optimized for TornadoVM.
     public final FloatArray wrapKeyCache;// FloatArray wrapper for the key cache, optimized for TornadoVM.
     public final FloatArray wrapValueCache; // FloatArray wrapper for the value cache, optimized for TornadoVM.
-    public final IntArray positionAndLayer;
+    public final IntArray positionHolder;
 
     // store inter
     //
@@ -60,7 +60,7 @@ public final class State {
 
         this.x = ArrayFloatTensor.allocate(config.dim);
         this.xb = ArrayFloatTensor.allocate(config.dim);
-        this.xb2 = ArrayFloatTensor.allocate(config.dim);
+        this.xb2 = ArrayFloatTensor.allocate(config.dim); 
         this.hb = ArrayFloatTensor.allocate(config.hiddenDim);
         this.hb2 = ArrayFloatTensor.allocate(config.hiddenDim);
         this.q = ArrayFloatTensor.allocate(config.dim);
@@ -89,7 +89,7 @@ public final class State {
         this.wrapValueCache.init(0.f);
         this.wrapKeyCache.init(0.f);
         this.wrapAtt = new FloatArray(config.numberOfHeads * config.contextLength);
-        this.positionAndLayer = new IntArray(4);
+        this.positionHolder = new IntArray(1);
         this.latestToken = -1;
 
         //
