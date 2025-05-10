@@ -12,7 +12,6 @@ import com.example.inference.engine.impl.Options;
 import com.example.loader.weights.ModelLoader;
 import com.example.loader.weights.State;
 import com.example.tornadovm.FloatArrayUtils;
-import com.example.tornadovm.TornadoVMCompute;
 import uk.ac.manchester.tornado.api.types.arrays.FloatArray;
 
 import java.io.IOException;
@@ -138,7 +137,7 @@ public class LlamaApp {
         };
 
         Set<Integer> stopTokens = chatFormat.getStopTokens();
-        if (TornadoVMCompute.TORNADOVM) {
+        if (TORNADOVM) {
             // Call generateTokensGPU without the token consumer parameter
             responseTokens = Llama.generateTokensGPU(model, state, 0, promptTokens, stopTokens,
                     options.maxTokens(), sampler, options.echo());
