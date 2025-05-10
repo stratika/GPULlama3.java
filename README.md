@@ -12,7 +12,7 @@ Previous intergration of TornadoVM and Llama2 it can be found in [llama2.tornado
 
 ---
 
-## Features
+### ✅ Current Features
 
 - **TornadoVM-accelerated Llama 3 inference** with pure Java
 - **Support for GGUF format models** with Q8_0 and Q4_0 quantization
@@ -28,6 +28,30 @@ Previous intergration of TornadoVM and Llama2 it can be found in [llama2.tornado
 - **Interactive CLI** with `--interactive` and `--instruct` modes
 - **Flexible backend switching** - choose OpenCL or PTX at runtime (need to build TornadoVM with both enabled)
 
+### 🚧 Roadmap
+#### 🚧 Work-in-progress Features
+- [ ] **Additional architectures and model format**
+  - [ ] Mistral/Mixtral models
+  - [ ] Gemma/Gemma2 models
+  - [ ] Phi models
+  - [ ] SmolLM
+  - [ ] TinyLlama
+  - [ ] SafeTensors format
+  - [ ] PyTorch checkpoint loading
+  - [ ] Automatic model conversion utilities
+- [ ] **Additional quantization formats**
+  - [ ] INT8
+  - [ ] FP16 support
+- [ ] **Advanced inference capabilities**
+  - [ ] Batch inference support
+  - [ ] Speculative decoding
+- [ ] **Performance optimizations**
+  - [ ] Multi-GPU support
+  - [ ] Memory-efficient attention mechanisms
+  - [ ] Kernel fusion improvements
+- [ ] **LangChain4j integration**
+- [ ] **GraalVM Native Image**
+  
 ## Setup
 
 ### Prerequisites
