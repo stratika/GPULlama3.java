@@ -45,51 +45,13 @@ public class TornadoVMMasterPlan {
      *         The current position in the sequence being processed
      * @return FloatTensor containing the output logits for token prediction
      */
-    public FloatArray tornadoVMForwardExecute(int position) {
-        // Execute the first TornadoVM graph (pre-processing) -> copy-in
-        executionPlan.withGraph(0).withGridScheduler(scheduler).execute();
-
-        // executionPlan.copy-in(state.wrapX);
-        // process each transformer layer sequentially
-        for (int layer = 0; layer < config.numberOfLayers; layer++) {
-            // Calculate offsets for KV cache access
-            int loff = layer * config.contextLength * config.kvDim;
-            int layerOffsetForCaches = loff + position * config.kvDim;
-
-            // Set state information for the current position and layer
-            state.positionAndLayer.set(0, position);
-            state.positionAndLayer.set(1, layer);
-            state.positionAndLayer.set(2, layerOffsetForCaches);
-            state.positionAndLayer.set(3, loff);
-
-            // Execute the layer-specific TornadoVM graph
-            executionPlan.withGraph(1).withGridScheduler(scheduler).execute();
-        }
-
-        // Execute the final TornadoVM graph (projection to logits)
-        executionPlan.withGraph(2).withGridScheduler(scheduler).execute();
-
-        return state.wrapLogits;
-    }
 
     public FloatArray tornadoVMForwardExecuteLayered(int position) {
         // Execute the first TornadoVM graph (pre-processing) -> copy-in
         executionPlan.withGraph(0).withGridScheduler(scheduler).execute();
 
-        // executionPlan.copy-in(state.wrapX);
-        // process each transformer layer sequentially
-        state.positionAndLayer.set(0, position);
+        state.positionHolder.set(0, position);
         for (int layer = 0; layer < config.numberOfLayers; layer++) {
-            // Calculate offsets for KV cache access
-            int loff = layer * config.contextLength * config.kvDim;
-            int layerOffsetForCaches = loff + position * config.kvDim;
-
-            // Set state information for the current position and layer
-            state.positionAndLayer.set(1, layer);
-            state.positionAndLayer.set(2, layerOffsetForCaches);
-            state.positionAndLayer.set(3, loff);
-
-            // Execute the layer-specific TornadoVM graph
             executionPlan.withGraph(layer+1).withGridScheduler(scheduler).execute();
         }
 
@@ -99,20 +61,12 @@ public class TornadoVMMasterPlan {
         return state.wrapLogits;
     }
 
-    // Force copy-in read-only weights
-    public void forceCopyInReadOnlyData() {
-        // Execute the first TornadoVM graph (pre-processing) -> copy-in
-        state.wrapX.init(0.0f);
-        state.positionAndLayer.init(0);
-        executionPlan.withGraph(0).withGridScheduler(scheduler).execute();
-        executionPlan.withGraph(1).withGridScheduler(scheduler).execute();
-        executionPlan.withGraph(2).withGridScheduler(scheduler).execute();
-    }
-
+    /// Execute the forward pass of the LLaMA transformer model using TornadoVM acceleration
+    /// just once to copy the data into the read-only data layer.
     public void forceCopyInReadOnlyDataLayered() {
         // Execute all TornadoVM graphs
         state.wrapX.init(0.0f);
-        state.positionAndLayer.init(0);
+        state.positionHolder.init(0);
 
         // Execute activation update graph
         executionPlan.withGraph(0).withGridScheduler(scheduler).execute();
@@ -125,6 +79,12 @@ public class TornadoVMMasterPlan {
         // Execute logits graph
         executionPlan.withGraph(config.numberOfLayers + 1).withGridScheduler(scheduler).execute();
     }
+
+    /**
+     * Frees the device memory allocated for the TornadoVM execution plan.
+     * This method should be called when the execution plan is no longer needed
+     * to release resources and avoid memory leaks.
+     */
     public void freeTornadoExecutionPlan() {
         executionPlan.freeDeviceMemory();
     }
