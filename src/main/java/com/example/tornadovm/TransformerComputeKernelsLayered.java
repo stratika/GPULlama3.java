@@ -64,13 +64,8 @@ public class TransformerComputeKernelsLayered {
             FloatArray output, FloatArray x, FloatArray weights, FloatArray temp) {
         int gid = context.globalIdx;
 
-        //        if (gid < size) {
-        // Get the layer offset from positionAndLayer
-
-        // Apply normalization with the correct weight for this layer
         float ss = temp.get(0);
         output.set(gid, weights.get(gid) * (ss * x.get(gid)));
-        //        }
     }
 
     public static void reductionOneBlock2WithLogits(KernelContext context, FloatArray output, FloatArray weights, FloatArray temp, IntArray positionAndLayer, int size) {
