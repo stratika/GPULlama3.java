@@ -12,12 +12,6 @@ public class TransformerComputeKernelsLayered {
     public TransformerComputeKernelsLayered() {
     }
 
-    public static void emptyTaskToForceCopyIn(FloatArray buffer) {
-        float dummy = buffer.get(0);
-        if (dummy > Float.MAX_VALUE) {
-            buffer.set(0, dummy);
-        }
-    }
 
     public static void reductionOneBlockWithLayer(KernelContext context, FloatArray output, FloatArray x,
             int size, float ermsNorm, int localMemSize) {
@@ -89,8 +83,13 @@ public class TransformerComputeKernelsLayered {
         //        }
     }
 
-    public static void copyToCache(FloatArray destKeyCache, FloatArray srcKey, FloatArray destValueCache, FloatArray srcValue, IntArray positioNlayer) {
-        int destOffset = positioNlayer.get(2);
+    public static void copyToCache(FloatArray destKeyCache, FloatArray srcKey, FloatArray destValueCache, FloatArray srcValue,
+            IntArray positioNlayer, int kvDim, int layer, int contextLength) {
+
+        int position = positioNlayer.get(0);
+        int loff = layer * contextLength * kvDim;
+        int destOffset = loff + position * kvDim;
+
         for (@Parallel int i = 0; i < srcValue.getSize(); i++) {
             destKeyCache.set(destOffset + i, srcKey.get(i));
             destValueCache.set(destOffset + i, srcValue.get(i));
@@ -125,11 +124,12 @@ public class TransformerComputeKernelsLayered {
 
     }
 
-    public static void processHeadsParallel(FloatArray q, FloatArray key_cache, FloatArray value_cache, FloatArray xb, int nHeads, int headSize, int kvDim, int kvMul, int seqLen,
-            IntArray positionNlayer, FloatArray wrapAtt) {
+    public static void processHeadsParallel(FloatArray q, FloatArray key_cache,
+            FloatArray value_cache, FloatArray xb, int nHeads, int headSize, int kvDim, int kvMul, int seqLen,
+            IntArray positionNlayer, FloatArray wrapAtt, int layer, int contextLength) {
 
         int pos = positionNlayer.get(0);
-        long loff = positionNlayer.get(3);
+        int loff = layer * contextLength * kvDim;
 
         // Parallelize computation across attention heads
         for (@Parallel int h = 0; h < nHeads; h++) {
@@ -236,7 +236,8 @@ public class TransformerComputeKernelsLayered {
         }
     }
 
-    public static void fusedFeedForwardWithSiLUAndGLUActivation(KernelContext context, FloatArray x, FloatArray hb, FloatArray w1, FloatArray w3, int n, int d, IntArray positionAndLayer,
+    public static void fusedFeedForwardWithSiLUAndGLUActivation(KernelContext context, FloatArray x,
+            FloatArray hb, FloatArray w1, FloatArray w3, int n, int d,
             int localWorkGroupSize) {
         // One row per workgroup (not per thread)
         int rowId = context.groupIdx;
