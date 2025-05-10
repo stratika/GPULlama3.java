@@ -28,8 +28,7 @@ Previous intergration of TornadoVM and Llama2 it can be found in [llama2.tornado
 - **Interactive CLI** with `--interactive` and `--instruct` modes
 - **Flexible backend switching** - choose OpenCL or PTX at runtime (need to build TornadoVM with both enabled)
 
-### 🚧 Roadmap
-#### 🚧 Work-in-progress Features
+### 🚧 Work-in-progress Features
 - [ ] **Additional architectures and model format**
   - [ ] Mistral/Mixtral models
   - [ ] Gemma/Gemma2 models
@@ -115,9 +114,8 @@ with the `llama-quantize` utility from [llama.cpp](https://github.com/ggerganov/
 ```
 
 
-### Configuration
 
-### Configuration
+### Configuration - setup environment variables
 
 Set up environment variables by editing and sourcing the `set_paths.sh` script in the project root directory:
 
