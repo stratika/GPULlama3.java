@@ -196,24 +196,12 @@ public record Llama(Configuration configuration, Tokenizer tokenizer, Weights we
     public static List<Integer> generateTokensGPU(Llama model, State state, int startPosition, List<Integer> promptTokens,
             Set<Integer> stopTokens, int maxTokens, Sampler sampler, boolean echo) {
         // === GPU-Specific Optimizations ===
-
         // 1. Pre-allocate the TornadoVM plan just once
         TornadoVMMasterPlan tornadoVMPlan = new TornadoVMMasterPlan(state, model);
-
         // 2. Perform warmup with extra iterations to ensure JIT compilation is complete
         tornadoVMPlan.executionPlan.withWarmUp(); // Increased warmup iterations
-
-
-//        tornadoVMPlan.forceCopyInReadOnlyData();
+        // 3. Perform copy-in of read-only weights and objects
         tornadoVMPlan.forceCopyInReadOnlyDataLayered();// Force copy-in read-only weights
-//        System.err.println("TornadoVM warmup complete.");
-//        System.exit(0);
-
-        // 3. Pre-upload prompt tokens to device memory if possible
-        // Assuming you have a method to upload tokens to GPU memory
-        if (promptTokens.size() > 0) {
-//            tornadoVMPlan.preloadPromptTokens(promptTokens);
-        }
 
         // === Setup and Initialization ===
         long startNanos = System.nanoTime();
@@ -304,13 +292,6 @@ public record Llama(Configuration configuration, Tokenizer tokenizer, Weights we
         // Print performance metrics like the C implementation
         System.err.printf("\n\nachieved tok/s: %.2f. Tokens: %d, seconds: %.2f\n",
                 tokensPerSecond, totalTokens, totalSeconds);
-
-        // Add extra GPU performance metrics
-//        if (inferenceStartNanos > 0) {
-//            double inferenceSeconds = (endNanos - inferenceStartNanos) / 1_000_000_000.0;
-//            System.err.printf("GPU generation speed: %.2f tok/s\n",
-//                    generatedTokens.size() / inferenceSeconds);
-//        }
 
         // Release GPU resources
         tornadoVMPlan.freeTornadoExecutionPlan();
