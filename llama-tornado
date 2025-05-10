@@ -177,6 +177,31 @@ class LlamaRunner:
         cmd = self._build_base_command(args)
         cmd = self._add_llama_args(cmd, args)
 
+        # Print command if requested (before verbose output)
+        if args.show_command:
+            print("Full Java command:")
+            print("-" * 80)
+
+            # Create a properly formatted command for easy copy-paste
+            escaped_cmd = []
+            for arg in cmd:
+                # Escape arguments that contain spaces or special characters
+                if ' ' in arg or '"' in arg or "'" in arg:
+                    escaped_cmd.append(f'"{arg}"')
+                else:
+                    escaped_cmd.append(arg)
+
+            # Print as a continuous line that can be easily copied
+            print(' '.join(escaped_cmd))
+            print("-" * 80)
+            print()
+
+            # If user only wants to see the command without executing
+            if not args.execute_after_show:
+                print("Command built successfully. Exiting without execution.")
+                print("Use --execute-after-show to run the command after displaying it.")
+                return 0
+
         if args.verbose:
             print("Executing command:")
             for arg in cmd:
@@ -268,6 +293,13 @@ def create_parser() -> argparse.ArgumentParser:
                              help="Print kernel information (tornado.printKernel=true)")
     verbose_group.add_argument("--full-dump", dest="full_dump", action="store_true",
                              help="Enable full debug dump (tornado.fullDebug=true)")
+
+    # Command display options
+    command_group = parser.add_argument_group("Command Display Options")
+    command_group.add_argument("--show-command", action="store_true",
+                             help="Display the full Java command that will be executed")
+    command_group.add_argument("--execute-after-show", action="store_true",
+                             help="Execute the command after showing it (use with --show-command)")
 
     # Advanced options
     advanced_group = parser.add_argument_group("Advanced Options")
