@@ -17,10 +17,10 @@ public class TornadoVMMasterPlan {
     public GridScheduler scheduler;
     public TornadoExecutionPlan executionPlan;
     List<ImmutableTaskGraph> taskGraphs;
-
+    public FloatArray wrapX;
     public TornadoVMMasterPlan(State state, Llama model) {
         TornadoVMLayerPlanner tornadoVMLayerPlanner = new TornadoVMLayerPlanner(state, model);
-        Tuple2<List<ImmutableTaskGraph>, GridScheduler> tornadoVMPlan = tornadoVMLayerPlanner.setupTornadoForwardPlan();
+        Tuple2<List<ImmutableTaskGraph>, GridScheduler> tornadoVMPlan = tornadoVMLayerPlanner.setupTornadoForwardPlanLayered();
         this.taskGraphs = tornadoVMPlan.getFirst();
         this.scheduler = tornadoVMPlan.getSecond();
         this.state = state;
@@ -72,6 +72,33 @@ public class TornadoVMMasterPlan {
         return state.wrapLogits;
     }
 
+    public FloatArray tornadoVMForwardExecuteLayered(int position) {
+        // Execute the first TornadoVM graph (pre-processing) -> copy-in
+        executionPlan.withGraph(0).withGridScheduler(scheduler).execute();
+
+        // executionPlan.copy-in(state.wrapX);
+        // process each transformer layer sequentially
+        state.positionAndLayer.set(0, position);
+        for (int layer = 0; layer < config.numberOfLayers; layer++) {
+            // Calculate offsets for KV cache access
+            int loff = layer * config.contextLength * config.kvDim;
+            int layerOffsetForCaches = loff + position * config.kvDim;
+
+            // Set state information for the current position and layer
+            state.positionAndLayer.set(1, layer);
+            state.positionAndLayer.set(2, layerOffsetForCaches);
+            state.positionAndLayer.set(3, loff);
+
+            // Execute the layer-specific TornadoVM graph
+            executionPlan.withGraph(layer+1).withGridScheduler(scheduler).execute();
+        }
+
+        // Execute the final TornadoVM graph (projection to logits)
+        executionPlan.withGraph(config.numberOfLayers + 2 - 1).withGridScheduler(scheduler).execute();
+
+        return state.wrapLogits;
+    }
+
     // Force copy-in read-only weights
     public void forceCopyInReadOnlyData() {
         // Execute the first TornadoVM graph (pre-processing) -> copy-in
@@ -82,6 +109,22 @@ public class TornadoVMMasterPlan {
         executionPlan.withGraph(2).withGridScheduler(scheduler).execute();
     }
 
+    public void forceCopyInReadOnlyDataLayered() {
+        // Execute all TornadoVM graphs
+        state.wrapX.init(0.0f);
+        state.positionAndLayer.init(0);
+
+        // Execute activation update graph
+        executionPlan.withGraph(0).withGridScheduler(scheduler).execute();
+
+        // Execute layer processing graphs
+        for (int layer = 0; layer < config.numberOfLayers; layer++) {
+            executionPlan.withGraph(layer + 1).withGridScheduler(scheduler).execute();
+        }
+
+        // Execute logits graph
+        executionPlan.withGraph(config.numberOfLayers + 1).withGridScheduler(scheduler).execute();
+    }
     public void freeTornadoExecutionPlan() {
         executionPlan.freeDeviceMemory();
     }

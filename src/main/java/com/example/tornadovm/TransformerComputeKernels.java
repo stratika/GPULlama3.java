@@ -78,7 +78,7 @@ public class TransformerComputeKernels {
 //        }
     }
 
-    public static void reductionOneBlock2WithLogits(KernelContext context, FloatArray output, FloatArray weights, FloatArray temp, IntArray positionAndLayer, int size) {
+    public static void reductionOneBlock2WithLogits(KernelContext context, FloatArray output, FloatArray weights, FloatArray temp) {
         int gid = context.globalIdx;
 
 //        if (gid < size) {

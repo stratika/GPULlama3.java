@@ -15,6 +15,7 @@ import java.nio.FloatBuffer;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Set;
+import java.util.Vector;
 import java.util.function.IntConsumer;
 
 public record Llama(Configuration configuration, Tokenizer tokenizer, Weights weights) {
@@ -190,7 +191,7 @@ public record Llama(Configuration configuration, Tokenizer tokenizer, Weights we
 
         MemorySegment.copy(model.weights.tokenEmbeddingTable.getSegment(), token * model.configuration.dim * Float.BYTES, state.wrapX.getSegment(), 0, model.configuration.dim * Float.BYTES);
 
-        return tornadoVMMasterPlan.tornadoVMForwardExecute(position);
+        return tornadoVMMasterPlan.tornadoVMForwardExecuteLayered(position);
     }
     public static List<Integer> generateTokensGPU(Llama model, State state, int startPosition, List<Integer> promptTokens,
             Set<Integer> stopTokens, int maxTokens, Sampler sampler, boolean echo) {
@@ -201,7 +202,12 @@ public record Llama(Configuration configuration, Tokenizer tokenizer, Weights we
 
         // 2. Perform warmup with extra iterations to ensure JIT compilation is complete
         tornadoVMPlan.executionPlan.withWarmUp(); // Increased warmup iterations
-        tornadoVMPlan.forceCopyInReadOnlyData();  // Force copy-in read-only weights
+
+
+//        tornadoVMPlan.forceCopyInReadOnlyData();
+        tornadoVMPlan.forceCopyInReadOnlyDataLayered();// Force copy-in read-only weights
+//        System.err.println("TornadoVM warmup complete.");
+//        System.exit(0);
 
         // 3. Pre-upload prompt tokens to device memory if possible
         // Assuming you have a method to upload tokens to GPU memory

@@ -109,18 +109,18 @@ public final class ModelLoader {
 
     // Helper method for optional validation
     private static void validateWeightsIfEnabled(Weights weights, Configuration config) {
-        if (VALIDATE_MODEL_TO_TORNADOVM_TYPES) {
-            WeightsValidator validator = new WeightsValidator(weights, config.dim, config.kvDim, config.hiddenDim, config.numberOfLayers);
-
-            boolean isValid = validator.validateAll();
-            String message = isValid ? "✅ Validation Passed: Flattened data matches input tensors." : "❌ Validation Failed: Mismatches detected.";
-
-            if (isValid) {
-                System.out.println(message);
-            } else {
-                System.err.println(message);
-            }
-        }
+//        if (VALIDATE_MODEL_TO_TORNADOVM_TYPES) {
+//            WeightsValidator validator = new WeightsValidator(weights, config.dim, config.kvDim, config.hiddenDim, config.numberOfLayers);
+//
+//            boolean isValid = validator.validateAll();
+//            String message = isValid ? "✅ Validation Passed: Flattened data matches input tensors." : "❌ Validation Failed: Mismatches detected.";
+//
+//            if (isValid) {
+//                System.out.println(message);
+//            } else {
+//                System.err.println(message);
+//            }
+//        }
     }
 
     private static Tokenizer createTokenizer(Map<String, Object> metadata, Vocabulary vocabulary) {

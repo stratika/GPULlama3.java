@@ -101,9 +101,9 @@ CMD+=("-Dtornado.eventpool.maxwaitevents=32000")
 
 #CMD+=("-Dlayer.residual1.global.workgroup.size=2048")
 #CMD+=("-Dlayer.residual2.global.workgroup.size=2048")
-CMD+=("-Dlayer.copyToCaches.global.workgroup.size=2048")
+#CMD+=("-Dlayer.copyToCaches.global.workgroup.size=2048")
 
-CMD+=("-Dlayer.parallel-attention.local.workgroup.size=4")
+#CMD+=("-Dlayer.parallel-attention.local.workgroup.size=4")
 
 
 #CMD+=("-Dlayer.projectOne.local.workgroup.size=64")
@@ -118,7 +118,7 @@ CMD+=("-Dlayer.parallel-attention.local.workgroup.size=4")
 #CMD+=("-Dlayer.silu_elementwise_mul.local.workgroup.size=128")
 #CMD+=("-Dlayer.residual1.local.workgroup.size=128")
 #CMD+=("-Dlayer.residual2.local.workgroup.size=128")
-CMD+=("-Dlayer.copyToCaches.local.workgroup.size=128")
+#CMD+=("-Dlayer.copyToCaches.local.workgroup.size=128")
 
 
 #CMD+=("-Dtornado.profiler.dump.dir=$LLAMA_ROOT")
