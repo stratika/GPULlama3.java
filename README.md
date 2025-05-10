@@ -75,46 +75,75 @@ Before running the project, you must build the Tornado external submodule first.
 
 ### Download Model Files
 
-Download quantized `.gguf` files for Llama3 models from [Hugging Face](https://huggingface.co/mukel/), or using the following `curl` commands:
+Download pure `Q4_0` and (optionally) `Q8_0` quantized .gguf files from:
+- https://huggingface.co/mukel/Llama-3.2-1B-Instruct-GGUF
+- https://huggingface.co/mukel/Llama-3.2-3B-Instruct-GGUF
+- https://huggingface.co/mukel/Meta-Llama-3.1-8B-Instruct-GGUF
+- https://huggingface.co/mukel/Meta-Llama-3-8B-Instruct-GGUF
 
-```bash
-# Llama 3.2 (1B) -> Q8_0
+The pure `Q4_0` quantized models are recommended, except for the very small models (1B), please be gentle with [huggingface.co](https://huggingface.co) servers:
+```
+# Llama 3.2 (1B) - Q4_0
+curl -L -O https://huggingface.co/mukel/Llama-3.2-1B-Instruct-GGUF/resolve/main/Llama-3.2-1B-Instruct-Q4_0.gguf
+
+# Llama 3.2 (3B) - Q4_0 
+curl -L -O https://huggingface.co/mukel/Llama-3.2-3B-Instruct-GGUF/resolve/main/Llama-3.2-3B-Instruct-Q4_0.gguf
+
+# Llama 3 (8B) - Q4_0 
+curl -L -O https://huggingface.co/mukel/Meta-Llama-3-8B-Instruct-GGUF/resolve/main/Meta-Llama-3-8B-Instruct-Q4_0.gguf
+
+# Llama 3.2 (1B) - Q8_0 
 curl -L -O https://huggingface.co/mukel/Llama-3.2-1B-Instruct-GGUF/resolve/main/Llama-3.2-1B-Instruct-Q8_0.gguf
 
-# Llama 3.2 (1B) -> Q8_0
-curl -L -O https://huggingface.co/mukel/Llama-3.2-1B-Instruct-GGUF/resolve/main/Llama-3.2-1B-Instruct-Q8_0.gguf
+# Llama 3.1 (8B) - Q8_0 
+curl -L -O https://huggingface.co/mukel/Meta-Llama-3.1-8B-Instruct-GGUF/resolve/main/Meta-Llama-3.1-8B-Instruct-Q4_0.gguf
 
-# Llama 3.2 (3B) -> Q8_0
-curl -L -O https://huggingface.co/mukel/Llama-3.2-3B-Instruct-GGUF/resolve/main/Llama-3.2-3B-Instruct-Q8_0.gguf
-
-# Llama 3.1 (8B) -> Q8_0
-curl -L -O https://huggingface.co/mukel/Meta-Llama-3.1-8B-Instruct-GGUF/resolve/main/Meta-Llama-3.1-8B-Instruct-Q8_0.gguf
+# Llama 3 (8B) - Q8_0
+# Optionally download the Q8_0 quantized models
+# curl -L -O https://huggingface.co/mukel/Meta-Llama-3-8B-Instruct-GGUF/resolve/main/Meta-Llama-3-8B-Instruct-Q8_0.gguf
+# curl -L -O https://huggingface.co/mukel/Meta-Llama-3.1-8B-Instruct-GGUF/resolve/main/Meta-Llama-3.1-8B-Instruct-Q8_0.gguf
 ```
 
-### Download the Tokenizer.bin
+#### Optional: quantize to pure `Q4_0` manually
+
+In the wild, `Q8_0` quantizations are fine, but `Q4_0` quantizations are rarely pure e.g. the `token_embd.weights`/`output.weights` tensor are quantized with `Q6_K`, instead of `Q4_0`.  
+A **pure** `Q4_0` quantization can be generated from a high precision (F32, F16, BFLOAT16) .gguf source
+with the `llama-quantize` utility from [llama.cpp](https://github.com/ggerganov/llama.cpp) as follows:
+
 ```bash
-wget https://github.com/karpathy/llama2.c/raw/master/tokenizer.bin
+./llama-quantize --pure ./Meta-Llama-3-8B-Instruct-F32.gguf ./Meta-Llama-3-8B-Instruct-Q4_0.gguf Q4_0
 ```
+
 
 ### Configuration
 
-Set up environment variables by editing and sourcing the `set_paths` script:
+### Configuration
+
+Set up environment variables by editing and sourcing the `set_paths.sh` script in the project root directory:
 
 ```bash
+# Point to your TornadoVM installation directory
 export TORNADO_ROOT=/path/to/TornadoVM
+
+# Locate the TornadoVM SDK binaries and libraries
 export TORNADO_SDK=${TORNADO_ROOT}/bin/sdk
+
+# Set the path to this GPULlama.java project
 export LLAMA_ROOT=/path/to/this-project
+
+# Add the project's binary directory to your PATH for easy access
 export PATH="${PATH}:${LLAMA_ROOT}/bin"
 ```
 
 ### Building the Project
 
 ```bash
-mvn clean install
+# Clean previous builds and package the project (skip tests for faster builds)
+mvn clean package -DskipTests  
 ```
 
 
-## Running Llama3 Models
+## Running `llama-tornado` 
 
 The `llama-tornado opencl` script executes Llama3 models on TornadoVM. By default, models run on the CPU; specify `--gpu` to enable GPU acceleration.
 
