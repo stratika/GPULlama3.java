@@ -1,0 +1,287 @@
+#!/usr/bin/env python3
+"""
+tornado-llama: GPU-accelerated LLaMA runner with TornadoVM
+Run LLaMA models using either OpenCL or PTX backends.
+"""
+
+import argparse
+import os
+import subprocess
+import sys
+import time
+from pathlib import Path
+from typing import List, Optional, Dict, Any
+from enum import Enum
+
+class Backend(Enum):
+    OPENCL = "opencl"
+    PTX = "ptx"
+
+class LlamaRunner:
+    """Main class for managing LLaMA model execution with GPU acceleration."""
+
+    def __init__(self):
+        self.java_home = os.environ.get('JAVA_HOME')
+        self.tornado_sdk = os.environ.get('TORNADO_SDK')
+        self.llama_root = os.environ.get('LLAMA_ROOT')
+
+        if not all([self.java_home, self.tornado_sdk, self.llama_root]):
+            print("Error: Required environment variables not set")
+            print("Please ensure JAVA_HOME, TORNADO_SDK, and LLAMA_ROOT are defined")
+            print("Note: check set_path.sh in root dir")
+            sys.exit(1)
+
+    def _validate_paths(self):
+        """Validate that required paths exist."""
+        paths_to_check = {
+            'JAVA_HOME': self.java_home,
+            'TORNADO_SDK': self.tornado_sdk,
+            'LLAMA_ROOT': self.llama_root
+        }
+
+        for name, path in paths_to_check.items():
+            if not Path(path).exists():
+                print(f"Error: {name} path does not exist: {path}")
+                sys.exit(1)
+
+    def _build_base_command(self, args: argparse.Namespace) -> List[str]:
+        """Build the base Java command with JVM options."""
+        cmd = [
+            f"{self.java_home}/bin/java",
+            "-server",
+            "-XX:-UseCompressedOops",
+            "-XX:+UnlockExperimentalVMOptions",
+            "-XX:+EnableJVMCI",
+            "-XX:-UseCompressedClassPointers",
+            f"-Xms{args.heap_min}",
+            f"-Xmx{args.heap_max}",
+            "--enable-preview",
+            f"-Djava.library.path={self.tornado_sdk}/lib",
+            "-Djdk.module.showModuleResolution=false",
+            "--module-path", f".:{self.tornado_sdk}/share/java/tornado",
+        ]
+
+        # TornadoVM configuration
+        tornado_config = [
+            "-Dtornado.load.api.implementation=uk.ac.manchester.tornado.runtime.tasks.TornadoTaskGraph",
+            "-Dtornado.load.runtime.implementation=uk.ac.manchester.tornado.runtime.TornadoCoreRuntime",
+            "-Dtornado.load.tornado.implementation=uk.ac.manchester.tornado.runtime.common.Tornado",
+            "-Dtornado.load.annotation.implementation=uk.ac.manchester.tornado.annotation.ASMClassVisitor",
+            "-Dtornado.load.annotation.parallel=uk.ac.manchester.tornado.api.annotations.Parallel",
+        ]
+        cmd.extend(tornado_config)
+
+        # GPU options
+        if args.use_gpu:
+            cmd.append("-Duse.tornadovm=true")
+
+        # Debug options
+        if args.debug:
+            cmd.extend([
+                "-Dtornado.debug=true",
+                "-Dtornado.threadInfo=true"
+            ])
+        else:
+            cmd.extend([
+                "-Dtornado.threadInfo=false",
+                "-Dtornado.debug=false",
+                "-Dtornado.fullDebug=false",
+                "-Dtornado.printKernel=false",
+                "-Dtornado.print.bytecodes=false"
+            ])
+
+        # Additional TornadoVM settings
+        tornado_runtime_config = [
+            f"-Dtornado.device.memory={args.gpu_memory}",
+            f"-Dtornado.profiler={str(args.profiler).lower()}",
+            "-Dtornado.log.profiler=false",
+            f"-Dtornado.profiler.dump.dir={args.profiler_dump_dir}",
+            "-Dtornado.enable.fastMathOptimizations=true",
+            "-Dtornado.enable.mathOptimizations=false",
+            "-Dtornado.enable.nativeFunctions=fast",
+            "-Dtornado.loop.interchange=true",
+            f"-Dtornado.eventpool.maxwaitevents={args.max_wait_events}"
+        ]
+        cmd.extend(tornado_runtime_config)
+
+        # Backend-specific configuration
+        if args.backend == Backend.OPENCL:
+            # OpenCL specific flags
+            cmd.append(f"-Dtornado.opencl.compiler.flags={args.opencl_flags}")
+
+        # Module configuration - varies by backend
+        module_config = [
+            f"--upgrade-module-path", f"{self.tornado_sdk}/share/java/graalJars",
+            "-XX:+UseParallelGC",
+            f"@{self.tornado_sdk}/etc/exportLists/common-exports",
+        ]
+
+        # Add backend-specific exports and modules
+        if args.backend == Backend.OPENCL:
+            module_config.extend([
+                f"@{self.tornado_sdk}/etc/exportLists/opencl-exports",
+                "--add-modules", "ALL-SYSTEM,tornado.runtime,tornado.annotation,tornado.drivers.common,tornado.drivers.opencl",
+            ])
+        elif args.backend == Backend.PTX:
+            module_config.extend([
+                f"@{self.tornado_sdk}/etc/exportLists/ptx-exports",
+                "--add-modules", "ALL-SYSTEM,tornado.runtime,tornado.annotation,tornado.drivers.common,tornado.drivers.ptx",
+            ])
+
+        module_config.extend([
+            "-cp", f"{self.llama_root}/target/gpu-llama3-1.0-SNAPSHOT.jar",
+            "com.example.LlamaApp"
+        ])
+        cmd.extend(module_config)
+
+        return cmd
+
+    def _add_llama_args(self, cmd: List[str], args: argparse.Namespace) -> List[str]:
+        """Add LLaMA-specific arguments to the command."""
+        llama_args = [
+            "-m", args.model_path,
+            "--temperature", str(args.temperature),
+            "--top-p", str(args.top_p),
+            "--seed", str(args.seed),
+            "--max-tokens", str(args.max_tokens),
+            "--stream", str(args.stream).lower(),
+            "--echo", str(args.echo).lower()
+        ]
+
+        if args.prompt:
+            llama_args.extend(["-p", args.prompt])
+
+        if args.system_prompt:
+            llama_args.extend(["-sp", args.system_prompt])
+
+        if args.interactive:
+            llama_args.append("--interactive")
+        elif args.instruct:
+            llama_args.append("--instruct")
+
+        return cmd + llama_args
+
+    def run(self, args: argparse.Namespace) -> int:
+        """Execute the LLaMA model with the specified arguments."""
+        self._validate_paths()
+
+        # Build the complete command
+        cmd = self._build_base_command(args)
+        cmd = self._add_llama_args(cmd, args)
+
+        if args.verbose:
+            print("Executing command:")
+            for arg in cmd:
+                print(f"  {arg}")
+            print()
+
+        # Execute the command
+        try:
+            result = subprocess.run(cmd, check=True)
+            return result.returncode
+        except subprocess.CalledProcessError as e:
+            print(f"Error: Command failed with return code {e.returncode}")
+            return e.returncode
+        except KeyboardInterrupt:
+            print("\nOperation cancelled by user")
+            return 130
+        except Exception as e:
+            print(f"Error: {e}")
+            return 1
+
+def create_parser() -> argparse.ArgumentParser:
+    """Create and configure the argument parser."""
+    parser = argparse.ArgumentParser(
+        prog="tornado-llama",
+        description="GPU-accelerated LLaMA.java model runner using TornadoVM",
+        formatter_class=argparse.ArgumentDefaultsHelpFormatter
+    )
+
+    # Required arguments
+    parser.add_argument("--model", dest="model_path", required=True,
+                       help="Path to the LLaMA model file (e.g., Llama-3.2-1B-Instruct-Q8_0.gguf)")
+
+    # LLaMA arguments
+    llama_group = parser.add_argument_group("LLaMA Configuration")
+    llama_group.add_argument("--prompt", help="Input prompt for the model")
+    llama_group.add_argument("-sp", "--system-prompt", help="System prompt for the model")
+    llama_group.add_argument("--temperature", type=float, default=0.1,
+                           help="Sampling temperature (0.0 to 2.0)")
+    llama_group.add_argument("--top-p", type=float, default=0.95,
+                           help="Top-p sampling parameter")
+    llama_group.add_argument("--seed", type=int, default=None,
+                           help="Random seed (default: current timestamp)")
+    llama_group.add_argument("-n", "--max-tokens", type=int, default=512,
+                           help="Maximum number of tokens to generate")
+    llama_group.add_argument("--stream", type=bool, default=True,
+                           help="Enable streaming output")
+    llama_group.add_argument("--echo", type=bool, default=False,
+                           help="Echo the input prompt")
+
+    # Mode selection
+    mode_group = parser.add_argument_group("Mode Selection")
+    mode_group.add_argument("-i", "--interactive", action="store_true",
+                          help="Run in interactive/chat mode")
+    mode_group.add_argument("--instruct", action="store_true", default=True,
+                          help="Run in instruction mode (default)")
+
+    # Hardware configuration
+    hw_group = parser.add_argument_group("Hardware Configuration")
+    hw_group.add_argument("--gpu", dest="use_gpu", action="store_true",
+                         help="Enable GPU acceleration")
+    hw_group.add_argument("--opencl", dest="backend", action="store_const", const=Backend.OPENCL,
+                         help="Use OpenCL backend (default)")
+    hw_group.add_argument("--ptx", dest="backend", action="store_const", const=Backend.PTX,
+                         help="Use PTX/CUDA backend")
+    hw_group.add_argument("--gpu-memory", default="7GB",
+                         help="GPU memory allocation")
+    hw_group.add_argument("--heap-min", default="20g",
+                         help="Minimum JVM heap size")
+    hw_group.add_argument("--heap-max", default="20g",
+                         help="Maximum JVM heap size")
+
+    # Debug and profiling
+    debug_group = parser.add_argument_group("Debug and Profiling")
+    debug_group.add_argument("--debug", action="store_true",
+                           help="Enable debug output")
+    debug_group.add_argument("--profiler", action="store_true",
+                           help="Enable TornadoVM profiler")
+    debug_group.add_argument("--profiler-dump-dir",
+                           default="/home/mikepapadim/repos/gpu-llama3.java/prof.json",
+                           help="Directory for profiler output")
+
+    # Advanced options
+    advanced_group = parser.add_argument_group("Advanced Options")
+    advanced_group.add_argument("--opencl-flags",
+                              default="-cl-denorms-are-zero -cl-no-signed-zeros -cl-finite-math-only",
+                              help="OpenCL compiler flags")
+    advanced_group.add_argument("--max-wait-events", type=int, default=32000,
+                              help="Maximum wait events for TornadoVM event pool")
+    advanced_group.add_argument("--verbose", "-v", action="store_true",
+                              help="Verbose output")
+
+    return parser
+
+def main():
+    """Main entry point."""
+    parser = create_parser()
+    args = parser.parse_args()
+
+    # Set default seed if not provided
+    if args.seed is None:
+        args.seed = int(time.time())
+
+    # Set default backend to OpenCL if not specified
+    if not hasattr(args, 'backend') or args.backend is None:
+        args.backend = Backend.OPENCL
+
+    # Handle mode selection logic
+    if args.interactive:
+        args.instruct = False
+
+    # Create and run the LLaMA runner
+    runner = LlamaRunner()
+    return runner.run(args)
+
+if __name__ == "__main__":
+    sys.exit(main())
