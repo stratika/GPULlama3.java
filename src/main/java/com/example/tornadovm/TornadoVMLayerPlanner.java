@@ -16,6 +16,35 @@ import uk.ac.manchester.tornado.api.enums.DataTransferMode;
 import java.util.ArrayList;
 import java.util.List;
 
+// @formatter:off
+
+/**
+ * TornadoVMLayerPlanner orchestrates the execution planning for transformer model inference
+ * on GPU using the TornadoVM framework.
+ *
+ * This class is responsible for:
+ * - Creating task graphs for each layer of the neural network
+ * - Managing GPU memory transfers between layers
+ * - Configuring worker grids for optimal GPU utilization
+ * - Setting up the execution schedule for the entire forward pass
+ *
+ * The planner implements a layered approach where:
+ * - Each layer is represented as a separate TaskGraph
+ * - Data transfers are optimized to minimize host-device communication
+ * - Worker grids are configured for different types of operations (attention, FFN, etc.)
+ * - The entire pipeline is scheduled to run efficiently on GPU
+ *
+ * Key optimizations include:
+ * - One-time transfer of static data (weights, caches)
+ * - Per-execution transfer of dynamic data (position, activations)
+ * - Device-to-device data consumption between layers
+ * - Parallelized attention computation across heads
+ *
+ * @see TaskGraph
+ * @see GridScheduler
+ * @see Llama
+ */
+// @formatter:on
 public class TornadoVMLayerPlanner {
     private static final int LOCAL_WORK_GROUP_SIZE_ALLOC = 32;
 
@@ -24,6 +53,14 @@ public class TornadoVMLayerPlanner {
     private final Weights weights;
     private final KernelContext context;
 
+    /**
+     * Constructs a TornadoVMLayerPlanner for the given Llama model.
+     *
+     * @param state
+     *         The state object containing model tensors and buffers
+     * @param model
+     *         The Llama model instance containing configuration and weights
+     */
     public TornadoVMLayerPlanner(State state, Llama model) {
         this.state = state;
         this.config = model.configuration();
@@ -126,9 +163,24 @@ public class TornadoVMLayerPlanner {
         return new Tuple2<>(taskGraphs, setupGridSchedulersLayered());
     }
 
+    // @formatter:off
+    /**
+     * Configures data transfer operations for a specific layer in the neural network task graph.
+     *
+     * This method manages GPU memory transfers with optimized data movement strategies:
+     * This optimization pattern minimizes data movement by:
+     * 1. Using one-time transfers for static data
+     * 2. Reusing intermediate results already on GPU from previous layers
+     * 3. Only transferring //
+     * dynamic data that changes per execution
+     *
+     * @param unifiedLayer
+     *         The task graph representing this layer's operations
+     * @param layerIndex
+     *         Index of the current layer (0-based)
+     * @return The configured task graph with appropriate data transfer operations
+     */
     private TaskGraph configureLayerDataTransfers(TaskGraph unifiedLayer, int layerIndex) {
-        // @formatter:off
-
         // First layer: Transfer initial data to device (one-time transfer)
         if (layerIndex == 0) {
             // Transfer all attention-related data: query, key, value matrices and their caches
@@ -158,37 +210,78 @@ public class TornadoVMLayerPlanner {
         return unifiedLayer;
     }
 
+    /**
+     * Sets up the grid scheduler configuration for a layered neural network forward pass.
+     *
+     * This method creates and configures worker grids for different types of GPU operations in the transformer/ML model pipeline. Each worker grid defines how work should be distributed across GPU
+     * threads (OpenCL work-items or CUDA threads).
+     *
+     * The method creates several worker profiles: - Single thread operations (activation updates) - RoPE (Rotary Position Embedding) operations - Matrix multiplications with different dimensions -
+     * RMS normalization operations - Parallel attention computations - Cache copying operations - Vocabulary projections
+     *
+     * Each worker grid maps to equivalent OpenCL NDRange or CUDA grid/block configurations: - setGlobalWork() ≈ OpenCL global_work_size ≈ CUDA grid dimensions × block dimensions - setLocalWork() ≈
+     * OpenCL local_work_size ≈ CUDA block dimensions
+     *
+     * @return GridScheduler configured with all necessary worker grids for the model layers
+     */
     private GridScheduler setupGridSchedulersLayered() {
         GridScheduler tornadoForwardScheduler = new GridScheduler();
 
         // Single worker for tasks running with a single thread
+        // OpenCL equivalent: clEnqueueNDRangeKernel(globalWorkSize=[1,1,1], localWorkSize=[1,1,1])
+        // CUDA equivalent: kernel<<<dim3(1,1,1), dim3(1,1,1)>>>
         WorkerGrid singleWorker = new WorkerGrid1D(1);
         singleWorker.setGlobalWork(1, 1, 1);
         singleWorker.setLocalWork(1, 1, 1);
 
         // config.dim / 2 Worker for RoPE
+        // OpenCL equivalent: clEnqueueNDRangeKernel(globalWorkSize=[config.dim/2,1,1], localWorkSize=[128,1,1])
+        // CUDA equivalent: kernel<<<dim3((config.dim/2+127)/128,1,1), dim3(128,1,1)>>>
         WorkerGrid ropeWorker = new WorkerGrid1D(config.dim / 2);
         ropeWorker.setGlobalWork(config.dim / 2, 1, 1);
         ropeWorker.setLocalWork(128, 1, 1);
 
         // config.dim Worker for Row major access
+        // OpenCL equivalent: clEnqueueNDRangeKernel(globalWorkSize=[config.dim*LOCAL_WORK_GROUP_SIZE_ALLOC,1,1], localWorkSize=[LOCAL_WORK_GROUP_SIZE_ALLOC,1,1])
+        // CUDA equivalent: kernel<<<dim3(config.dim,1,1), dim3(LOCAL_WORK_GROUP_SIZE_ALLOC,1,1)>>>
         int configDimRowMajorGlobal = config.dim * LOCAL_WORK_GROUP_SIZE_ALLOC;
         WorkerGrid configDimRowMajorGlobalWorker = new WorkerGrid1D(configDimRowMajorGlobal);
         configDimRowMajorGlobalWorker.setLocalWork(LOCAL_WORK_GROUP_SIZE_ALLOC, 1, 1);
 
         // config.kvDim Worker for Row major access
+        // OpenCL equivalent: clEnqueueNDRangeKernel(globalWorkSize=[config.kvDim*LOCAL_WORK_GROUP_SIZE_ALLOC,1,1], localWorkSize=[LOCAL_WORK_GROUP_SIZE_ALLOC,1,1])
+        // CUDA equivalent: kernel<<<dim3(config.kvDim,1,1), dim3(LOCAL_WORK_GROUP_SIZE_ALLOC,1,1)>>>
         int configKvDimRowMajorGlobal = config.kvDim * LOCAL_WORK_GROUP_SIZE_ALLOC;
         WorkerGrid configKvDimRowMajorGlobalWorker = new WorkerGrid1D(configKvDimRowMajorGlobal);
         configKvDimRowMajorGlobalWorker.setLocalWork(LOCAL_WORK_GROUP_SIZE_ALLOC, 1, 1);
 
         // config.hiddenDim * 32 Worker for Row major access
+        // OpenCL equivalent: clEnqueueNDRangeKernel(globalWorkSize=[config.hiddenDim*LOCAL_WORK_GROUP_SIZE_ALLOC,1,1], localWorkSize=[LOCAL_WORK_GROUP_SIZE_ALLOC,1,1])
+        // CUDA equivalent: kernel<<<dim3(config.hiddenDim,1,1), dim3(LOCAL_WORK_GROUP_SIZE_ALLOC,1,1)>>>
         int configHiddenDimRowMajor = config.hiddenDim * LOCAL_WORK_GROUP_SIZE_ALLOC;
         WorkerGrid configHiddenDimRowMajorWorker = new WorkerGrid1D(configHiddenDimRowMajor);
         configHiddenDimRowMajorWorker.setLocalWork(LOCAL_WORK_GROUP_SIZE_ALLOC, 1, 1);
 
+        // RMSNorm worker configuration
+        // OpenCL equivalent: clEnqueueNDRangeKernel(globalWorkSize=[config.dim,1,1], localWorkSize=[256,1,1])
+        // CUDA equivalent: kernel<<<dim3((config.dim+255)/256,1,1), dim3(256,1,1)>>>
         WorkerGrid rmsNormWorker = new WorkerGrid1D(config.dim);
         rmsNormWorker.setGlobalWork(config.dim, 1, 1);  // Set global work size to total dimension
         rmsNormWorker.setLocalWork(256, 1, 1);         // Set local work size to 256 (standard efficient size)
+
+        // Parallel attention worker configuration
+        // OpenCL equivalent: clEnqueueNDRangeKernel(globalWorkSize=[config.numberOfHeads,1,1], localWorkSize=[4,1,1])
+        // CUDA equivalent: kernel<<<dim3((config.numberOfHeads+3)/4,1,1), dim3(4,1,1)>>>
+        WorkerGrid parallelAttentionWorker = new WorkerGrid1D(config.numberOfHeads);
+        parallelAttentionWorker.setGlobalWork(config.numberOfHeads, 1, 1);
+        parallelAttentionWorker.setLocalWork(4, 1, 1); // Set local work size to 4 (for parallel attention)
+
+        // Copy to caches worker configuration
+        // OpenCL equivalent: clEnqueueNDRangeKernel(globalWorkSize=[config.dim,1,1], localWorkSize=[128,1,1])
+        // CUDA equivalent: kernel<<<dim3((config.dim+127)/128,1,1), dim3(128,1,1)>>>
+        WorkerGrid copyToCachesWorker = new WorkerGrid1D(config.kvDim);
+        copyToCachesWorker.setGlobalWork(config.dim, 1, 1);
+        copyToCachesWorker.setLocalWork(128, 1, 1); // Set local work size to 32 (for copying to caches)
 
         // Map workers to tasks
         tornadoForwardScheduler.addWorkerGrid("activationUpdate.updateX", singleWorker);
@@ -200,30 +293,24 @@ public class TornadoVMLayerPlanner {
             tornadoForwardScheduler.addWorkerGrid("layer_" + i + ".matmul1", configDimRowMajorGlobalWorker);
             tornadoForwardScheduler.addWorkerGrid("layer_" + i + ".projectionTwo", configDimRowMajorGlobalWorker);
             tornadoForwardScheduler.addWorkerGrid("layer_" + i + ".fused_ffn_w1_w3", configHiddenDimRowMajorWorker);
-
             tornadoForwardScheduler.addWorkerGrid("layer_" + i + ".reductionsOneBlock", rmsNormWorker);
             tornadoForwardScheduler.addWorkerGrid("layer_" + i + ".mapContext", rmsNormWorker);
-
             tornadoForwardScheduler.addWorkerGrid("layer_" + i + ".reductionsOneBlockFFN", rmsNormWorker);
             tornadoForwardScheduler.addWorkerGrid("layer_" + i + ".mapContextFFN", rmsNormWorker);
-
-            tornadoForwardScheduler.addWorkerGrid("logits.reductionsOneBlockLogits", rmsNormWorker);
-            tornadoForwardScheduler.addWorkerGrid("logits.mapContextLogits", rmsNormWorker);
-
-            // Copy to caches - using System.setProperty to set
-            System.setProperty("layer_" + i + ".copyToCaches.global.workgroup.size", "2048");
-            System.setProperty("layer_" + i + ".copyToCaches.local.workgroup.size", "128");
-            // Parallel attention - using System.setProperty
-            System.setProperty("layer_" + i + ".parallel-attention.local.workgroup.size", "4");
-
+            tornadoForwardScheduler.addWorkerGrid("layer_" + i + ".parallel-attention", parallelAttentionWorker);
+            tornadoForwardScheduler.addWorkerGrid("layer_" + i + ".copyToCaches", copyToCachesWorker);
         }
 
-        // config .vocabularySize Worker for normal access MatVec
+        // Vocabulary worker configuration
+        // OpenCL equivalent: clEnqueueNDRangeKernel(globalWorkSize=[config.vocabularySize,1,1], localWorkSize=[16,1,1])
+        // CUDA equivalent: kernel<<<dim3((config.vocabularySize+15)/16,1,1), dim3(16,1,1)>>>
         WorkerGrid vocabWorker = new WorkerGrid1D(config.vocabularySize);
         vocabWorker.setGlobalWork(config.vocabularySize, 1, 1);
         vocabWorker.setLocalWork(16, 1, 1);
 
         tornadoForwardScheduler.addWorkerGrid("logits.projection", vocabWorker);
+        tornadoForwardScheduler.addWorkerGrid("logits.reductionsOneBlockLogits", rmsNormWorker);
+        tornadoForwardScheduler.addWorkerGrid("logits.mapContextLogits", rmsNormWorker);
 
         return tornadoForwardScheduler;
     }
