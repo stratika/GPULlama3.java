@@ -7,6 +7,9 @@ import uk.ac.manchester.tornado.api.types.arrays.FloatArray;
 
 public class TransformerComputeKernels {
 
+    /**
+     * Default constructor for the TransformerComputeKernels class.
+     */
     public TransformerComputeKernels() {
     }
 
