@@ -3,7 +3,6 @@ package com.example.tornadovm;
 import uk.ac.manchester.tornado.api.KernelContext;
 import uk.ac.manchester.tornado.api.annotations.Parallel;
 import uk.ac.manchester.tornado.api.math.TornadoMath;
-import uk.ac.manchester.tornado.api.types.arrays.ByteArray;
 import uk.ac.manchester.tornado.api.types.arrays.FloatArray;
 import uk.ac.manchester.tornado.api.types.arrays.IntArray;
 
@@ -12,9 +11,7 @@ public class TransformerComputeKernelsLayered {
     public TransformerComputeKernelsLayered() {
     }
 
-
-    public static void reductionOneBlockWithLayer(KernelContext context, FloatArray output, FloatArray x,
-            int size, float ermsNorm, int localMemSize) {
+    public static void reductionOneBlockWithLayer(KernelContext context, FloatArray output, FloatArray x, int size, float ermsNorm, int localMemSize) {
         int gid = context.globalIdx;
         int lid = context.localIdx;
         int groupId = context.groupIdx;
@@ -60,8 +57,7 @@ public class TransformerComputeKernelsLayered {
         }
     }
 
-    public static void reductionOneBlock2WithLayer(KernelContext context,
-            FloatArray output, FloatArray x, FloatArray weights, FloatArray temp) {
+    public static void reductionOneBlock2WithLayer(KernelContext context, FloatArray output, FloatArray x, FloatArray weights, FloatArray temp) {
         int gid = context.globalIdx;
 
         float ss = temp.get(0);
@@ -78,8 +74,7 @@ public class TransformerComputeKernelsLayered {
         //        }
     }
 
-    public static void copyToCache(FloatArray destKeyCache, FloatArray srcKey, FloatArray destValueCache, FloatArray srcValue,
-            IntArray positioNlayer, int kvDim, int layer, int contextLength) {
+    public static void copyToCache(FloatArray destKeyCache, FloatArray srcKey, FloatArray destValueCache, FloatArray srcValue, IntArray positioNlayer, int kvDim, int layer, int contextLength) {
 
         int position = positioNlayer.get(0);
         int loff = layer * contextLength * kvDim;
@@ -119,8 +114,7 @@ public class TransformerComputeKernelsLayered {
 
     }
 
-    public static void processHeadsParallel(FloatArray q, FloatArray key_cache,
-            FloatArray value_cache, FloatArray xb, int nHeads, int headSize, int kvDim, int kvMul, int seqLen,
+    public static void processHeadsParallel(FloatArray q, FloatArray key_cache, FloatArray value_cache, FloatArray xb, int nHeads, int headSize, int kvDim, int kvMul, int seqLen,
             IntArray positionNlayer, FloatArray wrapAtt, int layer, int contextLength) {
 
         int pos = positionNlayer.get(0);
@@ -191,8 +185,7 @@ public class TransformerComputeKernelsLayered {
         }
     }
 
-    public static void matrixVectorGeneric(KernelContext context, FloatArray x, FloatArray hb,
-            FloatArray w, int n, int d,  int localWorkGroupSize) {
+    public static void matrixVectorGeneric(KernelContext context, FloatArray x, FloatArray hb, FloatArray w, int n, int d, int localWorkGroupSize) {
         // One row per workgroup (not per thread)
         int rowId = context.groupIdx;
         int localId = context.localIdx;
@@ -210,8 +203,7 @@ public class TransformerComputeKernelsLayered {
         }
     }
 
-    public static void matrixVectorGenericWithResidual(KernelContext context, FloatArray x,
-            FloatArray hb, FloatArray w, int n, int d, int localWorkGroupSize) {
+    public static void matrixVectorGenericWithResidual(KernelContext context, FloatArray x, FloatArray hb, FloatArray w, int n, int d, int localWorkGroupSize) {
         // One row per workgroup (not per thread)
         int rowId = context.groupIdx;
         int localId = context.localIdx;
@@ -231,9 +223,7 @@ public class TransformerComputeKernelsLayered {
         }
     }
 
-    public static void fusedFeedForwardWithSiLUAndGLUActivation(KernelContext context, FloatArray x,
-            FloatArray hb, FloatArray w1, FloatArray w3, int n, int d,
-            int localWorkGroupSize) {
+    public static void fusedFeedForwardWithSiLUAndGLUActivation(KernelContext context, FloatArray x, FloatArray hb, FloatArray w1, FloatArray w3, int n, int d, int localWorkGroupSize) {
         // One row per workgroup (not per thread)
         int rowId = context.groupIdx;
         int localId = context.localIdx;
@@ -262,8 +252,7 @@ public class TransformerComputeKernelsLayered {
         return x * (1.0f / (1.0f + TornadoMath.exp(-x)));
     }
 
-    public static float matrixVectorRowMajorOptimized(KernelContext context, int
-            localSize, FloatArray x, FloatArray w, int n, int d) {
+    public static float matrixVectorRowMajorOptimized(KernelContext context, int localSize, FloatArray x, FloatArray w, int n, int d) {
         int rowId = context.groupIdx;
         int localId = context.localIdx;
 
@@ -271,8 +260,8 @@ public class TransformerComputeKernelsLayered {
         float[] localSum = context.allocateFloatLocalArray(localSize);
 
         // Calculate offsets based on layer
-//        int layer = 0;
-//        int layerOffset = layer * n * d;
+        //        int layer = 0;
+        //        int layerOffset = layer * n * d;
         int rowOffset = 0 + rowId * n;
 
         // Each thread calculates partial dot product

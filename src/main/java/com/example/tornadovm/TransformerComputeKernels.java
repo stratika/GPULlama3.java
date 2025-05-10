@@ -271,7 +271,6 @@ public class TransformerComputeKernels {
         out.set(idx, result);
     }
 
-
     private static float decodeFloat16Fast(short value) {
         // Split the components
         int sign = (value & 0x8000) >>> 15;

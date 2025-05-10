@@ -17,7 +17,6 @@ import java.util.ArrayList;
 import java.util.List;
 
 // @formatter:off
-
 /**
  * TornadoVMLayerPlanner orchestrates the execution planning for transformer model inference
  * on GPU using the TornadoVM framework.
