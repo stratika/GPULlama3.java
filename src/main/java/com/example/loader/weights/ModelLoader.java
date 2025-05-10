@@ -87,8 +87,6 @@ public final class ModelLoader {
         return createRegularWeights(tensorEntries, config, ropeFreqs, tokenEmbeddings);
     }
 
-    // Create weights optimized for TornadoVM
-
     private static Weights createRegularWeights(Map<String, GGMLTensorEntry> tensorEntries,
             Configuration config,
             Pair<float[], float[]> ropeFreqs,
@@ -110,7 +108,8 @@ public final class ModelLoader {
                 FloatBuffer.wrap(ropeFreqsImag), //
                 // If "output.weight" is not present, then the embedding weights are tied/shared with the decoder.
                 // This is commonly referred to as "tie word embeddings".
-                loadQuantized(tensorEntries.getOrDefault("output.weight", tokenEmbeddings)));
+                loadQuantized(tensorEntries.getOrDefault("output.weight", tokenEmbeddings)),
+                tensorEntries.getOrDefault("output.weight", tokenEmbeddings).ggmlType());
     }
     private static FloatArray loadTensorAsFloatArray(GGMLTensorEntry entry) {
         if (entry.ggmlType() == GGMLType.F32) {
