@@ -142,7 +142,7 @@ public final class ModelLoader {
 
     public static FloatTensor loadQuantized(GGMLTensorEntry entry) {
         GGMLType ggmlType = entry.ggmlType();
-        System.out.println("Tensor type: " + ggmlType + " " + entry.name() + " " + entry.shape().length);
+//        System.out.println("Tensor type: " + ggmlType + " " + entry.name() + " " + entry.shape().length);
         return switch (ggmlType) {
             //            case F32 -> new F32FloatTensor(FloatTensor.numberOfElements(entry.shape()), entry.memorySegment());
             case Q8_0 -> new Q8_0FloatTensor(FloatTensor.numberOfElements(entry.shape()), entry.memorySegment());
@@ -171,7 +171,7 @@ public final class ModelLoader {
 
     public static FloatBuffer toFloatBuffer(GGMLTensorEntry tensorEntry) {
         GGMLType ggmlType = tensorEntry.ggmlType();
-        System.out.println("Tensor type: " + ggmlType);
+//        System.out.println("Tensor type: " + ggmlType);
         return switch (ggmlType) {
             case F32 -> tensorEntry.memorySegment().asByteBuffer().order(ByteOrder.LITTLE_ENDIAN).asFloatBuffer();
             default -> throw new UnsupportedOperationException("Conversion to " + ggmlType);

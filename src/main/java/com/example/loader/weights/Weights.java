@@ -85,21 +85,21 @@ public final class Weights {
         this.rms_ffn_weightFlat = loadToSingleFloatArray(rms_ffn_weight); // (layer, dim)
 
         if (LlamaApp.TORNADOVM) {
-            System.out.println("Loading weights...");
-            System.out.println("Loading wq weights...");
+//            System.out.println("Loading weights...");
+//            System.out.println("Loading wq weights...");
             this.wqFlat = loadToContinuesFloatArray(wq);// [layer * dim * dim] - (layer, dim, dim)
-            System.out.println("Loading wk weights...");
+//            System.out.println("Loading wk weights...");
             this.wkFlat = loadToContinuesFloatArray(wk); // [layer * dim * kvDim] - (layer, dim, kvDim)
-            System.out.println("Loading wv weights...");
+//            System.out.println("Loading wv weights...");
             this.wvFlat = loadToContinuesFloatArray(wv); // [layer * dim * kvDim] - (layer, dim, kvDim)
-            System.out.println("Loading wo weights...");
+//            System.out.println("Loading wo weights...");
             this.woFlat = loadToContinuesFloatArray(wo); // [layer * dim * dim] - (layer, dim, dim)
 
-            System.out.println("Loading w1 weights..." + w1.length +  " " + w1[0].size());
+//            System.out.println("Loading w1 weights..." + w1.length +  " " + w1[0].size());
             this.w1Flat = loadToContinuesFloatArray(w1); // (layer, hidden_dim, dim)
-            System.out.println("Loading w2 weights...");
+//            System.out.println("Loading w2 weights...");
             this.w2Flat = loadToContinuesFloatArray(w2); // (layer, dim, hidden_dim)
-            System.out.println("Loading w3 weights...");
+//            System.out.println("Loading w3 weights...");
             this.w3Flat = loadToContinuesFloatArray(w3);
             ; // (layer, hidden_dim, dim)
 
@@ -134,7 +134,7 @@ public final class Weights {
     }
 
     private static FloatArray loadToContinuesFloatArray(FloatTensor[] input) {
-        System.out.println("Loading to continues float array..." +  input.length + " " + input[0].size());
+//        System.out.println("Loading to continues float array..." +  input.length + " " + input[0].size());
 
         int allocationSize = input.length * input[0].size();
         if (allocationSize < 0) {
