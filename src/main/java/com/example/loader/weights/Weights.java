@@ -89,28 +89,8 @@ public final class Weights {
         this.wcls = wcls;
         this.tokenEmbeddingTable = loadToFloatArray(token_embedding_table); // (vocab_size, dim)
 
-//        this.rms_att_weightFlat = loadToSingleFloatArray(rms_att_weight); // (layer, dim) rmsnorm weights
-//        this.rms_ffn_weightFlat = loadToSingleFloatArray(rms_ffn_weight); // (layer, dim)
 
         if (LlamaApp.TORNADOVM) {
-////            System.out.println("Loading weights...");
-////            System.out.println("Loading wq weights...");
-//            this.wqFlat = loadToContinuesFloatArray(wq);// [layer * dim * dim] - (layer, dim, dim)
-////            System.out.println("Loading wk weights...");
-//            this.wkFlat = loadToContinuesFloatArray(wk); // [layer * dim * kvDim] - (layer, dim, kvDim)
-////            System.out.println("Loading wv weights...");
-//            this.wvFlat = loadToContinuesFloatArray(wv); // [layer * dim * kvDim] - (layer, dim, kvDim)
-////            System.out.println("Loading wo weights...");
-//            this.woFlat = loadToContinuesFloatArray(wo); // [layer * dim * dim] - (layer, dim, dim)
-//
-////            System.out.println("Loading w1 weights..." + w1.length +  " " + w1[0].size());
-//            this.w1Flat = loadToContinuesFloatArray(w1); // (layer, hidden_dim, dim)
-////            System.out.println("Loading w2 weights...");
-//            this.w2Flat = loadToContinuesFloatArray(w2); // (layer, dim, hidden_dim)
-////            System.out.println("Loading w3 weights...");
-//            this.w3Flat = loadToContinuesFloatArray(w3);
-//            ; // (layer, hidden_dim, dim)
-
             this.freq_cis_imagFlat = loadToSingleFloatArray(freq_cis_imag);
             this.freq_cis_realFlat = loadToSingleFloatArray(freq_cis_real);
 
@@ -129,15 +109,7 @@ public final class Weights {
             this.w2Layered = loadToFloatArray(w2);
             this.w3Layered = loadToFloatArray(w3);
 
-
         } else {
-//            this.wqFlat = null;
-//            this.wkFlat = null;
-//            this.wvFlat = null;
-//            this.woFlat = null;
-//            this.w1Flat = null;
-//            this.w2Flat = null;
-//            this.w3Flat = null;
             this.freq_cis_imagFlat = null;
             this.freq_cis_realFlat = null;
             this.wclsByteArray = null;
@@ -153,12 +125,6 @@ public final class Weights {
             this.w3Layered = null;
         }
   
-
-//        this.halfFloat = loadToHalfFloatArray(wcls);
-        // For each layer's weights
-
-//        this.w2FlatVector = loadToVectorFloat4Array(w2);
-
     }
 
     private static FloatArray loadToContinuesFloatArray(FloatTensor[] input) {

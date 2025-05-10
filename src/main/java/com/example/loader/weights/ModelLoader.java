@@ -102,25 +102,7 @@ public final class ModelLoader {
                 // This is commonly referred to as "tie word embeddings".
                 loadQuantized(tensorEntries.getOrDefault("output.weight", tokenEmbeddings)));
 
-        validateWeightsIfEnabled(qw, config); //Validate tha loading to TornadoVM data structures preserves initial data
-
         return qw;
-    }
-
-    // Helper method for optional validation
-    private static void validateWeightsIfEnabled(Weights weights, Configuration config) {
-//        if (VALIDATE_MODEL_TO_TORNADOVM_TYPES) {
-//            WeightsValidator validator = new WeightsValidator(weights, config.dim, config.kvDim, config.hiddenDim, config.numberOfLayers);
-//
-//            boolean isValid = validator.validateAll();
-//            String message = isValid ? "✅ Validation Passed: Flattened data matches input tensors." : "❌ Validation Failed: Mismatches detected.";
-//
-//            if (isValid) {
-//                System.out.println(message);
-//            } else {
-//                System.err.println(message);
-//            }
-//        }
     }
 
     private static Tokenizer createTokenizer(Map<String, Object> metadata, Vocabulary vocabulary) {
