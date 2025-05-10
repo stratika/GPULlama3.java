@@ -140,10 +140,9 @@ export PATH="${PATH}:${LLAMA_ROOT}/bin"
 mvn clean package -DskipTests  
 ```
 
+## Running `llama-tornado`
 
-## Running `llama-tornado` 
-
-The `llama-tornado opencl` script executes Llama3 models on TornadoVM. By default, models run on the CPU; specify `--gpu` to enable GPU acceleration.
+The `llama-tornado` script executes Llama3 models on TornadoVM. By default, models run on CPU; add `--gpu` for GPU acceleration.
 
 ### Usage Examples
 
@@ -151,28 +150,47 @@ The `llama-tornado opencl` script executes Llama3 models on TornadoVM. By defaul
 Run a model with a text prompt:
 
 ```bash
-./llama-tornado opencl --model Llama-3.2-1B-Instruct-Q8_0.gguf --prompt "Explain the benefits of GPU acceleration."
+./llama-tornado --gpu --opencl --model Llama-3.2-1B-Instruct-Q8_0.gguf --prompt "Explain the benefits of GPU acceleration."
 ```
 
-#### GPU Execution
-Enable GPU acceleration by adding the `--gpu` flag:
-
+#### GPU Execution (Q8_0 Model)
+Enable GPU acceleration with Q8_0 quantization:
 ```bash
-llama-tornado opencl --gpu --model Llama-3.2-1B-Instruct-Q8_0.gguf --prompt "tell me a joke"
+llama-tornado --gpu --model Llama-3.2-1B-Instruct-Q8_0.gguf --prompt "tell me a joke"
 ```
-
-#### Interactive Chat Mode
-Start an interactive session:
-
+#### GPU Execution (Q4_0 Model)
+Run with Q4_0 quantization for lower memory usage:
 ```bash
-./llama-tornado opencl --model Llama-3.2-1B-Instruct-Q8_0.gguf --interactive
+
+llama-tornado --gpu --model Llama-3.2-1B-Instruct-Q4_0.gguf --prompt "tell me a joke"
 ```
+#### Backend Selection
+Specify the backend (OpenCL or PTX):
+````bash
+# Use OpenCL backend (default)
+./llama-tornado --gpu --opencl --model model.gguf --prompt "..."
 
-#### Instruction-following with Streaming
-Run the model in instruction-following mode with token streaming:
+# Use PTX backend for NVIDIA GPUs
+./llama-tornado --gpu --ptx --model model.gguf --prompt "..."
+````
 
+#### Debug & Profiling Options
+View TornadoVM's internal behavior:
 ```bash
-./llama-tornado opencl --model Llama-3.2-1B-Instruct-Q8_0.gguf --prompt "List Java advantages." --instruct --stream true
+# Print thread information during execution
+./llama-tornado --gpu --model model.gguf --prompt "..." --print-threads
+
+# Show bytecode compilation details
+./llama-tornado --gpu --model model.gguf --prompt "..." --print-bytecodes
+
+# Display generated GPU kernel code
+./llama-tornado --gpu --model model.gguf --prompt "..." --print-kernel
+
+# Enable full debug output with all details
+./llama-tornado --gpu --model model.gguf --prompt "..." --debug --full-dump
+
+# Combine debug options
+./llama-tornado --gpu --model model.gguf --prompt "..." --print-threads --print-bytecodes --print-kernel
 ```
 
 ## Command Line Options
