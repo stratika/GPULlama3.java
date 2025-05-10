@@ -1,5 +1,7 @@
 # GPULlama3.java powered by TornadoVM
-<img src="docs/java-tornado-gpu.jpg" width="30%">
+<div align="center">
+  <img src="docs/java-tornado-gpu.jpg" width="40%">
+</div>
 
 Integration of **Llama3 models** with **TornadoVM** to enable accelerated inference on Java using GPUs and CPUs. This project allows you to run Llama3 inference efficiently, leveraging TornadoVM's parallel computing features for enhanced performance.
 
