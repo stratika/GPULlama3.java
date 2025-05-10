@@ -67,11 +67,8 @@ public class TransformerComputeKernelsLayered {
     public static void reductionOneBlock2WithLogits(KernelContext context, FloatArray output, FloatArray weights, FloatArray temp, IntArray positionAndLayer, int size) {
         int gid = context.globalIdx;
 
-        //        if (gid < size) {
-        // Apply normalization with the correct weight for this layer
         float ss = temp.get(0);
         output.set(gid, weights.get(gid) * (ss * output.get(gid)));
-        //        }
     }
 
     public static void copyToCache(FloatArray destKeyCache, FloatArray srcKey, FloatArray destValueCache, FloatArray srcValue, IntArray positioNlayer, int kvDim, int layer, int contextLength) {
@@ -259,10 +256,7 @@ public class TransformerComputeKernelsLayered {
         // Allocate local memory for reduction
         float[] localSum = context.allocateFloatLocalArray(localSize);
 
-        // Calculate offsets based on layer
-        //        int layer = 0;
-        //        int layerOffset = layer * n * d;
-        int rowOffset = 0 + rowId * n;
+        int rowOffset =  rowId * n;
 
         // Each thread calculates partial dot product
         float partialSum = 0.0f;
