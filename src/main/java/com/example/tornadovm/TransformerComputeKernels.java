@@ -17,6 +17,20 @@ public class TransformerComputeKernels {
         }
     }
 
+    /**
+     * Performs RMS (Root Mean Square) normalization using parallel reduction.
+     * This is a two-phase reduction: first within work groups, then across work groups.
+     *
+     * Phase 1: Each work group computes a partial sum of squares
+     * Phase 2: First thread combines all partial sums and computes normalization factor
+     *
+     * @param context Kernel execution context
+     * @param output Array to store partial sums and final normalization factor
+     * @param x Input array to normalize
+     * @param size Number of elements to process
+     * @param ermsNorm Epsilon value for numerical stability (epsilon * epsilon)
+     * @param localMemSize Size of local memory allocation (work group size)
+     */
     public static void reductionOneBlockWithLayer(KernelContext context, FloatArray output, FloatArray x, int size, float ermsNorm, int localMemSize) {
         int gid = context.globalIdx;
         int lid = context.localIdx;
@@ -63,12 +77,41 @@ public class TransformerComputeKernels {
         }
     }
 
+    /**
+     * Applies the computed normalization factor to scale weights.
+     * This is the second phase of RMS normalization.
+     *
+     * @param context Kernel execution context
+     * @param output Array for normalized output
+     * @param weights Weight values to normalize
+     * @param temp Temporary array containing a normalization factor at index 0
+     */
     public static void reductionOneBlock2WithLogits(KernelContext context, FloatArray output, FloatArray weights, FloatArray temp) {
         int gid = context.globalIdx;
         float ss = temp.get(0);
         output.set(gid, weights.get(gid) * (ss * output.get(gid)));
     }
 
+    /**
+     * Optimized matrix-vector multiplication for Q8_0 quantized weights.
+     * Q8_0 format: 8-bit quantization with FP16 scale per 32-element block.
+     *
+     * Block format:
+     * - Bytes 0-1: Float16 scale value (big-endian)
+     * - Bytes 2-33: 32 quantized values (int8)
+     *
+     * Optimization features:
+     * - Loop unrolling (16x factor)
+     * - Vectorization (4 elements per iteration)
+     * - Scale caching to avoid redundant decompression
+     * - Fused multiply-add for accumulation
+     *
+     * @param context Kernel execution context
+     * @param thisx Quantized matrix in row-major order
+     * @param that Vector to multiply
+     * @param out Output vector (result)
+     * @param dim1 Vector dimension
+     */
     public static void matmulTornadoQ8Optimized(KernelContext context, ByteArray thisx, FloatArray that, FloatArray out, int dim1) {
         final int BLOCK_SIZE = 32; // Block size used in quantization
         final int BYTES_PER_BLOCK = 2 + BLOCK_SIZE; // 2 bytes for scale + block_size bytes for values
@@ -160,6 +203,26 @@ public class TransformerComputeKernels {
         out.set(idx, result);
     }
 
+    /**
+     * Optimized matrix-vector multiplication for Q4_0 quantized weights.
+     * Q4_0 format: 4-bit quantization with FP16 scale per 32-element block.
+     *
+     * Block format:
+     * - Bytes 0-1: Float16 scale value (big-endian)
+     * - Bytes 2-17: 16 bytes storing 32 packed 4-bit values
+     *
+     * Each byte stores two 4-bit values:
+     * - Lower nibble: elements 0, 2, 4, ...
+     * - Upper nibble: elements 1, 3, 5, ...
+     *
+     * Q4_0 uses signed 4-bit values with -8 offset (range: -8 to 7)
+     *
+     * @param context Kernel execution context
+     * @param thisx Quantized matrix in row-major order
+     * @param that Vector to multiply
+     * @param out Output vector (result)
+     * @param dim1 Vector dimension
+     */
     public static void matmulTornadoQ4Optimized(KernelContext context, ByteArray thisx, FloatArray that, FloatArray out, int dim1) {
         final int BLOCK_SIZE = 32; // Block size for Q4_0
         final int BYTES_PER_BLOCK = 2 + BLOCK_SIZE / 2; // 2 bytes for scale + 16 bytes for packed values
@@ -271,6 +334,20 @@ public class TransformerComputeKernels {
         out.set(idx, result);
     }
 
+    /**
+     * Fast decoder for IEEE 754 half-precision (Float16) floating point format.
+     * Converts 16-bit encoded values to 32-bit float.
+     * Float16 format:
+     * - Bit 15: Sign bit
+     * - Bits 14-10: Exponent (5 bits)
+     * - Bits 9-0: Mantissa/Fraction (10 bits)
+     * Special cases:
+     * - Exponent all 1s: Infinity (mantissa 0) or NaN (mantissa non-zero)
+     * - Exponent all 0s: Zero (mantissa 0) or denormalized (mantissa non-zero)
+     *
+     * @param value 16-bit encoded Float16 value
+     * @return Decoded 32-bit float value
+     */
     private static float decodeFloat16Fast(short value) {
         // Split the components
         int sign = (value & 0x8000) >>> 15;
@@ -306,6 +383,17 @@ public class TransformerComputeKernels {
         return sign == 0 ? result : -result;
     }
 
+
+    /**
+     * Fused multiply-add operation: a * b + c
+     * This is typically implemented as a single instruction on modern hardware,
+     * providing better performance and numeric precision than separate operations.
+     *
+     * @param a First factor
+     * @param b Second factor
+     * @param c Value to add
+     * @return Result of a * b + c
+     */
     private static float fma(float a, float b, float c) {
         return a * b + c;
     }
