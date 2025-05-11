@@ -1,30 +1,24 @@
 #!/bin/bash
+#!/bin/bash
 
 # Environment setup script for running LLaMA3 with TornadoVM GPU acceleration
 # This script configures all necessary environment variables for development and runtime
 
-# ===== TornadoVM Configuration =====
-# Set the root directory for TornadoVM installation
-# TornadoVM enables Java programs to run on GPUs, FPGAs, and multi-core CPUs
-export TORNADO_ROOT=/home/mikepapadim/manchester/TornadoVM
+# Resolve root of this project (LLaMA3) and TornadoVM
+export LLAMA_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+export TORNADO_ROOT="${LLAMA_ROOT}/external/tornadovm"
 
 # Set the path to TornadoVM SDK binaries
-# The SDK contains essential tools and scripts for TornadoVM development
-export TORNADO_SDK=${TORNADO_ROOT}/bin/sdk
+export TORNADO_SDK="${TORNADO_ROOT}/bin/sdk"
 
-# ===== LLaMA3 Project Configuration =====
-# Set the root directory for the GPU-accelerated LLaMA3 Java implementation
-export LLAMA_ROOT=/home/mikepapadim/repos/gpu-llama3.java
+# Add TornadoVM and LLaMA bin directories to PATH
+export PATH="${PATH}:${TORNADO_SDK}:${LLAMA_ROOT}/bin"
 
-# ===== PATH Configuration =====
-# First PATH export is empty/incomplete - may be a typo or placeholder
-export PATH=${PATH}:
+# Optional: Set JAVA_HOME if required
+# export JAVA_HOME=/path/to/graalvm
+# export PATH="${JAVA_HOME}/bin:${PATH}"
 
-# Add LLaMA binary directory to PATH
-# This allows running LLaMA executables/scripts from anywhere
-# Note: Uses safe ${LLAMA_ROOT=} syntax with default value handling
-export PATH="${PATH}:${LLAMA_ROOT=}/bin"
-
+echo "[INFO] Environment configured for LLaMA3 with TornadoVM at: $TORNADO_ROOT"
 # ===== Notes =====
 # After sourcing this script:
 # 1. TornadoVM will be available for GPU computation
