@@ -74,9 +74,9 @@ Previous intergration of TornadoVM and Llama2 it can be found in [llama2.tornado
 Ensure you have the following installed and configured:
 
 - **Java 21+**: Required for Vector API support.
-  - **TornadoVM**: To install **TornadoVM**, you'll need to set up the environment variables `TORNADO_ROOT` and `TORNADO_SDK` as part of the configuration process.
-    For detailed installation instructions, visit the [TornadoVM GitHub repository](https://github.com/beehive-lab/TornadoVM).
-  - **Maven**: For building the Java project.
+- **TornadoVM**: To install **TornadoVM**, you'll need to set up the environment variables `TORNADO_ROOT` and `TORNADO_SDK` as part of the configuration process.
+  For detailed installation instructions, visit the [TornadoVM GitHub repository](https://github.com/beehive-lab/TornadoVM).
+- **Maven**: For building the Java project.
 
 ### Install, Build, and Run
 
