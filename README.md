@@ -31,6 +31,7 @@ Previous intergration of TornadoVM and Llama2 it can be found in [llama2.tornado
 - **Flexible backend switching** - choose OpenCL or PTX at runtime (need to build TornadoVM with both enabled)
 
 ### 🚧 Work-in-progress Features
+<details>
 - [ ] **Additional architectures and model format**
   - [ ] Mistral/Mixtral models
   - [ ] Gemma/Gemma2 models
@@ -52,6 +53,7 @@ Previous intergration of TornadoVM and Llama2 it can be found in [llama2.tornado
   - [ ] Kernel fusion improvements
 - [ ] **LangChain4j integration**
 - [ ] **GraalVM Native Image**
+</details>
 
 ## Setup & Configuration
 
@@ -64,9 +66,9 @@ Ensure you have the following installed and configured:
   For detailed installation instructions, visit the [TornadoVM GitHub repository](https://github.com/beehive-lab/TornadoVM).
 - **Maven**: For building the Java project.
 
-### Setup, Build, and Run
+### Install, Build, and Run
 
-When cloning this repository, use the `--recursive` flag to ensure all submodules are properly included:
+When cloning this repository, use the `--recursive` flag to ensure that TornadoVM is properly included as submodule:
 
 ```bash
 # Clone the repository with all submodules
