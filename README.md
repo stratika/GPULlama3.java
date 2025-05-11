@@ -1,7 +1,6 @@
 # GPULlama3.java powered by TornadoVM
 ![Java Version](https://img.shields.io/badge/java-21+-blue?style=for-the-badge&logo=openjdk)
 ![TornadoVM](https://img.shields.io/badge/TornadoVM-enabled-green?style=for-the-badge&logo=apache)
-
 ![OpenCL](https://img.shields.io/badge/OpenCL-supported-blue?style=for-the-badge&logo=khronos)
 ![CUDA](https://img.shields.io/badge/CUDA/PTX-supported-76B900?style=for-the-badge&logo=nvidia)
 
