@@ -90,7 +90,7 @@ git clone --recursive git@github.com:mikepapadim/llama3.java-tornadovm.git
 cd llama3.java-tornadovm
 
 # Enter the TornadoVM submodule directory
-cd externals/tornadovm
+cd external/tornadovm
 
 # Optional: Create and activate a Python virtual environment if needed
 python3 -m venv venv
