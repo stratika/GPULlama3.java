@@ -52,8 +52,8 @@ Previous intergration of TornadoVM and Llama2 it can be found in [llama2.tornado
   - [ ] Kernel fusion improvements
 - [ ] **LangChain4j integration**
 - [ ] **GraalVM Native Image**
-  
-## Setup
+
+## Setup & Configuration
 
 ### Prerequisites
 
@@ -64,13 +64,46 @@ Ensure you have the following installed and configured:
   For detailed installation instructions, visit the [TornadoVM GitHub repository](https://github.com/beehive-lab/TornadoVM).
 - **Maven**: For building the Java project.
 
-### TornadoVM External Submodule Setup
+### Setup, Build, and Run
 
 When cloning this repository, use the `--recursive` flag to ensure all submodules are properly included:
 
 ```bash
-git clone --recursive https://github.com/mikepapadim/tornado-llama3.git
+# Clone the repository with all submodules
+git clone --recursive git@github.com:mikepapadim/llama3.java-tornadovm.git
+
+# Navigate to the project directory
+cd llama3.java-tornadovm
+
+# Enter the TornadoVM submodule directory
+cd externals/tornadovm
+
+# Optional: Create and activate a Python virtual environment if needed
+python3 -m venv venv
+source ./venv/bin/activate
+
+# Install TornadoVM with OpenCL backend and OpenJDK 21 [Optional] -> --backedn opencl,ptx 
+./bin/tornadovm-installer --jdk jdk21 --backend opencl
+
+# Source the TornadoVM environment variables
+source setvars.sh
+
+# Navigate back to the project root directory
+cd ../../
+
+# Make the llama-tornado script executable
+chmod +x llama-tornado
+
+# Source the project-specific environment paths
+source set_paths
+
+# Build the project using Maven (skip tests for faster build)
+mvn clean package -DskipTests
+
+# Run the model (make sure you have downloaded the model file first)
+./llama-tornado --gpu --opencl --model Llama-3.2-1B-Instruct-Q4_0.gguf --prompt "tell me a joke"
 ```
+
 
 Before running the project, you must build the Tornado external submodule first. The environment variables like `TORNADO_SDK` need to point to this submodule directory where the OpenCL backend is installed. This is critical for the GPU acceleration to work properly. After proper setup, you will use the `llama-tornado opencl` command when targeting GPU devices.
 
