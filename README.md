@@ -111,6 +111,8 @@ cd ../../
 chmod +x llama-tornado
 
 # Source the project-specific environment paths -> this will ensure the correct paths are set for the project and the TornadoVM SDK
+# Expect to see: [INFO] Environment configured for LLaMA3 with TornadoVM at: /home/YOUR_PATH_TO_TORNADOVM
+
 source set_paths
 
 # Build the project using Maven (skip tests for faster build)
@@ -124,7 +126,7 @@ make
 The above model can we swapped with one of the other models, such as `Llama-3.2-3B-Instruct-Q4_0.gguf` or `Meta-Llama-3-8B-Instruct-Q4_0.gguf`, depending on your needs.
 Check models below.
 
-### Download Model Files
+## Download Model Files
 
 Download pure `Q4_0` and (optionally) `Q8_0` quantized .gguf files from:
 - https://huggingface.co/mukel/Llama-3.2-1B-Instruct-GGUF
@@ -166,8 +168,7 @@ with the `llama-quantize` utility from [llama.cpp](https://github.com/ggerganov/
 ```
 
 
-
-### Configuration - setup environment variables
+## Configuration - setup environment variables
 
 Set up environment variables by editing and sourcing the `set_paths.sh` script in the project root directory:
 
@@ -185,7 +186,7 @@ export LLAMA_ROOT=/path/to/this-project
 export PATH="${PATH}:${LLAMA_ROOT}/bin"
 ```
 
-### Building the Project
+## Building the Project
 
 ```bash
 # Clean previous builds and package the project (skip tests for faster builds)
@@ -226,7 +227,45 @@ Specify the backend (OpenCL or PTX):
 ./llama-tornado --gpu --ptx --model model.gguf --prompt "..."
 ````
 
-#### Debug & Profiling Options
+## Troubleshooting GPU Memory Issues
+
+### Out of Memory Error
+
+If you encounter an out of memory error like:
+
+```
+Exception in thread "main" uk.ac.manchester.tornado.api.exceptions.TornadoOutOfMemoryException: Unable to allocate 100663320 bytes of memory.
+To increase the maximum device memory, use -Dtornado.device.memory=<X>GB
+```
+
+This indicates that the default GPU memory allocation (7GB) is insufficient for your model.
+
+### Solution
+
+Increase the GPU memory allocation using the `--gpu-memory` flag:
+
+```bash
+# For 3B models, try increasing to 15GB
+./llama-tornado --gpu --model Llama-3.2-3B-Instruct-Q4_0.gguf --prompt "Tell me a joke" --gpu-memory 15GB
+
+# For 8B models, you may need even more (20GB or higher)
+./llama-tornado --gpu --model Meta-Llama-3-8B-Instruct-Q4_0.gguf --prompt "Tell me a joke" --gpu-memory 20GB
+```
+
+### Memory Requirements by Model Size
+
+| Model Size | Recommended GPU Memory |
+|------------|----------------------|
+| 1B models  | 7GB (default)        |
+| 3B models  | 15GB                 |
+| 8B models  | 20GB+                |
+
+**Note**: The actual memory requirement depends on your GPU's available memory. Check your GPU specifications and adjust accordingly. If you still encounter memory issues, try:
+
+1. Using Q4_0 instead of Q8_0 quantization (requires less memory)
+2. Closing other GPU-intensive applications
+
+## Debug & Profiling Options
 View TornadoVM's internal behavior:
 ```bash
 # Print thread information during execution
@@ -250,7 +289,7 @@ View TornadoVM's internal behavior:
 Supported command-line options include:
 
 ```bash
-╰─cmd ➜ llama-tornado --help
+cmd ➜ llama-tornado --help
 usage: llama-tornado [-h] --model MODEL_PATH [--prompt PROMPT] [-sp SYSTEM_PROMPT] [--temperature TEMPERATURE] [--top-p TOP_P] [--seed SEED] [-n MAX_TOKENS]
                      [--stream STREAM] [--echo ECHO] [-i] [--instruct] [--gpu] [--opencl] [--ptx] [--gpu-memory GPU_MEMORY] [--heap-min HEAP_MIN] [--heap-max HEAP_MAX]
                      [--debug] [--profiler] [--profiler-dump-dir PROFILER_DUMP_DIR] [--print-bytecodes] [--print-threads] [--print-kernel] [--full-dump]
