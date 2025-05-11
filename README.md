@@ -12,7 +12,7 @@
 [//]: # (![Forks]&#40;https://img.shields.io/github/forks/beehive-lab//llama3.java-tornadovm?style=social&#41;)
 
 <div align="center">
-  <img src="docs/java-tornado-gpu.jpg" width="40%">
+  <img src="docs/java-tornado-gpu.jpg" width="50%">
 </div>
 
 Integration of **Llama3 models** with **TornadoVM** to enable accelerated inference on Java using GPUs and CPUs. This project allows you to run Llama3 inference efficiently, leveraging TornadoVM's parallel computing features for enhanced performance.
