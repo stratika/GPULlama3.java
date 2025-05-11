@@ -5,11 +5,11 @@
 ![CUDA](https://img.shields.io/badge/CUDA/PTX-supported-76B900?style=for-the-badge&logo=nvidia)
 
 
-[//]: # (![Last Commit]&#40;https://img.shields.io/github/last-commit/beehive-lab/llama3.java-tornadovm?style=for-the-badge&#41;)
+[//]: # (![Last Commit]&#40;https://img.shields.io/github/last-commit/beehive-lab/GPULlama3.java?style=for-the-badge&#41;)
 
-[//]: # (![Stars]&#40;https://img.shields.io/github/stars/beehive-lab//llama3.java-tornadovm?style=social&#41;)
+[//]: # (![Stars]&#40;https://img.shields.io/github/stars/beehive-lab//GPULlama3.java?style=social&#41;)
 
-[//]: # (![Forks]&#40;https://img.shields.io/github/forks/beehive-lab//llama3.java-tornadovm?style=social&#41;)
+[//]: # (![Forks]&#40;https://img.shields.io/github/forks/beehive-lab//GPULlama3.java?style=social&#41;)
 
 -----------
 <table style="border: none;">
@@ -36,14 +36,8 @@ Previous intergration of TornadoVM and Llama2 it can be found in <a href="https:
 - **TornadoVM-accelerated Llama 3 inference** with pure Java
   - **Support for GGUF format models** with Q8_0 and Q4_0 quantization
   - **Instruction-following and chat modes** for various use cases
-  - **Multiple GPU backends**:
-    - OpenCL backend (NVIDIA, Intel, AMD GPUs, Apple Silicon M-series)
-    - PTX backend (NVIDIA GPUs)
   - **Cross-platform compatibility**:
     - ✅ NVIDIA GPUs (OpenCL & PTX (Soon))
-    - ✅ Intel GPUs (OpenCL)
-    - ✅ AMD GPUs (OpenCL)
-    - [Not tested yet] Apple Silicon M-series (OpenCL)
   - **Interactive CLI** with `--interactive` and `--instruct` modes
   - **Flexible backend switching** - choose OpenCL or PTX at runtime (need to build TornadoVM with both enabled)
 
@@ -91,10 +85,10 @@ When cloning this repository, use the `--recursive` flag to ensure that TornadoV
 
 ```bash
 # Clone the repository with all submodules
-git clone --recursive git@github.com:mikepapadim/llama3.java-tornadovm.git
+git clone --recursive git@github.com:mikepapadim/GPULlama3.java.git
 
 # Navigate to the project directory
-cd llama3.java-tornadovm
+cd GPULlama3.java
 
 # Enter the TornadoVM submodule directory
 cd external/tornadovm
