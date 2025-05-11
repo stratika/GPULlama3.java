@@ -40,10 +40,10 @@ Previous intergration of TornadoVM and Llama2 it can be found in <a href="https:
     - OpenCL backend (NVIDIA, Intel, AMD GPUs, Apple Silicon M-series)
     - PTX backend (NVIDIA GPUs)
   - **Cross-platform compatibility**:
-    - ✅ NVIDIA GPUs (OpenCL & PTX)
+    - ✅ NVIDIA GPUs (OpenCL & PTX (Soon))
     - ✅ Intel GPUs (OpenCL)
     - ✅ AMD GPUs (OpenCL)
-    - ✅ Apple Silicon M-series (OpenCL)
+    - [Not tested yet] Apple Silicon M-series (OpenCL)
   - **Interactive CLI** with `--interactive` and `--instruct` modes
   - **Flexible backend switching** - choose OpenCL or PTX at runtime (need to build TornadoVM with both enabled)
 
