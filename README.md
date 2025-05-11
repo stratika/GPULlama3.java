@@ -1,4 +1,17 @@
 # GPULlama3.java powered by TornadoVM
+![Java Version](https://img.shields.io/badge/java-21+-blue?style=for-the-badge&logo=openjdk)
+![TornadoVM](https://img.shields.io/badge/TornadoVM-enabled-green?style=for-the-badge&logo=apache)
+
+![OpenCL](https://img.shields.io/badge/OpenCL-supported-blue?style=for-the-badge&logo=khronos)
+![CUDA](https://img.shields.io/badge/CUDA/PTX-supported-76B900?style=for-the-badge&logo=nvidia)
+
+
+[//]: # (![Last Commit]&#40;https://img.shields.io/github/last-commit/beehive-lab/llama3.java-tornadovm?style=for-the-badge&#41;)
+
+[//]: # (![Stars]&#40;https://img.shields.io/github/stars/beehive-lab//llama3.java-tornadovm?style=social&#41;)
+
+[//]: # (![Forks]&#40;https://img.shields.io/github/forks/beehive-lab//llama3.java-tornadovm?style=social&#41;)
+
 <div align="center">
   <img src="docs/java-tornado-gpu.jpg" width="40%">
 </div>
@@ -17,18 +30,18 @@ Previous intergration of TornadoVM and Llama2 it can be found in [llama2.tornado
 ### ✅ Current Features
 
 - **TornadoVM-accelerated Llama 3 inference** with pure Java
-- **Support for GGUF format models** with Q8_0 and Q4_0 quantization
-- **Instruction-following and chat modes** for various use cases
-- **Multiple GPU backends**:
-  - OpenCL backend (NVIDIA, Intel, AMD GPUs, Apple Silicon M-series)
-  - PTX backend (NVIDIA GPUs)
-- **Cross-platform compatibility**:
-  - ✅ NVIDIA GPUs (OpenCL & PTX)
-  - ✅ Intel GPUs (OpenCL)
-  - ✅ AMD GPUs (OpenCL)
-  - ✅ Apple Silicon M-series (OpenCL)
-- **Interactive CLI** with `--interactive` and `--instruct` modes
-- **Flexible backend switching** - choose OpenCL or PTX at runtime (need to build TornadoVM with both enabled)
+  - **Support for GGUF format models** with Q8_0 and Q4_0 quantization
+  - **Instruction-following and chat modes** for various use cases
+  - **Multiple GPU backends**:
+    - OpenCL backend (NVIDIA, Intel, AMD GPUs, Apple Silicon M-series)
+    - PTX backend (NVIDIA GPUs)
+  - **Cross-platform compatibility**:
+    - ✅ NVIDIA GPUs (OpenCL & PTX)
+    - ✅ Intel GPUs (OpenCL)
+    - ✅ AMD GPUs (OpenCL)
+    - ✅ Apple Silicon M-series (OpenCL)
+  - **Interactive CLI** with `--interactive` and `--instruct` modes
+  - **Flexible backend switching** - choose OpenCL or PTX at runtime (need to build TornadoVM with both enabled)
 
 ### 🚧 Work-in-progress Features
 <details>
@@ -62,9 +75,9 @@ Previous intergration of TornadoVM and Llama2 it can be found in [llama2.tornado
 Ensure you have the following installed and configured:
 
 - **Java 21+**: Required for Vector API support.
-- **TornadoVM**: To install **TornadoVM**, you'll need to set up the environment variables `TORNADO_ROOT` and `TORNADO_SDK` as part of the configuration process.
-  For detailed installation instructions, visit the [TornadoVM GitHub repository](https://github.com/beehive-lab/TornadoVM).
-- **Maven**: For building the Java project.
+  - **TornadoVM**: To install **TornadoVM**, you'll need to set up the environment variables `TORNADO_ROOT` and `TORNADO_SDK` as part of the configuration process.
+    For detailed installation instructions, visit the [TornadoVM GitHub repository](https://github.com/beehive-lab/TornadoVM).
+  - **Maven**: For building the Java project.
 
 ### Install, Build, and Run
 
@@ -116,9 +129,9 @@ Check models below.
 
 Download pure `Q4_0` and (optionally) `Q8_0` quantized .gguf files from:
 - https://huggingface.co/mukel/Llama-3.2-1B-Instruct-GGUF
-- https://huggingface.co/mukel/Llama-3.2-3B-Instruct-GGUF
-- https://huggingface.co/mukel/Meta-Llama-3.1-8B-Instruct-GGUF
-- https://huggingface.co/mukel/Meta-Llama-3-8B-Instruct-GGUF
+  - https://huggingface.co/mukel/Llama-3.2-3B-Instruct-GGUF
+  - https://huggingface.co/mukel/Meta-Llama-3.1-8B-Instruct-GGUF
+  - https://huggingface.co/mukel/Meta-Llama-3-8B-Instruct-GGUF
 
 The pure `Q4_0` quantized models are recommended, except for the very small models (1B), please be gentle with [huggingface.co](https://huggingface.co) servers:
 ```
@@ -371,18 +384,18 @@ llama-tornado --gpu --model Llama-3.2-1B-Instruct-Q8_0.gguf --prompt "tell me a 
 That's right! Behind all the GPU acceleration and performance optimizations, you're looking at a standard Java application:
 
 - **Entry Point**: `com.example.LlamaApp`
-- **JAR File**: `/path/to/gpu-llama3-1.0-SNAPSHOT.jar`
-- **JVM Flags**: Standard OpenJDK flags with TornadoVM extensions
-- **Arguments**: Plain old command-line arguments
+  - **JAR File**: `/path/to/gpu-llama3-1.0-SNAPSHOT.jar`
+  - **JVM Flags**: Standard OpenJDK flags with TornadoVM extensions
+  - **Arguments**: Plain old command-line arguments
 
 ## 💡 The Magic Ingredient: TornadoVM
 
 The secret sauce that transforms regular Java code into GPU-accelerated compute kernels. All those `-Dtornado.*` flags? They're just configuring TornadoVM to:
 
 - 🔄 Automatically compile Java methods to GPU kernels
-- 📊 Manage GPU memory and data transfers
-- ⚡ Optimize loop execution for parallel hardware
-- 🐛 Provide debugging and profiling capabilities
+  - 📊 Manage GPU memory and data transfers
+  - ⚡ Optimize loop execution for parallel hardware
+  - 🐛 Provide debugging and profiling capabilities
 
 
 ## License
