@@ -366,7 +366,8 @@ Advanced Options:
 
 -----------
 
-## 🔍 Don't Take Our Word for It - Check the Java Command - Just Plain Old Java with Some Sauce
+## 🔍 Don't Take Our Word for It—Check the Java Command
+### Just Plain Old Java with Some Sauce
 
 Want to see exactly what's happening under the hood? Our `llama-tornado` wrapper script makes it crystal clear. Just add the `--show-command` flag and witness the beauty of the underlying Java invocation:
 
