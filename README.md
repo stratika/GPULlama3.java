@@ -102,7 +102,8 @@ chmod +x llama-tornado
 source set_paths
 
 # Build the project using Maven (skip tests for faster build)
-mvn clean package -DskipTests
+# mvn clean package -DskipTests or just make
+make
 
 # Run the model (make sure you have downloaded the model file first -  see below)
 ./llama-tornado --gpu --opencl --model Llama-3.2-1B-Instruct-Q4_0.gguf --prompt "tell me a joke"
