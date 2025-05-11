@@ -11,20 +11,25 @@
 
 [//]: # (![Forks]&#40;https://img.shields.io/github/forks/beehive-lab//llama3.java-tornadovm?style=social&#41;)
 
-<div align="center">
-  <img src="docs/java-tornado-gpu.jpg" width="50%">
-</div>
-
-Integration of **Llama3 models** with **TornadoVM** to enable accelerated inference on Java using GPUs and CPUs. This project allows you to run Llama3 inference efficiently, leveraging TornadoVM's parallel computing features for enhanced performance.
-
-
-This project builds on [Llama3.java](https://github.com/mukel/llama3.java), based on the original [Llama 3](https://github.com/meta-llama/llama3), [3.1](https://llama.meta.com/docs/model-cards-and-prompt-formats/llama3_1), and [3.2](https://ai.meta.com/blog/llama-3-2-connect-2024-vision-edge-mobile-devices/) models, with TornadoVM support for parallelism and hardware acceleration.
-
+-----------
+<table style="border: none;">
+<tr style="border: none;">
+<td style="width: 40%; vertical-align: middle; border: none;">
+<img src="docs/java-tornado-gpu.jpg" width="100%">
+</td>
+<td style="vertical-align: middle; padding-left: 20px; border: none;">
+Integration of <strong>Llama3 models</strong> with <strong>TornadoVM</strong> to enable accelerated inference on Java using GPUs and CPUs. This project allows you to run Llama3 inference efficiently, leveraging TornadoVM's parallel computing features for enhanced performance.
+<br><br>
+This project builds on <a href="https://github.com/mukel/llama3.java">Llama3.java</a>, based on the original <a href="https://github.com/meta-llama/llama3">Llama 3</a>, <a href="https://llama.meta.com/docs/model-cards-and-prompt-formats/llama3_1">3.1</a>, and <a href="https://ai.meta.com/blog/llama-3-2-connect-2024-vision-edge-mobile-devices/">3.2</a> models, with TornadoVM support for parallelism and hardware acceleration.
+<br><br>
 Thanks to @mukel for the original implementation of LLama3.java.
+<br><br>
+Previous intergration of TornadoVM and Llama2 it can be found in <a href="https://github.com/mikepapadim/llama2.tornadovm.java">llama2.tornadovm</a>.
+</td>
+</tr>
+</table>
 
-Previous intergration of TornadoVM and Llama2 it can be found in [llama2.tornadovm](https://github.com/mikepapadim/llama2.tornadovm.java).
-
----
+-----------
 
 ### ✅ Current Features
 
@@ -66,6 +71,8 @@ Previous intergration of TornadoVM and Llama2 it can be found in [llama2.tornado
 - [ ] **LangChain4j integration**
 - [ ] **GraalVM Native Image**
 </details>
+
+-----------
 
 ## Setup & Configuration
 
@@ -122,6 +129,7 @@ make
 # Run the model (make sure you have downloaded the model file first -  see below)
 ./llama-tornado --gpu --opencl --model Llama-3.2-1B-Instruct-Q4_0.gguf --prompt "tell me a joke"
 ```
+-----------
 
 The above model can we swapped with one of the other models, such as `Llama-3.2-3B-Instruct-Q4_0.gguf` or `Meta-Llama-3-8B-Instruct-Q4_0.gguf`, depending on your needs.
 Check models below.
@@ -167,6 +175,7 @@ with the `llama-quantize` utility from [llama.cpp](https://github.com/ggerganov/
 ./llama-quantize --pure ./Meta-Llama-3-8B-Instruct-F32.gguf ./Meta-Llama-3-8B-Instruct-Q4_0.gguf Q4_0
 ```
 
+-----------
 
 ## Configuration - setup environment variables
 
@@ -226,6 +235,7 @@ Specify the backend (OpenCL or PTX):
 # Use PTX backend for NVIDIA GPUs
 ./llama-tornado --gpu --ptx --model model.gguf --prompt "..."
 ````
+-----------
 
 ## Troubleshooting GPU Memory Issues
 
@@ -264,6 +274,8 @@ Increase the GPU memory allocation using the `--gpu-memory` flag:
 
 1. Using Q4_0 instead of Q8_0 quantization (requires less memory)
 2. Closing other GPU-intensive applications
+
+-----------
 
 ## Debug & Profiling Options
 View TornadoVM's internal behavior:
@@ -352,6 +364,8 @@ Advanced Options:
 
 ```
 
+-----------
+
 ## 🔍 Don't Take Our Word for It - Check the Java Command - Just Plain Old Java with Some Sauce
 
 Want to see exactly what's happening under the hood? Our `llama-tornado` wrapper script makes it crystal clear. Just add the `--show-command` flag and witness the beauty of the underlying Java invocation:
@@ -416,6 +430,7 @@ llama-tornado --gpu --model Llama-3.2-1B-Instruct-Q8_0.gguf --prompt "tell me a 
 
 </details>
 
+-----------
 
 ## 🎯 What You See, Is What You Get
 
@@ -435,6 +450,7 @@ The secret sauce that transforms regular Java code into GPU-accelerated compute 
   - ⚡ Optimize loop execution for parallel hardware
   - 🐛 Provide debugging and profiling capabilities
 
+-----------
 
 ## License
 
