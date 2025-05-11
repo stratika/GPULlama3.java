@@ -84,7 +84,9 @@ cd externals/tornadovm
 python3 -m venv venv
 source ./venv/bin/activate
 
-# Install TornadoVM with OpenCL backend and OpenJDK 21 [Optional] -> --backedn opencl,ptx 
+# Install TornadoVM with OpenCL backend and OpenJDK 21 [Optional] -> --backend opencl,ptx 
+# Be sure to have the correct JDK version installed and the TornadoVM installer script is executed correctly.
+# you can run at this step: tornado --devices to check if the installation was successful
 ./bin/tornadovm-installer --jdk jdk21 --backend opencl
 
 # Source the TornadoVM environment variables
@@ -96,18 +98,18 @@ cd ../../
 # Make the llama-tornado script executable
 chmod +x llama-tornado
 
-# Source the project-specific environment paths
+# Source the project-specific environment paths -> this will ensure the correct paths are set for the project and the TornadoVM SDK
 source set_paths
 
 # Build the project using Maven (skip tests for faster build)
 mvn clean package -DskipTests
 
-# Run the model (make sure you have downloaded the model file first)
+# Run the model (make sure you have downloaded the model file first -  see below)
 ./llama-tornado --gpu --opencl --model Llama-3.2-1B-Instruct-Q4_0.gguf --prompt "tell me a joke"
 ```
 
-
-Before running the project, you must build the Tornado external submodule first. The environment variables like `TORNADO_SDK` need to point to this submodule directory where the OpenCL backend is installed. This is critical for the GPU acceleration to work properly. After proper setup, you will use the `llama-tornado opencl` command when targeting GPU devices.
+The above model can we swapped with one of the other models, such as `Llama-3.2-3B-Instruct-Q4_0.gguf` or `Meta-Llama-3-8B-Instruct-Q4_0.gguf`, depending on your needs.
+Check models below.
 
 ### Download Model Files
 
