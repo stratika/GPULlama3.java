@@ -78,7 +78,6 @@ public class TransformerComputeKernelsLayered {
         }
     }
 
-
     /**
      * Applies the computed normalization factor to input and weight elements.
      * This is the second phase of RMS normalization.
@@ -127,7 +126,6 @@ public class TransformerComputeKernelsLayered {
         }
     }
 
-
     /**
      * Applies Rotary Position Encoding (RoPE) to query and key vectors.
      * RoPE rotates pairs of dimensions based on their position in the sequence,
@@ -138,19 +136,19 @@ public class TransformerComputeKernelsLayered {
      * - Apply 2D rotation to the pair
      *
      * @param context Kernel execution context
-     * @param positionNlayer Array containing current position
+     * @param positionHolder Array containing current position
      * @param sq Query vectors to rotate
      * @param sk Key vectors to rotate
      * @param kv_dim Dimension of key/value vectors
      * @param head_size Dimension of each attention head
      */
-    public static void ropeRotation(KernelContext context, IntArray positionNlayer, FloatArray sq, FloatArray sk, int kv_dim, int head_size) {
+    public static void ropeRotation(KernelContext context, IntArray positionHolder, FloatArray sq, FloatArray sk, int kv_dim, int head_size) {
         int i = context.globalIdx * 2;
 
         int head_dim = i % head_size;
         // 50000.0f vs 10000.0f
         float freq = 1.0f / TornadoMath.pow(50000.0f, head_dim / (float) head_size);
-        float val = positionNlayer.get(0) * freq;
+        float val = positionHolder.get(0) * freq;
         float fcr = TornadoMath.cos(val);
         float fci = TornadoMath.sin(val);
 
@@ -190,15 +188,15 @@ public class TransformerComputeKernelsLayered {
      * @param kvDim Total key/value dimension
      * @param kvMul Key/value head multiplier for grouped-query attention
      * @param seqLen Current sequence length
-     * @param positionNlayer Array containing position and layer info
+     * @param positionHolder Array containing position and layer info
      * @param wrapAtt Buffer for attention weights
      * @param layer Current transformer layer
      * @param contextLength Maximum context length
      */
     public static void processHeadsParallel(FloatArray q, FloatArray key_cache, FloatArray value_cache, FloatArray xb, int nHeads, int headSize, int kvDim, int kvMul, int seqLen,
-            IntArray positionNlayer, FloatArray wrapAtt, int layer, int contextLength) {
+            IntArray positionHolder, FloatArray wrapAtt, int layer, int contextLength) {
 
-        int pos = positionNlayer.get(0);
+        int pos = positionHolder.get(0);
         int loff = layer * contextLength * kvDim;
 
         // Parallelize computation across attention heads
@@ -286,7 +284,6 @@ public class TransformerComputeKernelsLayered {
             allXb.set(h * headSize + i, weightedSum);
         }
     }
-
 
     /**
      * Performs optimized matrix-vector multiplication where each work group
@@ -443,7 +440,7 @@ public class TransformerComputeKernelsLayered {
         // Allocate local memory for reduction
         float[] localSum = context.allocateFloatLocalArray(localSize);
 
-        int rowOffset =  rowId * n;
+        int rowOffset = rowId * n;
 
         // Each thread calculates partial dot product
         float partialSum = 0.0f;
