@@ -28,7 +28,7 @@ class LlamaRunner:
         if not all([self.java_home, self.tornado_sdk, self.llama_root]):
             print("Error: Required environment variables not set")
             print("Please ensure JAVA_HOME, TORNADO_SDK, and LLAMA_ROOT are defined")
-            print("Note: check set_path.sh in root dir")
+            print("Note: check set_path in root dir -> source set_path")
             sys.exit(1)
 
     def _validate_paths(self):
@@ -49,10 +49,8 @@ class LlamaRunner:
         cmd = [
             f"{self.java_home}/bin/java",
             "-server",
-            "-XX:-UseCompressedOops",
             "-XX:+UnlockExperimentalVMOptions",
             "-XX:+EnableJVMCI",
-            "-XX:-UseCompressedClassPointers",
             f"-Xms{args.heap_min}",
             f"-Xmx{args.heap_max}",
             "--enable-preview",
@@ -120,20 +118,18 @@ class LlamaRunner:
         # Module configuration - varies by backend
         module_config = [
             f"--upgrade-module-path", f"{self.tornado_sdk}/share/java/graalJars",
-            "-XX:+UseParallelGC",
             f"@{self.tornado_sdk}/etc/exportLists/common-exports",
         ]
-
         # Add backend-specific exports and modules
         if args.backend == Backend.OPENCL:
             module_config.extend([
                 f"@{self.tornado_sdk}/etc/exportLists/opencl-exports",
-                "--add-modules", "ALL-SYSTEM,tornado.runtime,tornado.annotation,tornado.drivers.common,tornado.drivers.opencl",
+                "--add-modules", "ALL-SYSTEM,jdk.incubator.vector,tornado.runtime,tornado.annotation,tornado.drivers.common,tornado.drivers.opencl",
             ])
         elif args.backend == Backend.PTX:
             module_config.extend([
                 f"@{self.tornado_sdk}/etc/exportLists/ptx-exports",
-                "--add-modules", "ALL-SYSTEM,tornado.runtime,tornado.annotation,tornado.drivers.common,tornado.drivers.ptx",
+                "--add-modules", "ALL-SYSTEM,jdk.incubator.vector,tornado.runtime,tornado.annotation,tornado.drivers.common,tornado.drivers.ptx",
             ])
 
         module_config.extend([

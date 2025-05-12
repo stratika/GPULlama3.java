@@ -375,10 +375,8 @@ llama-tornado --gpu --model Llama-3.2-1B-Instruct-Q8_0.gguf --prompt "tell me a 
 ```java
 /home/mikepapadim/.sdkman/candidates/java/current/bin/java \
     -server \
-    -XX:-UseCompressedOops \
     -XX:+UnlockExperimentalVMOptions \
     -XX:+EnableJVMCI \
-    -XX:-UseCompressedClassPointers \
     -Xms20g -Xmx20g \
     --enable-preview \
     -Djava.library.path=/home/mikepapadim/manchester/TornadoVM/bin/sdk/lib \
@@ -406,7 +404,6 @@ llama-tornado --gpu --model Llama-3.2-1B-Instruct-Q8_0.gguf --prompt "tell me a 
     -Dtornado.eventpool.maxwaitevents=32000 \
     "-Dtornado.opencl.compiler.flags=-cl-denorms-are-zero -cl-no-signed-zeros -cl-finite-math-only" \
     --upgrade-module-path /home/mikepapadim/manchester/TornadoVM/bin/sdk/share/java/graalJars \
-    -XX:+UseParallelGC \
     @/home/mikepapadim/manchester/TornadoVM/bin/sdk/etc/exportLists/common-exports \
     @/home/mikepapadim/manchester/TornadoVM/bin/sdk/etc/exportLists/opencl-exports \
     --add-modules ALL-SYSTEM,tornado.runtime,tornado.annotation,tornado.drivers.common,tornado.drivers.opencl \
