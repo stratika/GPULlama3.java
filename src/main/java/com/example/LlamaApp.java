@@ -10,6 +10,7 @@ import com.example.inference.engine.impl.Llama;
 import com.example.inference.engine.impl.Options;
 import com.example.loader.weights.ModelLoader;
 import com.example.loader.weights.State;
+import com.example.tokenizer.impl.Tokenizer;
 import com.example.tornadovm.FloatArrayUtils;
 import uk.ac.manchester.tornado.api.types.arrays.FloatArray;
 
@@ -160,6 +161,8 @@ public class LlamaApp {
                 System.err.println("Ran out of context length...");
                 break;
             }
+            System.out.print("\n");
+
         }
     }
 
@@ -188,16 +191,8 @@ public class LlamaApp {
         Set<Integer> stopTokens = chatFormat.getStopTokens();
         if (USE_TORNADOVM) {
             // Call generateTokensGPU without the token consumer parameter
-            responseTokens = Llama.generateTokensGPU(model, state, 0, promptTokens, stopTokens, options.maxTokens(), sampler, options.echo());
-            // Handle token output separately if needed
-            // You might need to iterate through responseTokens and process them
-            if (options.stream()) {
-                for (Integer token : responseTokens) {
-                    if (!model.tokenizer().isSpecialToken(token)) {
-                        System.out.print(model.tokenizer().decode(List.of(token)));
-                    }
-                }
-            }
+            responseTokens = Llama.generateTokensGPU(model, state, 0, promptTokens, stopTokens, options.maxTokens(),
+                    sampler, options.echo(), options.stream() ? tokenConsumer : null);
         } else {
             // CPU path still uses the token consumer
             responseTokens = Llama.generateTokens(model, state, 0, promptTokens, stopTokens, options.maxTokens(), sampler, options.echo(), tokenConsumer);

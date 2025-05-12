@@ -192,7 +192,8 @@ public record Llama(Configuration configuration, Tokenizer tokenizer, Weights we
         return tornadoVMMasterPlan.tornadoVMForwardExecuteLayered(position);
     }
 
-    public static List<Integer> generateTokensGPU(Llama model, State state, int startPosition, List<Integer> promptTokens, Set<Integer> stopTokens, int maxTokens, Sampler sampler, boolean echo) {
+    public static List<Integer> generateTokensGPU(Llama model, State state,
+            int startPosition, List<Integer> promptTokens, Set<Integer> stopTokens, int maxTokens, Sampler sampler, boolean echo,   IntConsumer onTokenGenerated) {
         // 1. Pre-allocate the TornadoVM plan just once
         TornadoVMMasterPlan tornadoVMPlan = TornadoVMMasterPlan.initializeTornadoVMPlan(state, model);
 
@@ -247,8 +248,13 @@ public record Llama(Configuration configuration, Tokenizer tokenizer, Weights we
                 // Sample next token - use GPU sampling if available
                 nextToken = sampler.sampleToken(logits);
 
+                // Add token consumer support
+                if (onTokenGenerated != null) {
+                    onTokenGenerated.accept(nextToken);
+                }
+
                 // Output if needed
-                if (echo) {
+                if (echo && onTokenGenerated == null) {
                     System.err.print(Tokenizer.replaceControlCharacters(model.tokenizer().decode(List.of(nextToken))));
                 }
 
@@ -359,23 +365,6 @@ public record Llama(Configuration configuration, Tokenizer tokenizer, Weights we
         return generatedTokens;
     }
 
-    /**
-     * Print performance metrics for the generation process
-     */
-    private static void printPerformanceMetrics(long startNanos, long inferenceStartNanos, int promptTokenCount, int generatedTokenCount) {
-        long endNanos = System.nanoTime();
-        long totalNanos = endNanos - startNanos;
-        long inferenceNanos = inferenceStartNanos > 0 ? endNanos - inferenceStartNanos : 0;
-        long promptNanos = inferenceStartNanos - startNanos;
-        int totalTokens = promptTokenCount + generatedTokenCount;
-
-        double totalTokensPerSecond = totalTokens / (totalNanos / 1_000_000_000.0);
-        double promptTokensPerSecond = promptTokenCount > 0 ? promptTokenCount / (promptNanos / 1_000_000_000.0) : 0;
-        double inferenceTokensPerSecond = generatedTokenCount > 0 ? generatedTokenCount / (inferenceNanos / 1_000_000_000.0) : 0;
-
-        System.err.printf("\n%n%.2f tokens/s (%d) [PrEval %.2f tokens/s (%d), TokGen %.2f tokens/s (%d)]%n", totalTokensPerSecond, totalTokens, promptTokensPerSecond, promptTokenCount,
-                inferenceTokensPerSecond, generatedTokenCount);
-    }
 
     public State createNewState() {
         State state = new State(configuration(), -1);
