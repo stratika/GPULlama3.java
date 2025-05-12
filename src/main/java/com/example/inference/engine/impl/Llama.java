@@ -218,7 +218,6 @@ public record Llama(Configuration configuration, Tokenizer tokenizer, Weights we
             // Try to extract the underlying array for faster access
             try {
                 // This is a performance optimization that may not work on all JVMs
-                // Fall back to regular list access if it fails
                 promptTokenArray = promptTokens.stream().mapToInt(Integer::intValue).toArray();
             } catch (Exception e) {
                 // Fall back to list access
