@@ -186,7 +186,7 @@ public class LlamaApp {
                     System.out.println(responseText);
                 }
                 if (stopToken == null) {
-                    System.err.println("Ran out of context length...\n Increase context length with by passing to llama-tornado --max-tokens XXX");
+                    System.err.println("\n Ran out of context length...\n Increase context length with by passing to llama-tornado --max-tokens XXX");
                     break;
                 }
                 System.out.print("\n");
