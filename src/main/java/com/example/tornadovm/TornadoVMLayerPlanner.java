@@ -87,7 +87,7 @@ public class TornadoVMLayerPlanner {
             unifiedLayer = new TaskGraph("layer_" + layerIndex);
             unifiedLayer.consumeFromDevice(state.wrapX);
             unifiedLayer.transferToDevice(DataTransferMode.FIRST_EXECUTION,
-                    //Copy-in weights per layer for batched-layerd layout
+                    //Copy-in weights per layer for batched-layered layout
                     weights.rms_att_weightLayered[layerIndex],
                     weights.wqLayered[layerIndex],
                     weights.wkLayered[layerIndex],
