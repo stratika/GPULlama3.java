@@ -193,10 +193,8 @@ public record Llama(Configuration configuration, Tokenizer tokenizer, Weights we
     }
 
     public static List<Integer> generateTokensGPU(Llama model, State state,
-            int startPosition, List<Integer> promptTokens, Set<Integer> stopTokens, int maxTokens, Sampler sampler, boolean echo,   IntConsumer onTokenGenerated) {
-        // 1. Pre-allocate the TornadoVM plan just once
-        TornadoVMMasterPlan tornadoVMPlan = TornadoVMMasterPlan.initializeTornadoVMPlan(state, model);
-
+            int startPosition, List<Integer> promptTokens, Set<Integer> stopTokens, int maxTokens, Sampler sampler, boolean echo,   IntConsumer onTokenGenerated,
+            TornadoVMMasterPlan tornadoVMPlan) {
         // === Setup and Initialization ===
         long startNanos = System.nanoTime();
         long inferenceStartNanos = 0;
@@ -280,9 +278,6 @@ public record Llama(Configuration configuration, Tokenizer tokenizer, Weights we
 
         // Set metrics for tokens achieved
         LastRunMetrics.setMetrics(totalTokens, totalSeconds);
-
-        // Release GPU resources
-        tornadoVMPlan.freeTornadoExecutionPlan();
 
         return generatedTokens;
     }

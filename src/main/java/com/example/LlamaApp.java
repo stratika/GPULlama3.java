@@ -12,6 +12,7 @@ import com.example.loader.weights.ModelLoader;
 import com.example.loader.weights.State;
 import com.example.tokenizer.impl.Tokenizer;
 import com.example.tornadovm.FloatArrayUtils;
+import com.example.tornadovm.TornadoVMMasterPlan;
 import uk.ac.manchester.tornado.api.types.arrays.FloatArray;
 
 import java.io.IOException;
@@ -28,7 +29,7 @@ public class LlamaApp {
     public static final boolean USE_VECTOR_API = Boolean.parseBoolean(System.getProperty("llama.VectorAPI", "true"));   // Enable Java Vector API for CPU acceleration
     public static final boolean USE_AOT = Boolean.parseBoolean(System.getProperty("llama.AOT", "false"));               // Use Ahead-of-Time compilation
     public static final boolean USE_TORNADOVM = Boolean.parseBoolean(System.getProperty("use.tornadovm", "false"));     // Use TornadoVM for GPU acceleration
-
+    public static final boolean SHOW_PERF_INTERACTIVE = Boolean.parseBoolean(System.getProperty("llama.ShowPerfInteractive", "false")); // Show performance metrics in interactive mode
     /**
      * Creates and configures a sampler for token generation based on specified parameters.
      *
@@ -114,6 +115,7 @@ public class LlamaApp {
         return sampler;
     }
 
+
     static void runInteractive(Llama model, Sampler sampler, Options options) {
         State state = null;
         List<Integer> conversationTokens = new ArrayList<>();
@@ -124,51 +126,92 @@ public class LlamaApp {
         }
         int startPosition = 0;
         Scanner in = new Scanner(System.in);
-        while (true) {
-            System.out.print("> ");
-            System.out.flush();
-            String userText = in.nextLine();
-            if (List.of("quit", "exit").contains(userText)) {
-                break;
-            }
-            if (state == null) {
-                state = model.createNewState();
-            }
-            conversationTokens.addAll(chatFormat.encodeMessage(new ChatFormat.Message(ChatFormat.Role.USER, userText)));
-            conversationTokens.addAll(chatFormat.encodeHeader(new ChatFormat.Message(ChatFormat.Role.ASSISTANT, "")));
-            Set<Integer> stopTokens = chatFormat.getStopTokens();
-            List<Integer> responseTokens = Llama.generateTokens(model, state, startPosition, conversationTokens.subList(startPosition, conversationTokens.size()), stopTokens, options.maxTokens(),
-                    sampler, options.echo(), token -> {
-                        if (options.stream()) {
-                            if (!model.tokenizer().isSpecialToken(token)) {
-                                System.out.print(model.tokenizer().decode(List.of(token)));
-                            }
-                        }
-                    });
-            // Include stop token in the prompt history, but not in the response displayed to the user.
-            conversationTokens.addAll(responseTokens);
-            startPosition = conversationTokens.size();
-            Integer stopToken = null;
-            if (!responseTokens.isEmpty() && stopTokens.contains(responseTokens.getLast())) {
-                stopToken = responseTokens.getLast();
-                responseTokens.removeLast();
-            }
-            if (!options.stream()) {
-                String responseText = model.tokenizer().decode(responseTokens);
-                System.out.println(responseText);
-            }
-            if (stopToken == null) {
-                System.err.println("Ran out of context length...");
-                break;
-            }
-            System.out.print("\n");
 
+        // Initialize TornadoVM plan once at the beginning if GPU path is enabled
+        TornadoVMMasterPlan tornadoVMPlan = null;
+
+        try {
+            while (true) {
+                System.out.print("> ");
+                System.out.flush();
+                String userText = in.nextLine();
+                if (List.of("quit", "exit").contains(userText)) {
+                    break;
+                }
+                if (state == null) {
+                    state = model.createNewState();
+                }
+
+                if (USE_TORNADOVM && tornadoVMPlan == null) {
+                    tornadoVMPlan = TornadoVMMasterPlan.initializeTornadoVMPlan(state, model);
+                }
+
+                conversationTokens.addAll(chatFormat.encodeMessage(new ChatFormat.Message(ChatFormat.Role.USER, userText)));
+                conversationTokens.addAll(chatFormat.encodeHeader(new ChatFormat.Message(ChatFormat.Role.ASSISTANT, "")));
+                Set<Integer> stopTokens = chatFormat.getStopTokens();
+
+                List<Integer> responseTokens;
+                IntConsumer tokenConsumer = token -> {
+                    if (options.stream()) {
+                        if (!model.tokenizer().isSpecialToken(token)) {
+                            System.out.print(model.tokenizer().decode(List.of(token)));
+                        }
+                    }
+                };
+
+                // Choose between GPU and CPU path based on configuration
+                if (USE_TORNADOVM) {
+                    // GPU path using TornadoVM
+                    responseTokens = Llama.generateTokensGPU(model, state, startPosition,
+                            conversationTokens.subList(startPosition, conversationTokens.size()),
+                            stopTokens, options.maxTokens(), sampler, options.echo(),
+                            options.stream() ? tokenConsumer : null, tornadoVMPlan);
+                } else {
+                    // CPU path
+                    responseTokens = Llama.generateTokens(model, state, startPosition,
+                            conversationTokens.subList(startPosition, conversationTokens.size()),
+                            stopTokens, options.maxTokens(), sampler, options.echo(), tokenConsumer);
+                }
+
+                // Include stop token in the prompt history, but not in the response displayed to the user.
+                conversationTokens.addAll(responseTokens);
+                startPosition = conversationTokens.size();
+                Integer stopToken = null;
+                if (!responseTokens.isEmpty() && stopTokens.contains(responseTokens.getLast())) {
+                    stopToken = responseTokens.getLast();
+                    responseTokens.removeLast();
+                }
+                if (!options.stream()) {
+                    String responseText = model.tokenizer().decode(responseTokens);
+                    System.out.println(responseText);
+                }
+                if (stopToken == null) {
+                    System.err.println("Ran out of context length...\n Increase context length with by passing to llama-tornado --max-tokens XXX");
+                    break;
+                }
+                System.out.print("\n");
+
+                // Optionally print performance metrics after each response
+                if (SHOW_PERF_INTERACTIVE) {
+                    Llama.LastRunMetrics.printMetrics();
+                }
+            }
+        } finally {
+            // Clean up TornadoVM resources when exiting the chat loop
+            if (USE_TORNADOVM && tornadoVMPlan != null) {
+                try {
+                    tornadoVMPlan.freeTornadoExecutionPlan();
+                } catch (Exception e) {
+                    System.err.println("Error while cleaning up TornadoVM resources: " + e.getMessage());
+                }
+            }
         }
     }
 
     static void runInstructOnce(Llama model, Sampler sampler, Options options) {
         State state = model.createNewState();
         ChatFormat chatFormat = new ChatFormat(model.tokenizer());
+        TornadoVMMasterPlan tornadoVMPlan =null;
 
         List<Integer> promptTokens = new ArrayList<>();
         promptTokens.add(chatFormat.beginOfText);
@@ -190,9 +233,10 @@ public class LlamaApp {
 
         Set<Integer> stopTokens = chatFormat.getStopTokens();
         if (USE_TORNADOVM) {
+             tornadoVMPlan = TornadoVMMasterPlan.initializeTornadoVMPlan(state, model);
             // Call generateTokensGPU without the token consumer parameter
             responseTokens = Llama.generateTokensGPU(model, state, 0, promptTokens, stopTokens, options.maxTokens(),
-                    sampler, options.echo(), options.stream() ? tokenConsumer : null);
+                    sampler, options.echo(), options.stream() ? tokenConsumer : null, tornadoVMPlan);
         } else {
             // CPU path still uses the token consumer
             responseTokens = Llama.generateTokens(model, state, 0, promptTokens, stopTokens, options.maxTokens(), sampler, options.echo(), tokenConsumer);
@@ -208,6 +252,9 @@ public class LlamaApp {
 
         Llama.LastRunMetrics.printMetrics();
 
+        if (tornadoVMPlan != null) {
+            tornadoVMPlan.freeTornadoExecutionPlan();
+        }
     }
 
     public static void main(String[] args) throws IOException {
