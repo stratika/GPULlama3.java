@@ -114,10 +114,10 @@ public class TornadoVMLayerPlanner {
                         config.headSize)
                 .task("copyToCaches", TransformerComputeKernelsLayered::copyToCache,
                         state.wrapKeyCache, state.wrapK,  state.wrapValueCache, state.wrapV, state.positionHolder, config.kvDim, layerIndex, config.contextLength)
-                .task("parallel-attention", TransformerComputeKernelsLayered::processHeadsParallel,
+                .task("parallel-attention", TransformerComputeKernelsLayered::processHeadsFlashAttention, context,
                         state.wrapQ, state.wrapKeyCache, state.wrapValueCache, state.wrapXb,
-                        config.numberOfHeads, config.headSize, config.kvDim, config.kvMul, config.vocabularySize,
-                        state.positionHolder, state.wrapAtt, layerIndex, config.contextLength)
+                        config.numberOfHeads, config.headSize, config.kvDim, config.kvMul,
+                        state.positionHolder, layerIndex, config.contextLength)
                 .task("matmul1", TransformerComputeKernelsLayered::matrixVectorGenericWithResidual, context,
                         state.wrapXb,  state.wrapX, weights.woLayered[layerIndex], config.dim, config.dim,  LOCAL_WORK_GROUP_SIZE_ALLOC)
                 .task("reductionsOneBlockFFN", TransformerComputeKernelsLayered::reductionOneBlockWithLayer, context, state.tempFFN,
@@ -317,7 +317,7 @@ public class TornadoVMLayerPlanner {
         // OpenCL equivalent: clEnqueueNDRangeKernel(globalWorkSize=[config.numberOfHeads,1,1], localWorkSize=[4,1,1])
         // CUDA equivalent: kernel<<<dim3((config.numberOfHeads+3)/4,1,1), dim3(4,1,1)>>>
         WorkerGrid parallelAttentionWorker = new WorkerGrid1D(config.numberOfHeads);
-        parallelAttentionWorker.setGlobalWork(config.numberOfHeads, 1, 1);
+        parallelAttentionWorker.setGlobalWork(config.numberOfHeads * 4, 1, 1);
         parallelAttentionWorker.setLocalWork(4, 1, 1); // Set local work size to 4 (for parallel attention)
 
         // Copy to caches worker configuration
