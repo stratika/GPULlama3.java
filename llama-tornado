@@ -104,7 +104,7 @@ class LlamaRunner:
             f"-Dtornado.profiler.dump.dir={args.profiler_dump_dir}",
             "-Dtornado.enable.fastMathOptimizations=true",
             "-Dtornado.enable.mathOptimizations=false",
-            "-Dtornado.enable.nativeFunctions=fast",
+            "-Dtornado.enable.nativeFunctions=true",
             "-Dtornado.loop.interchange=true",
             f"-Dtornado.eventpool.maxwaitevents={args.max_wait_events}"
         ]
