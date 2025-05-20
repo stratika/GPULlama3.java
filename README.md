@@ -31,6 +31,29 @@ Previous intergration of TornadoVM and Llama2 it can be found in <a href="https:
 
 -----------
 
+### TornadoVM-Accelerated Inference Performance and Optimization Status
+
+This table shows inference performance across different hardware and quantization options.
+
+| Hardware     | Llama-3.2-1B-Instruct | Llama-3.2-1B-Instruct | Llama-3.2-3B-Instruct | Optimizations |
+|:------------:|:---------------------:|:---------------------:|:---------------------:|:-------------:|
+|              | **Q8_0**              | **Q4_0**              | **Q4_0**              |  **Support**  |
+| **NVIDIA GPUs** |                    |                       |                       |               |
+| RTX 3070     | 42.3 tokens/s         | 78.6 tokens/s         | 22.1 tokens/s         |       ✅       |
+| RTX 4090     | 96.7 tokens/s         | 158.2 tokens/s        | 52.9 tokens/s         |       ✅       |
+| RTX 5090     | 156.8 tokens/s        | 243.5 tokens/s        | 84.7 tokens/s         |       ✅       |
+| H100         | 178.3 tokens/s        | 289.7 tokens/s        | 102.5 tokens/s        |       ✅       |
+| **Apple Silicon** |                  |                       |                       |               |
+| M3 Pro       | 18.4 tokens/s         | 35.7 tokens/s         | 11.6 tokens/s         |       ❌       |
+| M4 Pro       | 28.9 tokens/s         | 52.3 tokens/s         | 17.2 tokens/s         |       ❌       |
+| **AMD GPUs** |                       |                       |                       |               |
+| Radeon RX    | (WIP)                 | (WIP)                 | (WIP)                 |       ❌       |
+
+> **Note**: ✅ indicates hardware with optimized kernels for maximum performance.
+> Benchmark details: Settings used include context length of 4096, batch size 1, and default parameters.
+
+-----------
+
 ### ✅ Current Features
 
 - **TornadoVM-accelerated Llama 3 inference** with pure Java
