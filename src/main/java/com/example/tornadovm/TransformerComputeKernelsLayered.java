@@ -172,6 +172,121 @@ public class TransformerComputeKernelsLayered {
 
     }
 
+    /**
+     * Orchestrates parallel multi-head attention computation across all heads.
+     * Each head processes attention independently in parallel.
+     *
+     * Attention computation:
+     * 1. Compute attention scores (Q·K)
+     * 2. Apply softmax for attention weights
+     * 3. Compute weighted sum of values (attention·V)
+     *
+     * @param q Query vectors for all heads
+     * @param key_cache Cached key vectors
+     * @param value_cache Cached value vectors
+     * @param xb Output buffer for attention results
+     * @param nHeads Number of attention heads
+     * @param headSize Dimension of each head
+     * @param kvDim Total key/value dimension
+     * @param kvMul Key/value head multiplier for grouped-query attention
+     * @param seqLen Current sequence length
+     * @param positionHolder Array containing position and layer info
+     * @param wrapAtt Buffer for attention weights
+     * @param layer Current transformer layer
+     * @param contextLength Maximum context length
+     */
+    public static void processHeadsParallel(FloatArray q, FloatArray key_cache, FloatArray value_cache, FloatArray xb, int nHeads, int headSize, int kvDim, int kvMul, int seqLen,
+                                            IntArray positionHolder, FloatArray wrapAtt, int layer, int contextLength) {
+
+        int pos = positionHolder.get(0);
+        int loff = layer * contextLength * kvDim;
+
+        // Parallelize computation across attention heads
+        for (@Parallel int h = 0; h < nHeads; h++) {
+            // Process each head in parallel
+            processHeadTornado(q, key_cache, value_cache, xb, h, headSize, kvDim, kvMul, loff, pos, wrapAtt);
+        }
+    }
+
+    /**
+     * Computes attention for a single head.
+     * Implements scaled dot-product attention with softmax normalization.
+     *
+     * Steps:
+     * 1. Compute attention scores: Q·K / sqrt(head_size)
+     * 2. Apply softmax (with max subtraction for numerical stability)
+     * 3. Compute weighted sum of values
+     *
+     * @param allQ All query vectors
+     * @param key_cache Cached keys
+     * @param value_cache Cached values
+     * @param allXb Output buffer
+     * @param h Head index to process
+     * @param headSize Dimension per head
+     * @param kvDim Key/value dimension
+     * @param kvMul Key multiplier for grouped attention
+     * @param loff Layer offset in cache
+     * @param pos Current position
+     * @param wrapAtt Attention weights buffer
+     */
+    private static void processHeadTornado(FloatArray allQ, FloatArray key_cache, FloatArray value_cache, FloatArray allXb, int h, int headSize, int kvDim, int kvMul, long loff, int pos,
+                                           FloatArray wrapAtt) {
+
+        // Base index for this head's attention weights
+        int headOffset = h * (pos + 1);
+
+        // STEP 1: Calculate attention scores for all timesteps
+        for (int t = 0; t <= pos; t++) {
+            int kvHeadIdx = h / kvMul;
+            int keyOffset = (int) (loff + t * kvDim + kvHeadIdx * headSize);
+
+            float score = 0.0f;
+            for (int i = 0; i < headSize; i++) {
+                score += allQ.get(h * headSize + i) * key_cache.get(keyOffset + i);
+            }
+            score = score / TornadoMath.sqrt(headSize);
+
+            // Store in attention buffer
+            wrapAtt.set(headOffset + t, score);
+        }
+
+        // STEP 2: Find max score for softmax stability
+        float maxScore = wrapAtt.get(headOffset);
+        for (int t = 1; t <= pos; t++) {
+            float val = wrapAtt.get(headOffset + t);
+            if (val > maxScore) {
+                maxScore = val;
+            }
+        }
+
+        // STEP 3: Compute exponentials and sum
+        float sum = 0.0f;
+        for (int t = 0; t <= pos; t++) {
+            int idx = headOffset + t;
+            float expScore = TornadoMath.exp(wrapAtt.get(idx) - maxScore);
+            wrapAtt.set(idx, expScore);
+            sum += expScore;
+        }
+
+        // STEP 4: Normalize
+        float normFactor = (sum > 0.0f) ? (1.0f / sum) : (1.0f / (pos + 1));
+        for (int t = 0; t <= pos; t++) {
+            int idx = headOffset + t;
+            wrapAtt.set(idx, wrapAtt.get(idx) * normFactor);
+        }
+
+        // STEP 5: Compute weighted sum of values for each dimension
+        for (int i = 0; i < headSize; i++) {
+            float weightedSum = 0.0f;
+            for (int t = 0; t <= pos; t++) {
+                int kvHeadIdx = h / kvMul;
+                int valueOffset = (int) (loff + t * kvDim + kvHeadIdx * headSize);
+                weightedSum += wrapAtt.get(headOffset + t) * value_cache.get(valueOffset + i);
+            }
+            allXb.set(h * headSize + i, weightedSum);
+        }
+    }
+
     public static void processHeadsFlashAttention(
             KernelContext context,
             FloatArray q,
