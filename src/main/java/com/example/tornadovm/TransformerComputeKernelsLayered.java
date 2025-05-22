@@ -3,7 +3,6 @@ package com.example.tornadovm;
 import uk.ac.manchester.tornado.api.KernelContext;
 import uk.ac.manchester.tornado.api.annotations.Parallel;
 import uk.ac.manchester.tornado.api.math.TornadoMath;
-import uk.ac.manchester.tornado.api.types.HalfFloat;
 import uk.ac.manchester.tornado.api.types.arrays.FloatArray;
 import uk.ac.manchester.tornado.api.types.arrays.HalfFloatArray;
 import uk.ac.manchester.tornado.api.types.arrays.IntArray;
@@ -196,7 +195,7 @@ public class TransformerComputeKernelsLayered {
      * @param contextLength Maximum context length
      */
     public static void processHeadsParallel(FloatArray q, FloatArray key_cache, FloatArray value_cache, FloatArray xb, int nHeads, int headSize, int kvDim, int kvMul, int seqLen,
-                                            IntArray positionHolder, FloatArray wrapAtt, int layer, int contextLength) {
+            IntArray positionHolder, FloatArray wrapAtt, int layer, int contextLength) {
 
         int pos = positionHolder.get(0);
         int loff = layer * contextLength * kvDim;
@@ -230,7 +229,7 @@ public class TransformerComputeKernelsLayered {
      * @param wrapAtt Attention weights buffer
      */
     private static void processHeadTornado(FloatArray allQ, FloatArray key_cache, FloatArray value_cache, FloatArray allXb, int h, int headSize, int kvDim, int kvMul, long loff, int pos,
-                                           FloatArray wrapAtt) {
+            FloatArray wrapAtt) {
 
         // Base index for this head's attention weights
         int headOffset = h * (pos + 1);
@@ -287,19 +286,8 @@ public class TransformerComputeKernelsLayered {
         }
     }
 
-    public static void processHeadsFlashAttention(
-            KernelContext context,
-            FloatArray q,
-            FloatArray key_cache,
-            FloatArray value_cache,
-            FloatArray xb,
-            int nHeads,
-            int headSize,
-            int kvDim,
-            int kvMul,
-            IntArray positionHolder,
-            int layer,
-            int contextLength) {
+    public static void processHeadsFlashAttention(KernelContext context, FloatArray q, FloatArray key_cache, FloatArray value_cache, FloatArray xb, int nHeads, int headSize, int kvDim, int kvMul,
+            IntArray positionHolder, int layer, int contextLength) {
 
         // Thread and workgroup information
         int tid = context.localIdx;
@@ -309,7 +297,9 @@ public class TransformerComputeKernelsLayered {
 
         // Early exit if this workgroup is beyond our head count
         // This relies on the kernel being launched with nHeads workgroups.
-        if (h >= nHeads) return;
+        if (h >= nHeads) {
+            return;
+        }
 
         int pos = positionHolder.get(0);
         int loff = layer * contextLength * kvDim;
@@ -448,7 +438,7 @@ public class TransformerComputeKernelsLayered {
         if (rowId >= d) {
             return;
         }
-        float sum = matrixVectorRowMajorOptimized(context, localSize, x, w, n, d);
+        float sum = matrixVectorRowMajorOptimized(context, localSize, x, w, n);
 
         // Thread 0 in each workgroup writes the final result
         if (localId == 0) {
@@ -466,7 +456,7 @@ public class TransformerComputeKernelsLayered {
         if (rowId >= d) {
             return;
         }
-        float sum = matrixVectorRowMajorOptimized(context, localSize, x, w, n, d);
+        float sum = matrixVectorRowMajorOptimized(context, localSize, x, w, n);
 
         // Thread 0 in each workgroup writes the final result
         if (localId == 0) {
@@ -499,7 +489,7 @@ public class TransformerComputeKernelsLayered {
             return;
         }
 
-        float sum = matrixVectorRowMajorOptimized(context, localSize, x, w, n, d);
+        float sum = matrixVectorRowMajorOptimized(context, localSize, x, w, n);
 
         // Thread 0 in each workgroup writes the final result
         if (localId == 0) {
@@ -533,8 +523,8 @@ public class TransformerComputeKernelsLayered {
             return;
         }
 
-        float sum1 = matrixVectorRowMajorOptimized(context, localWorkGroupSize, x, w1, n, d);
-        float sum3 = matrixVectorRowMajorOptimized(context, localWorkGroupSize, x, w3, n, d);
+        float sum1 = matrixVectorRowMajorOptimized(context, localWorkGroupSize, x, w1, n);
+        float sum3 = matrixVectorRowMajorOptimized(context, localWorkGroupSize, x, w3, n);
 
         // Thread 0 in each workgroup writes the final result
         if (localId == 0) {
@@ -584,10 +574,9 @@ public class TransformerComputeKernelsLayered {
      * @param x Input vector
      * @param w Weight matrix row
      * @param n Input dimension
-     * @param d Output dimension
      * @return Dot product result for this row
      */
-    public static float matrixVectorRowMajorOptimized(KernelContext context, int localSize, FloatArray x, FloatArray w, int n, int d) {
+    public static float matrixVectorRowMajorOptimized(KernelContext context, int localSize, FloatArray x, FloatArray w, int n) {
         int rowId = context.groupIdx;
         int localId = context.localIdx;
 
@@ -618,7 +607,7 @@ public class TransformerComputeKernelsLayered {
         return localSum[0];
     }
 
-    public static float matrixVectorRowMajorOptimized(KernelContext context, int localSize, FloatArray x, HalfFloatArray w, int n, int d) {
+    public static float matrixVectorRowMajorOptimized(KernelContext context, int localSize, FloatArray x, HalfFloatArray w, int n) {
         int rowId = context.groupIdx;
         int localId = context.localIdx;
 
