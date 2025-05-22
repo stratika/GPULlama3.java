@@ -317,6 +317,7 @@ public class TornadoVMLayerPlanner {
         // OpenCL equivalent: clEnqueueNDRangeKernel(globalWorkSize=[config.numberOfHeads,1,1], localWorkSize=[4,1,1])
         // CUDA equivalent: kernel<<<dim3((config.numberOfHeads+3)/4,1,1), dim3(4,1,1)>>>
         WorkerGrid parallelAttentionWorker = new WorkerGrid1D(config.numberOfHeads);
+        // the global group work size is numberOfHeads * localWorkGroupSize, where the localWorkGroupSize is currently 4
         parallelAttentionWorker.setGlobalWork(config.numberOfHeads * 4, 1, 1);
         parallelAttentionWorker.setLocalWork(4, 1, 1); // Set local work size to 4 (for parallel attention)
 
