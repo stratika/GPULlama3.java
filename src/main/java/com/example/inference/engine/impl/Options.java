@@ -41,12 +41,6 @@ public record Options(Path modelPath, String prompt, String systemPrompt, boolea
         out.println("  --stream <boolean>            print tokens during generation; may cause encoding artifacts for non ASCII text, default true");
         out.println("  --echo <boolean>              print ALL tokens to stderr, if true, recommended to set --stream=false, default false");
         out.println();
-        out.println("Examples:");
-        out.println("  jbang Llama3.java --model llama3.2-1b-q4_0.gguf --prompt \"Tell me a joke\"");
-        out.println("  jbang Llama3.java --model llama3.2-1b-q4_0.gguf --system-prompt \"Reply concisely, in French\" --prompt \"Who was Marie Curie?\"");
-        out.println("  jbang Llama3.java --model llama3.2-1b-q4_0.gguf --system-prompt \"Answer concisely\" --chat");
-        out.println("  jbang Llama3.java --model llama3.2-1b-q4_0.gguf --chat");
-        out.println("  jbang Llama3.java --model llama3.2-1b-q4_0.gguf --prompt \"Print 5 emojis\" --stream=false");
     }
 
     public static Options parseOptions(String[] args) {
@@ -54,7 +48,7 @@ public record Options(Path modelPath, String prompt, String systemPrompt, boolea
         String systemPrompt = null;
         float temperature = 0.1f;
         float topp = 0.95f;
-        Path modelPath = Path.of("Llama-3.2-1B-Instruct-Q8_0.gguf"); // Harcoded for testings
+        Path modelPath = null;
         long seed = System.nanoTime();
         // Keep max context length small for low-memory devices.
         int maxTokens = DEFAULT_MAX_TOKENS;

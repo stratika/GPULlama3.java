@@ -12,12 +12,14 @@ import uk.ac.manchester.tornado.api.types.arrays.FloatArray;
 import java.util.List;
 
 public class TornadoVMMasterPlan {
+    private static final boolean ENABLE_TORNADOVM_INIT_TIME = Boolean.parseBoolean(System.getProperty("llama.EnableTimingForTornadoVMInit", "false"));
+
     private final State state;
     private final Configuration config;
     public GridScheduler scheduler;
     public TornadoExecutionPlan executionPlan;
     List<ImmutableTaskGraph> taskGraphs;
-    public FloatArray wrapX;
+
     public TornadoVMMasterPlan(State state, Llama model) {
         TornadoVMLayerPlanner tornadoVMLayerPlanner = new TornadoVMLayerPlanner(state, model);
         Tuple2<List<ImmutableTaskGraph>, GridScheduler> tornadoVMPlan = tornadoVMLayerPlanner.setupTornadoForwardPlanLayered();
@@ -26,6 +28,59 @@ public class TornadoVMMasterPlan {
         this.state = state;
         this.config = model.configuration();
         this.executionPlan = new TornadoExecutionPlan(taskGraphs.toArray(new ImmutableTaskGraph[taskGraphs.size()]));
+    }
+
+    /**
+     * Initializes the TornadoVM plan for GPU acceleration with optional timing.
+     * This method handles:
+     * 1. Creation of the TornadoVM master plan
+     * 2. Warming up the JIT compiler for better performance
+     * 3. Copying read-only model weights to the GPU
+     *
+     * @param state The model state containing KV cache
+     * @param model The Llama model instance
+     * @return The initialized TornadoVMMasterPlan ready for inference
+     */
+    public static TornadoVMMasterPlan initializeTornadoVMPlan(State state, Llama model) {
+        // Initialize timing variables outside conditional blocks to avoid scope issues
+        long startTime = System.nanoTime();
+        long planCreationTime = 0;
+        long warmupTime = 0;
+
+        // Start a timing message if enabled
+        if (ENABLE_TORNADOVM_INIT_TIME) {
+            System.err.println("\nStarting TornadoVM initialization...");
+        }
+
+        // 1. Pre-allocate the TornadoVM plan
+        TornadoVMMasterPlan tornadoVMPlan = new TornadoVMMasterPlan(state, model);
+
+        // Record time after plan creation
+        if (ENABLE_TORNADOVM_INIT_TIME) {
+            planCreationTime = System.nanoTime();
+            System.err.printf("TornadoVM plan creation: %.2f ms\n", (planCreationTime - startTime) / 1_000_000.0);
+        }
+
+        // 2. Perform warmup with extra iterations to ensure JIT compilation is complete
+        tornadoVMPlan.executionPlan.withWarmUp(); // Increased warmup iterations
+
+        // Record time after warmup
+        if (ENABLE_TORNADOVM_INIT_TIME) {
+            warmupTime = System.nanoTime();
+            System.err.printf("JIT warmup completed: %.2f ms\n", (warmupTime - planCreationTime) / 1_000_000.0);
+        }
+
+        // 3. Perform copy-in of read-only weights and objects
+        tornadoVMPlan.forceCopyInReadOnlyDataLayered(); // Force copy-in read-only weights
+
+        // Record final timing information
+        if (ENABLE_TORNADOVM_INIT_TIME) {
+            long copyTime = System.nanoTime();
+            System.err.printf("Read-only weight transfer to GPU: %.2f ms\n", (copyTime - warmupTime) / 1_000_000.0);
+            System.err.printf("Total TornadoVM initialization: %.2f ms\n\n", (copyTime - startTime) / 1_000_000.0);
+        }
+
+        return tornadoVMPlan;
     }
 
     /**
@@ -47,18 +102,53 @@ public class TornadoVMMasterPlan {
      */
 
     public FloatArray tornadoVMForwardExecuteLayered(int position) {
-        // Execute the first TornadoVM graph (pre-processing) -> copy-in
-        executionPlan.withGraph(0).withGridScheduler(scheduler).execute();
+        // @formatter:off
+        // 1. Execute the preprocessing graph (e.g., input preparation, memory initialization)
+        executionPlan.withGraph(getPreprocessingGraphIndex())
+                .withGridScheduler(scheduler)
+                .execute();
 
+        // Set the position in the state object (used by attention layers)
         state.positionHolder.set(0, position);
+
+        // 2. Execute each transformer layer graph sequentially
+        // Each graph computes attention and feed-forward transformations for one layer
         for (int layer = 0; layer < config.numberOfLayers; layer++) {
-            executionPlan.withGraph(layer+1).withGridScheduler(scheduler).execute();
+            executionPlan.withGraph(getLayerGraphIndex(layer))
+                    .withGridScheduler(scheduler)
+                    .execute();
         }
 
-        // Execute the final TornadoVM graph (projection to logits)
-        executionPlan.withGraph(config.numberOfLayers + 2 - 1).withGridScheduler(scheduler).execute();
+        // 3. Execute the final graph that projects the last hidden state to output logits
+        executionPlan.withGraph(getFinalLogitsGraphIndex())
+                .withGridScheduler(scheduler)
+                .execute();
 
+        // @formatter:on
+        // Return the logits (used for token prediction)
         return state.wrapLogits;
+    }
+
+    /**
+     * Returns the graph index for the pre-processing step (e.g., token embedding).
+     */
+    private int getPreprocessingGraphIndex() {
+        return 0;
+    }
+
+    /**
+     * Returns the graph index for the given transformer layer.
+     * @param layerIndex Index of the transformer layer (0-based)
+     */
+    private int getLayerGraphIndex(int layerIndex) {
+        return 1 + layerIndex;
+    }
+
+    /**
+     * Returns the graph index for the final projection to logits.
+     */
+    private int getFinalLogitsGraphIndex() {
+        return taskGraphs.size() - 1;
     }
 
     /// Execute the forward pass of the LLaMA transformer model using TornadoVM acceleration

@@ -99,7 +99,7 @@ public class Weights {
         this.wcls = wcls;
         this.tokenEmbeddingTable = loadToFloatArray(token_embedding_table); // (vocab_size, dim)
 
-        if (LlamaApp.TORNADOVM) {
+        if (LlamaApp.USE_TORNADOVM) {
             this.freq_cis_imagFlat = loadToSingleFloatArray(freq_cis_imag);
             this.freq_cis_realFlat = loadToSingleFloatArray(freq_cis_real);
 

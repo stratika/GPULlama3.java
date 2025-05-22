@@ -78,7 +78,6 @@ public class TransformerComputeKernelsLayered {
         }
     }
 
-
     /**
      * Applies the computed normalization factor to input and weight elements.
      * This is the second phase of RMS normalization.
@@ -127,7 +126,6 @@ public class TransformerComputeKernelsLayered {
         }
     }
 
-
     /**
      * Applies Rotary Position Encoding (RoPE) to query and key vectors.
      * RoPE rotates pairs of dimensions based on their position in the sequence,
@@ -138,19 +136,19 @@ public class TransformerComputeKernelsLayered {
      * - Apply 2D rotation to the pair
      *
      * @param context Kernel execution context
-     * @param positionNlayer Array containing current position
+     * @param positionHolder Array containing current position
      * @param sq Query vectors to rotate
      * @param sk Key vectors to rotate
      * @param kv_dim Dimension of key/value vectors
      * @param head_size Dimension of each attention head
      */
-    public static void ropeRotation(KernelContext context, IntArray positionNlayer, FloatArray sq, FloatArray sk, int kv_dim, int head_size) {
+    public static void ropeRotation(KernelContext context, IntArray positionHolder, FloatArray sq, FloatArray sk, int kv_dim, int head_size) {
         int i = context.globalIdx * 2;
 
         int head_dim = i % head_size;
         // 50000.0f vs 10000.0f
         float freq = 1.0f / TornadoMath.pow(50000.0f, head_dim / (float) head_size);
-        float val = positionNlayer.get(0) * freq;
+        float val = positionHolder.get(0) * freq;
         float fcr = TornadoMath.cos(val);
         float fci = TornadoMath.sin(val);
 
@@ -576,7 +574,7 @@ public class TransformerComputeKernelsLayered {
         // Allocate local memory for reduction
         float[] localSum = context.allocateFloatLocalArray(localSize);
 
-        int rowOffset =  rowId * n;
+        int rowOffset = rowId * n;
 
         // Each thread calculates partial dot product
         float partialSum = 0.0f;

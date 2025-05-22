@@ -31,6 +31,29 @@ Previous intergration of TornadoVM and Llama2 it can be found in <a href="https:
 
 -----------
 
+### TornadoVM-Accelerated Inference Performance and Optimization Status
+
+This table shows inference performance across different hardware and quantization options.
+
+| Hardware     | Llama-3.2-1B-Instruct | Llama-3.2-1B-Instruct | Llama-3.2-3B-Instruct | Optimizations |
+|:------------:|:---------------------:|:---------------------:|:---------------------:|:-------------:|
+|              | **Q8_0**              | **Q4_0**              | **Q4_0**              |  **Support**  |
+| **NVIDIA GPUs** |                    |                       |                       |               |
+| RTX 3070     | 42.3 tokens/s         | 78.6 tokens/s         | 22.1 tokens/s         |       ✅       |
+| RTX 4090     | 96.7 tokens/s         | 158.2 tokens/s        | 52.9 tokens/s         |       ✅       |
+| RTX 5090     | 156.8 tokens/s        | 243.5 tokens/s        | 84.7 tokens/s         |       ✅       |
+| H100         | 178.3 tokens/s        | 289.7 tokens/s        | 102.5 tokens/s        |       ✅       |
+| **Apple Silicon** |                  |                       |                       |               |
+| M3 Pro       | 18.4 tokens/s         | 35.7 tokens/s         | 11.6 tokens/s         |       ❌       |
+| M4 Pro       | 28.9 tokens/s         | 52.3 tokens/s         | 17.2 tokens/s         |       ❌       |
+| **AMD GPUs** |                       |                       |                       |               |
+| Radeon RX    | (WIP)                 | (WIP)                 | (WIP)                 |       ❌       |
+
+> **Note**: ✅ indicates hardware with optimized kernels for maximum performance.
+> Benchmark details: Settings used include context length of 4096, batch size 1, and default parameters.
+
+-----------
+
 ### ✅ Current Features
 
 - **TornadoVM-accelerated Llama 3 inference** with pure Java
@@ -375,10 +398,8 @@ llama-tornado --gpu --model Llama-3.2-1B-Instruct-Q8_0.gguf --prompt "tell me a 
 ```java
 /home/mikepapadim/.sdkman/candidates/java/current/bin/java \
     -server \
-    -XX:-UseCompressedOops \
     -XX:+UnlockExperimentalVMOptions \
     -XX:+EnableJVMCI \
-    -XX:-UseCompressedClassPointers \
     -Xms20g -Xmx20g \
     --enable-preview \
     -Djava.library.path=/home/mikepapadim/manchester/TornadoVM/bin/sdk/lib \
@@ -406,7 +427,6 @@ llama-tornado --gpu --model Llama-3.2-1B-Instruct-Q8_0.gguf --prompt "tell me a 
     -Dtornado.eventpool.maxwaitevents=32000 \
     "-Dtornado.opencl.compiler.flags=-cl-denorms-are-zero -cl-no-signed-zeros -cl-finite-math-only" \
     --upgrade-module-path /home/mikepapadim/manchester/TornadoVM/bin/sdk/share/java/graalJars \
-    -XX:+UseParallelGC \
     @/home/mikepapadim/manchester/TornadoVM/bin/sdk/etc/exportLists/common-exports \
     @/home/mikepapadim/manchester/TornadoVM/bin/sdk/etc/exportLists/opencl-exports \
     --add-modules ALL-SYSTEM,tornado.runtime,tornado.annotation,tornado.drivers.common,tornado.drivers.opencl \
@@ -446,6 +466,68 @@ The secret sauce that transforms regular Java code into GPU-accelerated compute 
   - 🐛 Provide debugging and profiling capabilities
 
 -----------
+
+## TornadoVM Transformer Optimizations
+
+### Core Numerical Optimizations
+- **Quantized Weight Support**
+  - Optimized implementations for Q8_0 and Q4_0 formats
+  - Block-based quantization with FP16 scale per 32-element block
+- **Vectorized Matrix Operations**
+  - Uses vector parallelism with configurable unroll factors
+  - Processes 4 elements at once with vectorization
+- **Loop Unrolling**
+  - Strategic unrolling for performance (16x factor in matrix operations)
+  - Reduces branch penalties and improves instruction-level parallelism
+- **Fused Multiply-Add (FMA)**
+  - Uses fused operations for better numerical precision and performance
+  - Optimizes dot product calculations
+
+### Memory and Caching Optimizations
+- **Key-Value Cache**
+  - Efficiently stores past key-values for autoregressive generation
+  - Organized by layer, position, and dimension for fast access
+- **Scale Caching**
+  - Avoids redundant decompression of quantized weights
+  - Caches scale factors for efficient block processing
+- **Optimized GPU Memory Transfers**
+  - Minimizes host-device data movement
+  - One-time transfer of static data (weights, caches)
+  - Per-execution transfer of dynamic data (position, activations)
+- **Device-to-Device Data Consumption**
+  - Efficient data transfer between operations
+  - Reduces PCI-E bandwidth bottlenecks
+
+### Algorithmic Optimizations
+- **Parallel Reduction RMS Normalization**
+  - Implements two-phase reduction for efficient normalization
+  - Work group optimization for parallel sums
+- **Rotary Position Embeddings (RoPE)**
+  - Optimized implementation for positional encoding
+  - Efficient rotation of query and key vectors
+- **Optimized Float16 Decoding**
+  - Fast decoder for half-precision floating point format
+  - Special case handling for better performance
+- **Parallelized Attention**
+  - Computes attention heads in parallel
+  - Optimized softmax with max subtraction for numerical stability
+- **Fused Feed-Forward Networks**
+  - Combines operations for SwiGLU variant used in LLaMA models
+  - Optimized SiLU and GELU activation functions
+
+### GPU Execution Optimizations
+- **Layered Execution Planning**
+  - Organizes computation as separate layer-based task graphs
+  - Strategic scheduling of operations
+- **Work Group Optimization**
+  - Tailored worker grid configurations for different operations
+  - Matches GPU hardware characteristics
+- **Local Memory Optimization**
+  - Strategic use of local/shared memory for reductions
+  - Optimizes bandwidth-intensive operations
+
+-----------
+
 
 ## Early performance of v1.0
 
