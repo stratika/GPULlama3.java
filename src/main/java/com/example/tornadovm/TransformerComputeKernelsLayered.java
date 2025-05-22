@@ -3,7 +3,9 @@ package com.example.tornadovm;
 import uk.ac.manchester.tornado.api.KernelContext;
 import uk.ac.manchester.tornado.api.annotations.Parallel;
 import uk.ac.manchester.tornado.api.math.TornadoMath;
+import uk.ac.manchester.tornado.api.types.HalfFloat;
 import uk.ac.manchester.tornado.api.types.arrays.FloatArray;
+import uk.ac.manchester.tornado.api.types.arrays.HalfFloatArray;
 import uk.ac.manchester.tornado.api.types.arrays.IntArray;
 
 public class TransformerComputeKernelsLayered {
@@ -454,6 +456,24 @@ public class TransformerComputeKernelsLayered {
         }
     }
 
+    public static void matrixVectorGeneric(KernelContext context, FloatArray x, FloatArray hb, HalfFloatArray w, int n, int d, int localWorkGroupSize) {
+        // One row per workgroup (not per thread)
+        int rowId = context.groupIdx;
+        int localId = context.localIdx;
+        int localSize = localWorkGroupSize;
+
+        // Early exit if this workgroup is beyond our output dimension
+        if (rowId >= d) {
+            return;
+        }
+        float sum = matrixVectorRowMajorOptimized(context, localSize, x, w, n, d);
+
+        // Thread 0 in each workgroup writes the final result
+        if (localId == 0) {
+            hb.set(rowId, sum);
+        }
+    }
+
     /**
      * Matrix-vector multiplication with residual connection.
      * Combines regular matrix multiplication with addition of existing values.
@@ -468,7 +488,7 @@ public class TransformerComputeKernelsLayered {
      * @param d Output dimension
      * @param localWorkGroupSize Work group size
      */
-    public static void matrixVectorGenericWithResidual(KernelContext context, FloatArray x, FloatArray hb, FloatArray w, int n, int d, int localWorkGroupSize) {
+    public static void matrixVectorGenericWithResidual(KernelContext context, FloatArray x, FloatArray hb, HalfFloatArray w, int n, int d, int localWorkGroupSize) {
         // One row per workgroup (not per thread)
         int rowId = context.groupIdx;
         int localId = context.localIdx;
@@ -504,7 +524,7 @@ public class TransformerComputeKernelsLayered {
      * @param d Hidden dimension
      * @param localWorkGroupSize Work group size
      */
-    public static void fusedFeedForwardWithSiLUAndGLUActivation(KernelContext context, FloatArray x, FloatArray hb, FloatArray w1, FloatArray w3, int n, int d, int localWorkGroupSize) {
+    public static void fusedFeedForwardWithSiLUAndGLUActivation(KernelContext context, FloatArray x, FloatArray hb, HalfFloatArray w1, HalfFloatArray w3, int n, int d, int localWorkGroupSize) {
         // One row per workgroup (not per thread)
         int rowId = context.groupIdx;
         int localId = context.localIdx;
@@ -581,6 +601,37 @@ public class TransformerComputeKernelsLayered {
         for (int j = localId; j < n; j += localSize) {
             int matrixIdx = rowOffset + j;
             partialSum += w.get(matrixIdx) * x.get(j);
+        }
+
+        // Store partial sum in local memory
+        localSum[localId] = partialSum;
+        context.localBarrier();
+
+        // Parallel reduction within workgroup
+        for (int stride = localSize / 2; stride > 0; stride >>= 1) {
+            if (localId < stride) {
+                localSum[localId] += localSum[localId + stride];
+            }
+            context.localBarrier();
+        }
+
+        return localSum[0];
+    }
+
+    public static float matrixVectorRowMajorOptimized(KernelContext context, int localSize, FloatArray x, HalfFloatArray w, int n, int d) {
+        int rowId = context.groupIdx;
+        int localId = context.localIdx;
+
+        // Allocate local memory for reduction
+        float[] localSum = context.allocateFloatLocalArray(localSize);
+
+        int rowOffset = rowId * n;
+
+        // Each thread calculates partial dot product
+        float partialSum = 0.0f;
+        for (int j = localId; j < n; j += localSize) {
+            int matrixIdx = rowOffset + j;
+            partialSum += w.get(matrixIdx).getFloat32() * x.get(j);
         }
 
         // Store partial sum in local memory

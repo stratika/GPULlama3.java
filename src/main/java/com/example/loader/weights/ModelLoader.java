@@ -16,8 +16,10 @@ import com.example.inference.engine.impl.Llama;
 import com.example.inference.operation.RoPE;
 import com.example.tokenizer.impl.Tokenizer;
 import com.example.tokenizer.vocabulary.Vocabulary;
+import uk.ac.manchester.tornado.api.types.HalfFloat;
 import uk.ac.manchester.tornado.api.types.arrays.ByteArray;
 import uk.ac.manchester.tornado.api.types.arrays.FloatArray;
+import uk.ac.manchester.tornado.api.types.arrays.HalfFloatArray;
 
 import java.io.IOException;
 import java.lang.foreign.MemorySegment;
@@ -103,15 +105,16 @@ public final class ModelLoader {
             GGMLTensorEntry outputWeight) {
         return new Weights(
                 // Load directly to TornadoVM format
-                loadTensorAsFloatArray(tokenEmbeddings), loadArrayAsFloatArrayFromBuffer(config.numberOfLayers, i -> tensorEntries.get("blk." + i + ".attn_norm.weight")),
-                loadArrayAsFloatArray(config.numberOfLayers, i -> tensorEntries.get("blk." + i + ".attn_q.weight")),
-                loadArrayAsFloatArray(config.numberOfLayers, i -> tensorEntries.get("blk." + i + ".attn_k.weight")),
-                loadArrayAsFloatArray(config.numberOfLayers, i -> tensorEntries.get("blk." + i + ".attn_v.weight")),
-                loadArrayAsFloatArray(config.numberOfLayers, i -> tensorEntries.get("blk." + i + ".attn_output.weight")),
+                loadTensorAsFloatArray(tokenEmbeddings),
+                loadArrayAsFloatArrayFromBuffer(config.numberOfLayers, i -> tensorEntries.get("blk." + i + ".attn_norm.weight")),
+                loadArrayAsHalfFloatArray(config.numberOfLayers, i -> tensorEntries.get("blk." + i + ".attn_q.weight")),
+                loadArrayAsHalfFloatArray(config.numberOfLayers, i -> tensorEntries.get("blk." + i + ".attn_k.weight")),
+                loadArrayAsHalfFloatArray(config.numberOfLayers, i -> tensorEntries.get("blk." + i + ".attn_v.weight")),
+                loadArrayAsHalfFloatArray(config.numberOfLayers, i -> tensorEntries.get("blk." + i + ".attn_output.weight")),
                 loadArrayAsFloatArrayFromBuffer(config.numberOfLayers, i -> tensorEntries.get("blk." + i + ".ffn_norm.weight")),
-                loadArrayAsFloatArray(config.numberOfLayers, i -> tensorEntries.get("blk." + i + ".ffn_gate.weight")),
-                loadArrayAsFloatArray(config.numberOfLayers, i -> tensorEntries.get("blk." + i + ".ffn_down.weight")),
-                loadArrayAsFloatArray(config.numberOfLayers, i -> tensorEntries.get("blk." + i + ".ffn_up.weight")), floatBufferToFloatArray(tensorEntries.get("output_norm.weight")),
+                loadArrayAsHalfFloatArray(config.numberOfLayers, i -> tensorEntries.get("blk." + i + ".ffn_gate.weight")),
+                loadArrayAsHalfFloatArray(config.numberOfLayers, i -> tensorEntries.get("blk." + i + ".ffn_down.weight")),
+                loadArrayAsHalfFloatArray(config.numberOfLayers, i -> tensorEntries.get("blk." + i + ".ffn_up.weight")), floatBufferToFloatArray(tensorEntries.get("output_norm.weight")),
                 FloatArray.fromArray(ropeFreqs.first()), FloatArray.fromArray(ropeFreqs.second()), createByteArrayFromTensor(outputWeight), outputWeight.ggmlType());
     }
 
@@ -140,6 +143,14 @@ public final class ModelLoader {
         return array;
     }
 
+    private static HalfFloatArray[] loadArrayAsHalfFloatArray(int size, IntFunction<GGMLTensorEntry> getTensorEntry) {
+        HalfFloatArray[] array = new HalfFloatArray[size];
+        for (int i = 0; i < size; i++) {
+            array[i] = loadTensorAsHalfFloatArray(getTensorEntry.apply(i));
+        }
+        return array;
+    }
+
     private static FloatArray floatBufferToFloatArray(GGMLTensorEntry tensorEntry) {
         if (tensorEntry.ggmlType() == GGMLType.F32) {
             FloatBuffer buffer = tensorEntry.memorySegment().asByteBuffer().order(ByteOrder.LITTLE_ENDIAN).asFloatBuffer();
@@ -148,6 +159,7 @@ public final class ModelLoader {
             throw new UnsupportedOperationException("Conversion to FloatArray from " + tensorEntry.ggmlType());
         }
     }
+
 
     private static FloatArray[] loadArrayAsFloatArrayFromBuffer(int size, IntFunction<GGMLTensorEntry> getTensorEntry) {
         FloatArray[] array = new FloatArray[size];
@@ -177,6 +189,30 @@ public final class ModelLoader {
             FloatArray array = new FloatArray(tensor.size());
             for (int i = 0; i < tensor.size(); i++) {
                 array.set(i, tensor.getFloat(i));
+            }
+            return array;
+        }
+    }
+
+    private static HalfFloatArray loadTensorAsHalfFloatArray(GGMLTensorEntry entry) {
+        if (entry.ggmlType() == GGMLType.F32) {
+            // For F32, we can directly create FloatArray from memory
+//            FloatBuffer buffer = entry.memorySegment().asByteBuffer().order(ByteOrder.LITTLE_ENDIAN).asFloatBuffer();
+//            FloatArray array = new FloatArray(buffer.remaining());
+//            for (int i = 0; i < buffer.remaining(); i++) {
+//                array.set(i, buffer.get());
+//            }
+//            return array
+            //           ;
+            System.out.println("Loading F32 tensor as HalfFloatArray");
+            return  null;
+        } else {
+            // For quantized formats, we need to load through FloatTensor
+            FloatTensor tensor = loadQuantized(entry);
+            HalfFloatArray array = new HalfFloatArray(tensor.size());
+            for (int i = 0; i < tensor.size(); i++) {
+                HalfFloat x = new HalfFloat(tensor.getFloat(i));
+                array.set(i, x);
             }
             return array;
         }

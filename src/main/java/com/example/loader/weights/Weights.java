@@ -3,8 +3,10 @@ package com.example.loader.weights;
 import com.example.LlamaApp;
 import com.example.core.model.GGMLType;
 import com.example.core.model.tensor.FloatTensor;
+import uk.ac.manchester.tornado.api.types.HalfFloat;
 import uk.ac.manchester.tornado.api.types.arrays.ByteArray;
 import uk.ac.manchester.tornado.api.types.arrays.FloatArray;
+import uk.ac.manchester.tornado.api.types.arrays.HalfFloatArray;
 
 import java.nio.FloatBuffer;
 
@@ -34,15 +36,15 @@ public class Weights {
     public final FloatBuffer freq_cis_imag; // (seq_len, head_size/2)
     //    // Layered Data structures
     public FloatArray[] rms_att_weightLayered; // (layer, dim) rmsnorm weights
-    public FloatArray[] wqLayered; // (layer, n_heads * head_size)
-    public FloatArray[] wkLayered; // (layer, n_kv_heads, head_size)
-    public FloatArray[] wvLayered; // (layer, n_kv_heads * head_size)
-    public FloatArray[] woLayered; // (layer, n_heads * head_size, dim)
+    public HalfFloatArray[] wqLayered; // (layer, n_heads * head_size)
+    public HalfFloatArray[] wkLayered; // (layer, n_kv_heads, head_size)
+    public HalfFloatArray[] wvLayered; // (layer, n_kv_heads * head_size)
+    public HalfFloatArray[] woLayered; // (layer, n_heads * head_size, dim)
     public FloatArray[] rms_ffn_weightLayered; // (layer, dim)
-    public FloatArray[] w1Layered; // (layer, hidden_dim, dim)
-    public FloatArray[] w2Layered; // (layer, dim, hidden_dim)
+    public HalfFloatArray[] w1Layered; // (layer, hidden_dim, dim)
+    public HalfFloatArray[] w2Layered; // (layer, dim, hidden_dim)
     //
-    public FloatArray[] w3Layered; // (layer, hidden_dim, dim)
+    public HalfFloatArray[] w3Layered; // (layer, hidden_dim, dim)
     public FloatArray rms_final_weight_as_floatArray;
     public FloatArray tokenEmbeddingTable; // (vocab_size, dim)
     public FloatArray freq_cis_realFlat; // (seq_len, head_size/2)
@@ -115,9 +117,10 @@ public class Weights {
     /**
      * Constructor for TornadoVM mode
      */
-    public Weights(FloatArray tokenEmbeddingTable, FloatArray[] rms_att_weightLayered,
-            FloatArray[] wqLayered, FloatArray[] wkLayered, FloatArray[] wvLayered, FloatArray[] woLayered,
-            FloatArray[] rms_ffn_weightLayered, FloatArray[] w1Layered, FloatArray[] w2Layered, FloatArray[] w3Layered,
+    public Weights(FloatArray tokenEmbeddingTable,
+            FloatArray[] rms_att_weightLayered,
+            HalfFloatArray[] wqLayered, HalfFloatArray[] wkLayered, HalfFloatArray[] wvLayered, HalfFloatArray[] woLayered,
+            FloatArray[] rms_ffn_weightLayered, HalfFloatArray[] w1Layered, HalfFloatArray[] w2Layered, HalfFloatArray[] w3Layered,
             FloatArray rms_final_weight_as_floatArray, FloatArray freq_cis_realFlat, FloatArray freq_cis_imagFlat,
             ByteArray wclsByteArray, GGMLType weightType) {
         // Standard format (null when using TornadoVM)
