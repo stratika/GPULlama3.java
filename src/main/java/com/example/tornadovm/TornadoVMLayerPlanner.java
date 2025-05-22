@@ -187,13 +187,13 @@ public class TornadoVMLayerPlanner {
                 logits.task("projection", TransformerComputeKernelsLayered::matrixVectorGeneric,  //
                         context,
                          state.wrapX, state.wrapLogits, weights.wclsHalfFloat, //
-                         config.dim, config.vocabularySize, LOCAL_WORK_GROUP_SIZE_ALLOC); //
+                         config.dim, config.vocabularySize, LOCAL_WORK_GROUP_SIZE_ALLOC * 2); //
                 break;
             case Q4_0:
                 logits.task("projection", TransformerComputeKernelsLayered::matrixVectorGeneric,  //
                         context,
                         state.wrapX, state.wrapLogits, weights.wclsHalfFloat, //
-                        config.dim, config.vocabularySize, LOCAL_WORK_GROUP_SIZE_ALLOC); //
+                        config.dim, config.vocabularySize, LOCAL_WORK_GROUP_SIZE_ALLOC * 2); //
                 break;
             default:
                 throw new UnsupportedOperationException("Unsupported weight quantization type: " + weights.weightType + ". Only Q8_0 and Q4_0 are supported.");
@@ -344,9 +344,9 @@ public class TornadoVMLayerPlanner {
         // Vocabulary worker configuration
         // OpenCL equivalent: clEnqueueNDRangeKernel(globalWorkSize=[config.vocabularySize,1,1], localWorkSize=[16,1,1])
         // CUDA equivalent: kernel<<<dim3((config.vocabularySize+15)/16,1,1), dim3(16,1,1)>>>
-        int vocabSizeRowMajor = config.vocabularySize * LOCAL_WORK_GROUP_SIZE_ALLOC;
+        int vocabSizeRowMajor = config.vocabularySize * LOCAL_WORK_GROUP_SIZE_ALLOC * 2 ;
         WorkerGrid vocabWorker = new WorkerGrid1D(vocabSizeRowMajor);
-        vocabWorker.setLocalWork(LOCAL_WORK_GROUP_SIZE_ALLOC, 1, 1);
+        vocabWorker.setLocalWork(LOCAL_WORK_GROUP_SIZE_ALLOC * 2, 1, 1);
 
         tornadoForwardScheduler.addWorkerGrid("logits.projection", vocabWorker);
         tornadoForwardScheduler.addWorkerGrid("logits.reductionsOneBlockLogits", rmsNormWorker);

@@ -291,7 +291,6 @@ public class TransformerComputeKernelsLayered {
 
         // Thread and workgroup information
         int tid = context.localIdx;
-        int gid = context.globalIdx; // gid is not actively used in the core logic here
         int h = context.groupIdx;  // Each workgroup processes one head
         int localSize = context.localGroupSizeX;
 
