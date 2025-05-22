@@ -144,7 +144,7 @@ public class TornadoVMLayerPlanner {
                 .transferToDevice(DataTransferMode.FIRST_EXECUTION,
                         context,
                         state.wrapLogits,
-                        weights.wclsByteArray,
+                        weights.wclsHalfFloat,
                         weights.rms_final_weight_as_floatArray
                 )
                 .task("reductionsOneBlockLogits", TransformerComputeKernels::reductionOneBlockWithLayer, context, state.tempLogits,
@@ -184,14 +184,16 @@ public class TornadoVMLayerPlanner {
     private TaskGraph configureQuantizedMatrixVectorFinalWeight(TaskGraph logits) {
         switch (weights.weightType) {
             case Q8_0:
-                logits.task("projection", TransformerComputeKernels::matmulTornadoQ8Optimized,  //
-                        context, weights.wclsByteArray, state.wrapX,  //
-                        state.wrapLogits, config.dim); //
+                logits.task("projection", TransformerComputeKernelsLayered::matrixVectorGeneric,  //
+                        context,
+                         state.wrapX, state.wrapLogits, weights.wclsHalfFloat, //
+                         config.dim, config.vocabularySize, LOCAL_WORK_GROUP_SIZE_ALLOC); //
                 break;
             case Q4_0:
-                logits.task("projection", TransformerComputeKernels::matmulTornadoQ4Optimized, //
-                        context, weights.wclsByteArray, state.wrapX,  //
-                        state.wrapLogits, config.dim); //
+                logits.task("projection", TransformerComputeKernelsLayered::matrixVectorGeneric,  //
+                        context,
+                        state.wrapX, state.wrapLogits, weights.wclsHalfFloat, //
+                        config.dim, config.vocabularySize, LOCAL_WORK_GROUP_SIZE_ALLOC); //
                 break;
             default:
                 throw new UnsupportedOperationException("Unsupported weight quantization type: " + weights.weightType + ". Only Q8_0 and Q4_0 are supported.");
@@ -342,9 +344,9 @@ public class TornadoVMLayerPlanner {
         // Vocabulary worker configuration
         // OpenCL equivalent: clEnqueueNDRangeKernel(globalWorkSize=[config.vocabularySize,1,1], localWorkSize=[16,1,1])
         // CUDA equivalent: kernel<<<dim3((config.vocabularySize+15)/16,1,1), dim3(16,1,1)>>>
-        WorkerGrid vocabWorker = new WorkerGrid1D(config.vocabularySize);
-        vocabWorker.setGlobalWork(config.vocabularySize, 1, 1);
-        vocabWorker.setLocalWork(16, 1, 1);
+        int vocabSizeRowMajor = config.vocabularySize * LOCAL_WORK_GROUP_SIZE_ALLOC;
+        WorkerGrid vocabWorker = new WorkerGrid1D(vocabSizeRowMajor);
+        vocabWorker.setLocalWork(LOCAL_WORK_GROUP_SIZE_ALLOC, 1, 1);
 
         tornadoForwardScheduler.addWorkerGrid("logits.projection", vocabWorker);
         tornadoForwardScheduler.addWorkerGrid("logits.reductionsOneBlockLogits", rmsNormWorker);
