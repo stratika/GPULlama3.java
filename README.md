@@ -529,12 +529,6 @@ The secret sauce that transforms regular Java code into GPU-accelerated compute 
 -----------
 
 
-## Early performance of v1.0
-
-![GPULlama3.java Performance Comparison](./docs/performance.png)
-
------------
-
 ## License
 
 
