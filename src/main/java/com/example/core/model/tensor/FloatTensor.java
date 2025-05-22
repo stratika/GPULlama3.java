@@ -54,12 +54,12 @@ public abstract class FloatTensor {
         }
     }
 
-    static short readShort(MemorySegment memorySegment, long offset) {
+    public static short readShort(MemorySegment memorySegment, long offset) {
         // The MemorySegment.get* methods should be used instead.
         return UNSAFE.getShort(memorySegment.address() + offset);
     }
 
-    static byte readByte(MemorySegment memorySegment, long offset) {
+    public static byte readByte(MemorySegment memorySegment, long offset) {
         // The MemorySegment.get* methods should be used instead.
         return UNSAFE.getByte(memorySegment.address() + offset);
     }

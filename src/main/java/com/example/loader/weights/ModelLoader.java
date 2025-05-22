@@ -9,15 +9,18 @@ import com.example.core.model.tensor.FloatTensor;
 import com.example.core.model.tensor.GGMLTensorEntry;
 import com.example.core.model.tensor.Q4_0FloatTensor;
 import com.example.core.model.tensor.Q8_0FloatTensor;
+import com.example.core.types.Float16;
 import com.example.core.types.Pair;
 import com.example.inference.engine.impl.Configuration;
 import com.example.inference.engine.impl.Llama;
 import com.example.inference.operation.RoPE;
 import com.example.tokenizer.impl.Tokenizer;
 import com.example.tokenizer.vocabulary.Vocabulary;
+import uk.ac.manchester.tornado.api.types.arrays.ByteArray;
 import uk.ac.manchester.tornado.api.types.arrays.FloatArray;
 
 import java.io.IOException;
+import java.lang.foreign.MemorySegment;
 import java.nio.ByteOrder;
 import java.nio.FloatBuffer;
 import java.nio.channels.FileChannel;
@@ -29,6 +32,9 @@ import java.util.Map;
 import java.util.function.IntFunction;
 import java.util.stream.Collectors;
 import java.util.stream.IntStream;
+
+import static com.example.core.model.tensor.FloatTensor.readByte;
+import static com.example.core.model.tensor.FloatTensor.readShort;
 
 public final class ModelLoader {
     private static final String TOKENIZER_LLAMA_3_MODEL = "gpt2";
@@ -83,39 +89,83 @@ public final class ModelLoader {
         );
 
         GGMLTensorEntry tokenEmbeddings = tensorEntries.get("token_embd.weight");
+        GGMLTensorEntry outputWeight = tensorEntries.getOrDefault("output.weight", tokenEmbeddings);
 
-        return createRegularWeights(tensorEntries, config, ropeFreqs, tokenEmbeddings);
+        if (LlamaApp.USE_TORNADOVM) {
+            System.out.println("Loading weights in TornadoVM format");
+            return createTornadoVMWeights(tensorEntries, config, ropeFreqs, tokenEmbeddings, outputWeight);
+        } else {
+            return createStandardWeights(tensorEntries, config, ropeFreqs, tokenEmbeddings, outputWeight);
+        }
     }
 
-    private static Weights createRegularWeights(Map<String, GGMLTensorEntry> tensorEntries,
-            Configuration config,
-            Pair<float[], float[]> ropeFreqs,
-            GGMLTensorEntry tokenEmbeddings) {
-        float[] ropeFreqsReal = ropeFreqs.first();
-        float[] ropeFreqsImag = ropeFreqs.second();
-        return  new Weights(loadQuantized(tokenEmbeddings), loadArrayOfFloatBuffer(config.numberOfLayers, i -> tensorEntries.get("blk." + i + ".attn_norm.weight")),
+    private static Weights createTornadoVMWeights(Map<String, GGMLTensorEntry> tensorEntries, Configuration config, Pair<float[], float[]> ropeFreqs, GGMLTensorEntry tokenEmbeddings,
+            GGMLTensorEntry outputWeight) {
+        return new Weights(
+                // Load directly to TornadoVM format
+                loadTensorAsFloatArray(tokenEmbeddings), loadArrayAsFloatArrayFromBuffer(config.numberOfLayers, i -> tensorEntries.get("blk." + i + ".attn_norm.weight")),
+                loadArrayAsFloatArray(config.numberOfLayers, i -> tensorEntries.get("blk." + i + ".attn_q.weight")),
+                loadArrayAsFloatArray(config.numberOfLayers, i -> tensorEntries.get("blk." + i + ".attn_k.weight")),
+                loadArrayAsFloatArray(config.numberOfLayers, i -> tensorEntries.get("blk." + i + ".attn_v.weight")),
+                loadArrayAsFloatArray(config.numberOfLayers, i -> tensorEntries.get("blk." + i + ".attn_output.weight")),
+                loadArrayAsFloatArrayFromBuffer(config.numberOfLayers, i -> tensorEntries.get("blk." + i + ".ffn_norm.weight")),
+                loadArrayAsFloatArray(config.numberOfLayers, i -> tensorEntries.get("blk." + i + ".ffn_gate.weight")),
+                loadArrayAsFloatArray(config.numberOfLayers, i -> tensorEntries.get("blk." + i + ".ffn_down.weight")),
+                loadArrayAsFloatArray(config.numberOfLayers, i -> tensorEntries.get("blk." + i + ".ffn_up.weight")), floatBufferToFloatArray(tensorEntries.get("output_norm.weight")),
+                FloatArray.fromArray(ropeFreqs.first()), FloatArray.fromArray(ropeFreqs.second()), createByteArrayFromTensor(outputWeight), outputWeight.ggmlType());
+    }
+
+    /**
+     * Creates weights in standard format only
+     */
+    private static Weights createStandardWeights(Map<String, GGMLTensorEntry> tensorEntries, Configuration config, Pair<float[], float[]> ropeFreqs, GGMLTensorEntry tokenEmbeddings,
+            GGMLTensorEntry outputWeight) {
+        return new Weights(loadQuantized(tokenEmbeddings), loadArrayOfFloatBuffer(config.numberOfLayers, i -> tensorEntries.get("blk." + i + ".attn_norm.weight")),
                 loadArrayOfQuantized(config.numberOfLayers, i -> tensorEntries.get("blk." + i + ".attn_q.weight")),
                 loadArrayOfQuantized(config.numberOfLayers, i -> tensorEntries.get("blk." + i + ".attn_k.weight")),
                 loadArrayOfQuantized(config.numberOfLayers, i -> tensorEntries.get("blk." + i + ".attn_v.weight")),
                 loadArrayOfQuantized(config.numberOfLayers, i -> tensorEntries.get("blk." + i + ".attn_output.weight")),
                 loadArrayOfFloatBuffer(config.numberOfLayers, i -> tensorEntries.get("blk." + i + ".ffn_norm.weight")),
-                loadArrayOfQuantized(config.numberOfLayers, i -> tensorEntries.get("blk." + i + ".ffn_gate.weight")), // w1
-                loadArrayOfQuantized(config.numberOfLayers, i -> tensorEntries.get("blk." + i + ".ffn_down.weight")), // w2
-                loadArrayOfQuantized(config.numberOfLayers, i -> tensorEntries.get("blk." + i + ".ffn_up.weight")), // w3
-                // final layer normalization that's applied after all transformer blocks but before the final projection to vocabulary logits.
-                toFloatBuffer(tensorEntries.get("output_norm.weight")),
-                FloatBuffer.wrap(ropeFreqsReal), //
-                FloatBuffer.wrap(ropeFreqsImag), //
-                // If "output.weight" is not present, then the embedding weights are tied/shared with the decoder.
-                // This is commonly referred to as "tie word embeddings".
-                loadQuantized(tensorEntries.getOrDefault("output.weight", tokenEmbeddings)),
-                tensorEntries.getOrDefault("output.weight", tokenEmbeddings).ggmlType());
+                loadArrayOfQuantized(config.numberOfLayers, i -> tensorEntries.get("blk." + i + ".ffn_gate.weight")),
+                loadArrayOfQuantized(config.numberOfLayers, i -> tensorEntries.get("blk." + i + ".ffn_down.weight")),
+                loadArrayOfQuantized(config.numberOfLayers, i -> tensorEntries.get("blk." + i + ".ffn_up.weight")), toFloatBuffer(tensorEntries.get("output_norm.weight")),
+                FloatBuffer.wrap(ropeFreqs.first()), FloatBuffer.wrap(ropeFreqs.second()), loadQuantized(outputWeight), outputWeight.ggmlType());
     }
+
+    private static FloatArray[] loadArrayAsFloatArray(int size, IntFunction<GGMLTensorEntry> getTensorEntry) {
+        FloatArray[] array = new FloatArray[size];
+        for (int i = 0; i < size; i++) {
+            array[i] = loadTensorAsFloatArray(getTensorEntry.apply(i));
+        }
+        return array;
+    }
+
+    private static FloatArray floatBufferToFloatArray(GGMLTensorEntry tensorEntry) {
+        if (tensorEntry.ggmlType() == GGMLType.F32) {
+            FloatBuffer buffer = tensorEntry.memorySegment().asByteBuffer().order(ByteOrder.LITTLE_ENDIAN).asFloatBuffer();
+            return FloatArray.fromFloatBuffer(buffer);
+        } else {
+            throw new UnsupportedOperationException("Conversion to FloatArray from " + tensorEntry.ggmlType());
+        }
+    }
+
+    private static FloatArray[] loadArrayAsFloatArrayFromBuffer(int size, IntFunction<GGMLTensorEntry> getTensorEntry) {
+        FloatArray[] array = new FloatArray[size];
+        for (int i = 0; i < size; i++) {
+            array[i] = floatBufferToFloatArray(getTensorEntry.apply(i));
+        }
+        return array;
+    }
+
+    private static ByteArray createByteArrayFromTensor(GGMLTensorEntry entry) {
+        FloatTensor tensor = loadQuantized(entry);
+        return ByteArray.fromSegment(tensor.asMemorySegment());
+    }
+
     private static FloatArray loadTensorAsFloatArray(GGMLTensorEntry entry) {
         if (entry.ggmlType() == GGMLType.F32) {
             // For F32, we can directly create FloatArray from memory
-            FloatBuffer buffer = entry.memorySegment().asByteBuffer()
-                    .order(ByteOrder.LITTLE_ENDIAN).asFloatBuffer();
+            FloatBuffer buffer = entry.memorySegment().asByteBuffer().order(ByteOrder.LITTLE_ENDIAN).asFloatBuffer();
             FloatArray array = new FloatArray(buffer.remaining());
             for (int i = 0; i < buffer.remaining(); i++) {
                 array.set(i, buffer.get());
@@ -130,6 +180,22 @@ public final class ModelLoader {
             }
             return array;
         }
+    }
+
+    public static float getFloat(int index, int size, MemorySegment memorySegment) {
+        assert 0 <= index && index < size;
+        int blockIndex = index / GGMLType.Q4_0.getBlockSize();
+        int blockOffset = blockIndex * GGMLType.Q4_0.getTypeSize();
+        float scale = Float.float16ToFloat(readShort(memorySegment, blockOffset));
+        byte quant;
+        int modIndex = index % GGMLType.Q4_0.getBlockSize();
+        if (modIndex < GGMLType.Q4_0.getBlockSize() / 2) {
+            quant = (byte) (readByte(memorySegment, blockOffset + Float16.BYTES + modIndex) & 0x0F);
+        } else {
+            quant = (byte) ((readByte(memorySegment, blockOffset + Float16.BYTES + modIndex - GGMLType.Q4_0.getBlockSize() / 2) >>> 4) & 0x0F);
+        }
+        quant -= 8;
+        return quant * scale;
     }
 
     private static Tokenizer createTokenizer(Map<String, Object> metadata, Vocabulary vocabulary) {
@@ -151,7 +217,7 @@ public final class ModelLoader {
 
     public static FloatTensor loadQuantized(GGMLTensorEntry entry) {
         GGMLType ggmlType = entry.ggmlType();
-//        System.out.println("Tensor type: " + ggmlType + " " + entry.name() + " " + entry.shape().length);
+//        System.out.println("Loading quantized tensor of type " + entry.name());
         return switch (ggmlType) {
             //            case F32 -> new F32FloatTensor(FloatTensor.numberOfElements(entry.shape()), entry.memorySegment());
             case Q8_0 -> new Q8_0FloatTensor(FloatTensor.numberOfElements(entry.shape()), entry.memorySegment());
