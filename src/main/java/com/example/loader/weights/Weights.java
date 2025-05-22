@@ -80,78 +80,66 @@ public class Weights {
      *         RoPE sine components
      * @param wcls
      *         Classifier weights for output logits
+     *
+    /**
+     * Constructor for standard (non-TornadoVM) mode
      */
-    public Weights(FloatTensor token_embedding_table, FloatBuffer[] rms_att_weight, FloatTensor[] wq, FloatTensor[] wk, FloatTensor[] wv, FloatTensor[] wo, FloatBuffer[] rms_ffn_weight,
-            FloatTensor[] w1, FloatTensor[] w2, FloatTensor[] w3, FloatBuffer rms_final_weight, FloatBuffer freq_cis_real, FloatBuffer freq_cis_imag, FloatTensor wcls, GGMLType weightType) {
+    public Weights(FloatTensor token_embedding_table, FloatBuffer[] rms_att_weight,
+            FloatTensor[] wq, FloatTensor[] wk, FloatTensor[] wv, FloatTensor[] wo,
+            FloatBuffer[] rms_ffn_weight, FloatTensor[] w1, FloatTensor[] w2, FloatTensor[] w3,
+            FloatBuffer rms_final_weight, FloatBuffer freq_cis_real, FloatBuffer freq_cis_imag,
+            FloatTensor wcls, GGMLType weightType) {
+        // Standard format
         this.token_embedding_table = token_embedding_table;
         this.rms_att_weight = rms_att_weight;
-        this.wq = wq;
-        this.wk = wk;
-        this.wv = wv;
-        this.wo = wo;
+        this.wq = wq; this.wk = wk; this.wv = wv; this.wo = wo;
         this.rms_ffn_weight = rms_ffn_weight;
-        this.w1 = w1;
-        this.w2 = w2;
-        this.w3 = w3;
+        this.w1 = w1; this.w2 = w2; this.w3 = w3;
+        this.wcls = wcls;
         this.rms_final_weight = rms_final_weight;
         this.freq_cis_real = freq_cis_real;
         this.freq_cis_imag = freq_cis_imag;
-        this.wcls = wcls;
-        this.tokenEmbeddingTable = loadToFloatArray(token_embedding_table); // (vocab_size, dim)
-
-        if (LlamaApp.USE_TORNADOVM) {
-            this.freq_cis_imagFlat = loadToSingleFloatArray(freq_cis_imag);
-            this.freq_cis_realFlat = loadToSingleFloatArray(freq_cis_real);
-
-            // Store read-only weight as a ByteArray in TornadoVM
-            this.wclsByteArray = ByteArray.fromSegment(wcls.asMemorySegment());
-            this.rms_final_weight_as_floatArray = FloatArray.fromFloatBuffer(rms_final_weight);
-
-            this.rms_att_weightLayered = loadToFloatArray(rms_att_weight);
-
-            this.wqLayered = loadToFloatArray(wq);
-            this.wkLayered = loadToFloatArray(wk);
-            this.wvLayered = loadToFloatArray(wv);
-            this.woLayered = loadToFloatArray(wo);
-            this.rms_ffn_weightLayered = loadToFloatArray(rms_ffn_weight);
-            this.w1Layered = loadToFloatArray(w1);
-            this.w2Layered = loadToFloatArray(w2);
-            this.w3Layered = loadToFloatArray(w3);
-
-        } else {
-            this.freq_cis_imagFlat = null;
-            this.freq_cis_realFlat = null;
-            this.wclsByteArray = null;
-            this.rms_final_weight_as_floatArray = null;
-            this.rms_att_weightLayered = null;
-            this.wqLayered = null;
-            this.wkLayered = null;
-            this.wvLayered = null;
-            this.woLayered = null;
-            this.rms_ffn_weightLayered = null;
-            this.w1Layered = null;
-            this.w2Layered = null;
-            this.w3Layered = null;
-        }
         this.weightType = weightType;
+
+        // TornadoVM format (null when not using TornadoVM)
+        this.tokenEmbeddingTable = null;
+        this.rms_att_weightLayered = null;
+        this.wqLayered = null; this.wkLayered = null; this.wvLayered = null; this.woLayered = null;
+        this.rms_ffn_weightLayered = null;
+        this.w1Layered = null; this.w2Layered = null; this.w3Layered = null;
+        this.rms_final_weight_as_floatArray = null;
+        this.freq_cis_realFlat = null; this.freq_cis_imagFlat = null;
+        this.wclsByteArray = null;
     }
 
     /**
-     * Converts an array of FloatTensor objects to TornadoVM FloatArray format. This enables efficient GPU computation by flattening multi-dimensional tensors.
-     *
-     * @param array
-     *         Array of FloatTensors to convert
-     * @return Array of FloatArrays with the same data
+     * Constructor for TornadoVM mode
      */
-    private static FloatArray[] loadToFloatArray(FloatTensor[] array) {
-        FloatArray[] floatArrays = new FloatArray[array.length];
-        for (int i = 0; i < array.length; i++) {
-            floatArrays[i] = new FloatArray(array[i].size());
-            for (int j = 0; j < array[i].size(); j++) {
-                floatArrays[i].set(j, array[i].getFloat(j));
-            }
-        }
-        return floatArrays;
+    public Weights(FloatArray tokenEmbeddingTable, FloatArray[] rms_att_weightLayered,
+            FloatArray[] wqLayered, FloatArray[] wkLayered, FloatArray[] wvLayered, FloatArray[] woLayered,
+            FloatArray[] rms_ffn_weightLayered, FloatArray[] w1Layered, FloatArray[] w2Layered, FloatArray[] w3Layered,
+            FloatArray rms_final_weight_as_floatArray, FloatArray freq_cis_realFlat, FloatArray freq_cis_imagFlat,
+            ByteArray wclsByteArray, GGMLType weightType) {
+        // Standard format (null when using TornadoVM)
+        this.token_embedding_table = null;
+        this.rms_att_weight = null;
+        this.wq = null; this.wk = null; this.wv = null; this.wo = null;
+        this.rms_ffn_weight = null;
+        this.w1 = null; this.w2 = null; this.w3 = null;
+        this.wcls = null;
+        this.rms_final_weight = null;
+        this.freq_cis_real = null; this.freq_cis_imag = null;
+
+        // TornadoVM format
+        this.tokenEmbeddingTable = tokenEmbeddingTable;
+        this.rms_att_weightLayered = rms_att_weightLayered;
+        this.wqLayered = wqLayered; this.wkLayered = wkLayered; this.wvLayered = wvLayered; this.woLayered = woLayered;
+        this.rms_ffn_weightLayered = rms_ffn_weightLayered;
+        this.w1Layered = w1Layered; this.w2Layered = w2Layered; this.w3Layered = w3Layered;
+        this.rms_final_weight_as_floatArray = rms_final_weight_as_floatArray;
+        this.freq_cis_realFlat = freq_cis_realFlat; this.freq_cis_imagFlat = freq_cis_imagFlat;
+        this.wclsByteArray = wclsByteArray;
+        this.weightType = weightType;
     }
 
     /**
