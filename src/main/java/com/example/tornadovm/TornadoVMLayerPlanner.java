@@ -81,7 +81,6 @@ public class TornadoVMLayerPlanner {
                 .persistOnDevice(state.wrapX);
         taskGraphs.add(activationUpdate.snapshot());
 
-
         TaskGraph unifiedLayer = null;
         for (int layerIndex =0; layerIndex < config.numberOfLayers; layerIndex++) {
             unifiedLayer = new TaskGraph("layer_" + layerIndex);
@@ -135,7 +134,6 @@ public class TornadoVMLayerPlanner {
         }
         
         TaskGraph lastUnifiedLayer = unifiedLayer;
-
         TaskGraph logits = new TaskGraph("logits")
                 .consumeFromDevice(lastUnifiedLayer.getTaskGraphName(),
                         state.wrapX
@@ -186,10 +184,14 @@ public class TornadoVMLayerPlanner {
     private TaskGraph configureQuantizedMatrixVectorFinalWeight(TaskGraph logits) {
         switch (weights.weightType) {
             case Q8_0:
-                logits.task("projection", TransformerComputeKernels::matmulTornadoQ8Optimized, context, weights.wclsByteArray, state.wrapX, state.wrapLogits, config.dim);
+                logits.task("projection", TransformerComputeKernels::matmulTornadoQ8Optimized,  //
+                        context, weights.wclsByteArray, state.wrapX,  //
+                        state.wrapLogits, config.dim); //
                 break;
             case Q4_0:
-                logits.task("projection", TransformerComputeKernels::matmulTornadoQ4Optimized, context, weights.wclsByteArray, state.wrapX, state.wrapLogits, config.dim);
+                logits.task("projection", TransformerComputeKernels::matmulTornadoQ4Optimized, //
+                        context, weights.wclsByteArray, state.wrapX,  //
+                        state.wrapLogits, config.dim); //
                 break;
             default:
                 throw new UnsupportedOperationException("Unsupported weight quantization type: " + weights.weightType + ". Only Q8_0 and Q4_0 are supported.");
@@ -197,7 +199,6 @@ public class TornadoVMLayerPlanner {
         return logits;
     }
 
-    // @formatter:off
     /**
      * Configures data transfer operations for a specific layer in the neural network task graph.
      *
@@ -218,29 +219,21 @@ public class TornadoVMLayerPlanner {
         // First layer: Transfer initial data to device (one-time transfer)
         if (layerIndex == 0) {
             // Transfer all attention-related data: query, key, value matrices and their caches
-            unifiedLayer.transferToDevice(DataTransferMode.FIRST_EXECUTION,
-                    context, state.wrapXb, state.wrapXb2,
-                    state.wrapQ, state.wrapK, state.wrapV,
-                    state.wrapKeyCache, state.wrapValueCache,
-                    state.wrapAtt, state.wrapHb);
+            unifiedLayer.transferToDevice(DataTransferMode.EVERY_EXECUTION, state.positionHolder, state.temp, state.tempFFN); //
+            unifiedLayer.transferToDevice(DataTransferMode.FIRST_EXECUTION, //
+                    context, state.wrapXb, state.wrapXb2, //
+                    state.wrapQ, state.wrapK, state.wrapV, //
+                    state.wrapKeyCache, state.wrapValueCache, //
+                    state.wrapAtt, state.wrapHb); //
         } else {
             // Subsequent layers: Consume data already on device from previous layer
-            unifiedLayer.consumeFromDevice(context, state.wrapXb, state.wrapXb2,
-                    state.wrapQ, state.wrapK, state.wrapV,
-                    state.wrapKeyCache, state.wrapValueCache,
-                    state.wrapAtt, state.wrapHb
+            unifiedLayer.consumeFromDevice(context, state.wrapXb, state.wrapXb2, //
+                    state.wrapQ, state.wrapK, state.wrapV, //
+                    state.wrapKeyCache, state.wrapValueCache, //
+                    state.wrapAtt, state.wrapHb, //
+                    state.positionHolder //
             );
         }
-
-        // First layer: Transfer position and temp data (transferred every execution)
-        if ((layerIndex) == 0) {
-            // Transfer data that changes with each execution (position, temp buffers)
-            unifiedLayer.transferToDevice(DataTransferMode.EVERY_EXECUTION, state.positionHolder, state.temp, state.tempFFN);
-        } else {
-            // Subsequent layers: Only consume position data from device
-            unifiedLayer.consumeFromDevice(state.positionHolder);
-        }
-        // @formatter:on
         return unifiedLayer;
     }
 
