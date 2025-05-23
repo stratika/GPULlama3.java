@@ -636,4 +636,23 @@ public class TransformerComputeKernelsLayered {
 
         return localSum[0];
     }
+
+    // Second kernel - Combines partial sums and computes final normalization
+    public static void reductionFinalNormalization(KernelContext context, FloatArray output, int size, float ermsNorm) {
+        int gid = context.globalIdx;
+
+        // Only one thread needs to perform this calculation
+        if (gid == 0) {
+            // Combine partial sums from all workgroups
+            float ss = 0.0f;
+            for (int i = 1; i < output.getSize(); i++) {  // Fixed bounds to avoid out of bounds
+                ss += output.get(i);
+            }
+
+            ss /= size;
+            ss += ermsNorm;
+            ss = 1.0f / TornadoMath.sqrt(ss);
+            output.set(0, ss);  // Store the final scale factor
+        }
+    }
 }

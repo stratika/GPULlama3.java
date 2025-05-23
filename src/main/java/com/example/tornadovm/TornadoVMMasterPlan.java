@@ -7,6 +7,8 @@ import com.example.loader.weights.State;
 import uk.ac.manchester.tornado.api.GridScheduler;
 import uk.ac.manchester.tornado.api.ImmutableTaskGraph;
 import uk.ac.manchester.tornado.api.TornadoExecutionPlan;
+import uk.ac.manchester.tornado.api.TornadoRuntime;
+import uk.ac.manchester.tornado.api.runtime.TornadoRuntimeProvider;
 import uk.ac.manchester.tornado.api.types.arrays.FloatArray;
 
 import java.util.List;
@@ -20,9 +22,9 @@ public class TornadoVMMasterPlan {
     public TornadoExecutionPlan executionPlan;
     List<ImmutableTaskGraph> taskGraphs;
 
-    public TornadoVMMasterPlan(State state, Llama model) {
+    public TornadoVMMasterPlan(State state, Llama model, boolean isNvidia) {
         TornadoVMLayerPlanner tornadoVMLayerPlanner = new TornadoVMLayerPlanner(state, model);
-        Tuple2<List<ImmutableTaskGraph>, GridScheduler> tornadoVMPlan = tornadoVMLayerPlanner.setupTornadoForwardPlanLayered();
+        Tuple2<List<ImmutableTaskGraph>, GridScheduler> tornadoVMPlan = isNvidia ? tornadoVMLayerPlanner.setupTornadoForwardPlanLayered() : tornadoVMLayerPlanner.setupTornadoForwardPlanLayeredNonNvidia();
         this.taskGraphs = tornadoVMPlan.getFirst();
         this.scheduler = tornadoVMPlan.getSecond();
         this.state = state;
@@ -53,12 +55,14 @@ public class TornadoVMMasterPlan {
         }
 
         // 1. Pre-allocate the TornadoVM plan
-        TornadoVMMasterPlan tornadoVMPlan = new TornadoVMMasterPlan(state, model);
+        TornadoRuntime coreRuntime = TornadoRuntimeProvider.getTornadoRuntime();
+        boolean isNvidia = coreRuntime.getBackend(0).getDefaultDevice().getPlatformName().toLowerCase().contains("nvidia");
+        TornadoVMMasterPlan tornadoVMPlan = new TornadoVMMasterPlan(state, model, isNvidia);
 
         // Record time after plan creation
         if (ENABLE_TORNADOVM_INIT_TIME) {
             planCreationTime = System.nanoTime();
-            System.err.printf("TornadoVM plan creation: %.2f ms\n", (planCreationTime - startTime) / 1_000_000.0);
+            System.err.printf("TornadoVM GPU execution plan creation: %.2f ms\n", (planCreationTime - startTime) / 1_000_000.0);
         }
 
         // 2. Perform warmup with extra iterations to ensure JIT compilation is complete
