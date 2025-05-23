@@ -7,7 +7,7 @@ import java.nio.file.Paths;
 public record Options(Path modelPath, String prompt, String systemPrompt, boolean interactive,
                       float temperature, float topp, long seed, int maxTokens, boolean stream, boolean echo) {
 
-    public static final int DEFAULT_MAX_TOKENS = 512;
+    public static final int DEFAULT_MAX_TOKENS = 1024;
 
     public Options {
         require(modelPath != null, "Missing argument: --model <path> is required");
