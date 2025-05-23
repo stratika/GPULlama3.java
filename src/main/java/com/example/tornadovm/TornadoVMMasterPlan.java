@@ -58,7 +58,7 @@ public class TornadoVMMasterPlan {
         // Record time after plan creation
         if (ENABLE_TORNADOVM_INIT_TIME) {
             planCreationTime = System.nanoTime();
-            System.err.printf("TornadoVM plan creation: %.2f ms\n", (planCreationTime - startTime) / 1_000_000.0);
+            System.err.printf("TornadoVM GPU execution plan creation: %.2f ms\n", (planCreationTime - startTime) / 1_000_000.0);
         }
 
         // 2. Perform warmup with extra iterations to ensure JIT compilation is complete
