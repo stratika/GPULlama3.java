@@ -10,7 +10,6 @@ import com.example.inference.engine.impl.Llama;
 import com.example.inference.engine.impl.Options;
 import com.example.loader.weights.ModelLoader;
 import com.example.loader.weights.State;
-import com.example.tokenizer.impl.Tokenizer;
 import com.example.tornadovm.FloatArrayUtils;
 import com.example.tornadovm.TornadoVMMasterPlan;
 import uk.ac.manchester.tornado.api.types.arrays.FloatArray;
@@ -29,7 +28,8 @@ public class LlamaApp {
     public static final boolean USE_VECTOR_API = Boolean.parseBoolean(System.getProperty("llama.VectorAPI", "true"));   // Enable Java Vector API for CPU acceleration
     public static final boolean USE_AOT = Boolean.parseBoolean(System.getProperty("llama.AOT", "false"));               // Use Ahead-of-Time compilation
     public static final boolean USE_TORNADOVM = Boolean.parseBoolean(System.getProperty("use.tornadovm", "false"));     // Use TornadoVM for GPU acceleration
-    public static final boolean SHOW_PERF_INTERACTIVE = Boolean.parseBoolean(System.getProperty("llama.ShowPerfInteractive", "false")); // Show performance metrics in interactive mode
+    public static final boolean SHOW_PERF_INTERACTIVE = Boolean.parseBoolean(System.getProperty("llama.ShowPerfInteractive", "true")); // Show performance metrics in interactive mode
+
     /**
      * Creates and configures a sampler for token generation based on specified parameters.
      *
@@ -115,7 +115,6 @@ public class LlamaApp {
         return sampler;
     }
 
-
     static void runInteractive(Llama model, Sampler sampler, Options options) {
         State state = null;
         List<Integer> conversationTokens = new ArrayList<>();
@@ -162,15 +161,12 @@ public class LlamaApp {
                 // Choose between GPU and CPU path based on configuration
                 if (USE_TORNADOVM) {
                     // GPU path using TornadoVM
-                    responseTokens = Llama.generateTokensGPU(model, state, startPosition,
-                            conversationTokens.subList(startPosition, conversationTokens.size()),
-                            stopTokens, options.maxTokens(), sampler, options.echo(),
-                            options.stream() ? tokenConsumer : null, tornadoVMPlan);
+                    responseTokens = Llama.generateTokensGPU(model, state, startPosition, conversationTokens.subList(startPosition, conversationTokens.size()), stopTokens, options.maxTokens(),
+                            sampler, options.echo(), options.stream() ? tokenConsumer : null, tornadoVMPlan);
                 } else {
                     // CPU path
-                    responseTokens = Llama.generateTokens(model, state, startPosition,
-                            conversationTokens.subList(startPosition, conversationTokens.size()),
-                            stopTokens, options.maxTokens(), sampler, options.echo(), tokenConsumer);
+                    responseTokens = Llama.generateTokens(model, state, startPosition, conversationTokens.subList(startPosition, conversationTokens.size()), stopTokens, options.maxTokens(), sampler,
+                            options.echo(), tokenConsumer);
                 }
 
                 // Include stop token in the prompt history, but not in the response displayed to the user.
@@ -211,7 +207,7 @@ public class LlamaApp {
     static void runInstructOnce(Llama model, Sampler sampler, Options options) {
         State state = model.createNewState();
         ChatFormat chatFormat = new ChatFormat(model.tokenizer());
-        TornadoVMMasterPlan tornadoVMPlan =null;
+        TornadoVMMasterPlan tornadoVMPlan = null;
 
         List<Integer> promptTokens = new ArrayList<>();
         promptTokens.add(chatFormat.beginOfText);
@@ -233,10 +229,9 @@ public class LlamaApp {
 
         Set<Integer> stopTokens = chatFormat.getStopTokens();
         if (USE_TORNADOVM) {
-             tornadoVMPlan = TornadoVMMasterPlan.initializeTornadoVMPlan(state, model);
+            tornadoVMPlan = TornadoVMMasterPlan.initializeTornadoVMPlan(state, model);
             // Call generateTokensGPU without the token consumer parameter
-            responseTokens = Llama.generateTokensGPU(model, state, 0, promptTokens, stopTokens, options.maxTokens(),
-                    sampler, options.echo(), options.stream() ? tokenConsumer : null, tornadoVMPlan);
+            responseTokens = Llama.generateTokensGPU(model, state, 0, promptTokens, stopTokens, options.maxTokens(), sampler, options.echo(), options.stream() ? tokenConsumer : null, tornadoVMPlan);
         } else {
             // CPU path still uses the token consumer
             responseTokens = Llama.generateTokens(model, state, 0, promptTokens, stopTokens, options.maxTokens(), sampler, options.echo(), tokenConsumer);
