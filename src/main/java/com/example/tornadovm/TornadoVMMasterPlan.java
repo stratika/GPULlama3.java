@@ -24,7 +24,7 @@ public class TornadoVMMasterPlan {
 
     public TornadoVMMasterPlan(State state, Llama model, boolean isNvidia) {
         TornadoVMLayerPlanner tornadoVMLayerPlanner = new TornadoVMLayerPlanner(state, model);
-        Tuple2<List<ImmutableTaskGraph>, GridScheduler> tornadoVMPlan = tornadoVMLayerPlanner.setupTornadoForwardPlanLayered();
+        Tuple2<List<ImmutableTaskGraph>, GridScheduler> tornadoVMPlan = isNvidia ? tornadoVMLayerPlanner.setupTornadoForwardPlanLayered() : tornadoVMLayerPlanner.setupTornadoForwardPlanLayeredNonNvidia();
         this.taskGraphs = tornadoVMPlan.getFirst();
         this.scheduler = tornadoVMPlan.getSecond();
         this.state = state;
