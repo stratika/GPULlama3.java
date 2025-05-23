@@ -67,6 +67,9 @@ When cloning this repository, use the `--recursive` flag to ensure that TornadoV
 # Clone the repository with all submodules
 git clone --recursive https://github.com/beehive-lab/GPULlama3.java.git
 
+# Update the submodules to match the exact commit point recorded in this repository
+git submodule update --recursive
+
 # Navigate to the project directory
 cd GPULlama3.java
 
