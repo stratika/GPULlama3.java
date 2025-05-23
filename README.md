@@ -22,7 +22,7 @@ Integration of <strong>Llama3 models</strong> with <strong>TornadoVM</strong> to
 <br><br>
 This project builds on <a href="https://github.com/mukel/llama3.java">Llama3.java</a>, based on the original <a href="https://github.com/meta-llama/llama3">Llama 3</a>, <a href="https://llama.meta.com/docs/model-cards-and-prompt-formats/llama3_1">3.1</a>, and <a href="https://ai.meta.com/blog/llama-3-2-connect-2024-vision-edge-mobile-devices/">3.2</a> models, with TornadoVM support for parallelism and hardware acceleration.
 <br><br>
-Thanks to Alfonso² Peterssen for the original implementation of Llama3.java.
+Thanks to <a href="https://github.com/mukel">Alfonso² Peterssen</a> for the original implementation of Llama3.java.
 <br><br>
 Previous intergration of TornadoVM and Llama2 it can be found in <a href="https://github.com/mikepapadim/llama2.tornadovm.java">llama2.tornadovm</a>.
 </td>
@@ -38,13 +38,13 @@ This table shows inference performance across different hardware and quantizatio
 | Vendor / Backend             | Hardware     | Llama-3.2-1B-Instruct | Llama-3.2-1B-Instruct | Llama-3.2-3B-Instruct | Optimizations |
 |:----------------------------:|:------------:|:---------------------:|:---------------------:|:---------------------:|:-------------:|
 |                              |              | **Q8_0**              | **Q4_0**              | **Q4_0**              |  **Support**  |
-| **NVIDIA / OpenCL-PTX**      | RTX 3070     | 42.3 tokens/s         | 78.6 tokens/s         | 22.1 tokens/s         |       ✅      |
-|                              | RTX 4090     | 96.7 tokens/s         | 158.2 tokens/s        | 52.9 tokens/s         |       ✅      |
-|                              | RTX 5090     | 156.8 tokens/s        | 243.5 tokens/s        | 84.7 tokens/s         |       ✅      |
-|                              | H100         | 178.3 tokens/s        | 289.7 tokens/s        | 102.5 tokens/s        |       ✅      |
-| **Intel / OpenCL**           | Arc A770     | 18.4 tokens/s         | 35.7 tokens/s         | 11.6 tokens/s         |       ✅      |
-| **Apple Silicon / OpenCL**   | M3 Pro       | 18.4 tokens/s         | 35.7 tokens/s         | 11.6 tokens/s         |      (WIP)    |
-|                              | M4 Pro       | 28.9 tokens/s         | 52.3 tokens/s         | 17.2 tokens/s         |      (WIP)    |
+| **NVIDIA / OpenCL-PTX**      | RTX 3070     | XXXX tokens/s         | XXXX tokens/s         | XXXX tokens/s         |       ✅      |
+|                              | RTX 4090     | XXXX tokens/s         | XXXX tokens/s         | XXXX tokens/s         |       ✅      |
+|                              | RTX 5090     | XXXX tokens/s         | XXXX tokens/s         | XXXX tokens/s         |       ✅      |
+|                              | H100         | XXXX tokens/s         | XXXX tokens/s         | XXXX tokens/s         |       ✅      |
+| **Intel / OpenCL**           | Arc A770     | XXXX tokens/s         | XXXX tokens/s         | XXXX tokens/s         |       ✅      |
+| **Apple Silicon / OpenCL**   | M3 Pro       | XXXX tokens/s         | XXXX tokens/s         | XXXX tokens/s         |      (WIP)    |
+|                              | M4 Pro       | XXXX tokens/s         | XXXX tokens/s         | XXXX tokens/s         |      (WIP)    |
 | **AMD / OpenCL**             | Radeon RX    | (WIP)                 | (WIP)                 | (WIP)                 |      (WIP)    |
 
 -----------
@@ -78,7 +78,7 @@ python3 -m venv venv
 source ./venv/bin/activate
 
 # Install TornadoVM with a supported JDK 21 and select the backends (--backend opencl,ptx).
-# To see the valid JDKs run: ./bin/tornadovm-installer --listJDKs
+# To see the compatible JDKs run: ./bin/tornadovm-installer --listJDKs
 # For example, to install with OpenJDK 21 and build the OpenCL backend, run: 
 ./bin/tornadovm-installer --jdk jdk21 --backend opencl
 
