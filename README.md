@@ -43,7 +43,7 @@ This table shows inference performance across different hardware and quantizatio
 |                              | RTX 5090     | XXXX tokens/s         | XXXX tokens/s         | XXXX tokens/s         |       ✅      |
 |                              | H100         | XXXX tokens/s         | XXXX tokens/s         | XXXX tokens/s         |       ✅      |
 | **Intel / OpenCL**           | Arc A770     | XXXX tokens/s         | XXXX tokens/s         | XXXX tokens/s         |       ✅      |
-| **Apple Silicon / OpenCL**   | M3 Pro       | XXXX tokens/s         | XXXX tokens/s         | XXXX tokens/s         |      (WIP)    |
+| **Apple Silicon / OpenCL**   | M3 Pro       | 14.04 tokens/s         | 13.83 tokens/s         | 6.78 tokens/s         |      (WIP)    |
 |                              | M4 Pro       | XXXX tokens/s         | XXXX tokens/s         | XXXX tokens/s         |      (WIP)    |
 | **AMD / OpenCL**             | Radeon RX    | (WIP)                 | (WIP)                 | (WIP)                 |      (WIP)    |
 
