@@ -192,7 +192,7 @@ import java.util.List;
                 case Q4_0:
                     logits.task("projection", TransformerComputeKernelsLayered::matrixVectorGeneric,  //
                             context, state.wrapX, state.wrapLogits, weights.wclsHalfFloat, //
-                            config.dim, config.vocabularySize, LOCAL_WORK_GROUP_SIZE_ALLOC * 2); //
+                            config.dim, config.vocabularySize, LOCAL_WORK_GROUP_SIZE_ALLOC * THREAD_SCALE_FOR_LOGITS); //
                     break;
                 default:
                     throw new UnsupportedOperationException("Unsupported weight quantization type: " + weights.weightType + ". Only Q8_0 and Q4_0 are supported.");
