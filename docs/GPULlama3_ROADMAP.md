@@ -1,0 +1,23 @@
+### 🚧 Work-in-progress Features
+
+- [ ] **Additional architectures and model format**
+  - [ ] Mistral/Mixtral models
+  - [ ] Gemma/Gemma2 models
+  - [ ] Phi models
+  - [ ] SmolLM
+  - [ ] TinyLlama
+  - [ ] SafeTensors format
+  - [ ] PyTorch checkpoint loading
+  - [ ] Automatic model conversion utilities
+- [ ] **Additional quantization formats**
+  - [ ] INT8
+  - [ ] FP16 support
+- [ ] **Advanced inference capabilities**
+  - [ ] Batch inference support
+  - [ ] Speculative decoding
+- [ ] **Performance optimizations**
+  - [ ] Multi-GPU support
+  - [ ] Memory-efficient attention mechanisms
+  - [ ] Kernel fusion improvements
+- [ ] **LangChain4j integration**
+- [ ] **GraalVM Native Image**
