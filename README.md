@@ -100,7 +100,7 @@ source set_paths
 make
 
 # Run the model (make sure you have downloaded the model file first -  see below)
-./llama-tornado --gpu --opencl --model Llama-3.2-1B-Instruct-Q4_0.gguf --prompt "tell me a joke"
+./llama-tornado --gpu  --verbose-init --opencl --model Llama-3.2-1B-Instruct-Q4_0.gguf --prompt "tell me a joke"
 ```
 -----------
 
@@ -150,18 +150,18 @@ To execute Llama3 models with TornadoVM on GPUs use the `llama-tornado` script w
 Run a model with a text prompt:
 
 ```bash
-./llama-tornado --gpu --opencl --model Llama-3.2-1B-Instruct-Q8_0.gguf --prompt "Explain the benefits of GPU acceleration."
+./llama-tornado --gpu --verbose-init --opencl --model Llama-3.2-1B-Instruct-Q8_0.gguf --prompt "Explain the benefits of GPU acceleration."
 ```
 
 #### GPU Execution (Q8_0 Model)
 Enable GPU acceleration with Q8_0 quantization:
 ```bash
-llama-tornado --gpu --model Llama-3.2-1B-Instruct-Q8_0.gguf --prompt "tell me a joke"
+llama-tornado --gpu  --verbose-init --model Llama-3.2-1B-Instruct-Q8_0.gguf --prompt "tell me a joke"
 ```
 #### GPU Execution (Q4_0 Model)
 Run with Q4_0 quantization for lower memory usage:
 ```bash
-llama-tornado --gpu --model Llama-3.2-1B-Instruct-Q4_0.gguf --prompt "tell me a joke"
+llama-tornado --gpu  --verbose-init --model Llama-3.2-1B-Instruct-Q4_0.gguf --prompt "tell me a joke"
 ```
 
 -----------
@@ -259,6 +259,7 @@ TornadoVM Execution Verbose:
   --print-threads       Print thread information (tornado.threadInfo=true) (default: False)
   --print-kernel        Print kernel information (tornado.printKernel=true) (default: False)
   --full-dump           Enable full debug dump (tornado.fullDebug=true) (default: False)
+  --verbose-init        Enable timers for TornadoVM initialization (llama.EnableTimingForTornadoVMInit=true) (default: False)
 
 Command Display Options:
   --show-command        Display the full Java command that will be executed (default: False)
