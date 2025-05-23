@@ -12,7 +12,7 @@ import uk.ac.manchester.tornado.api.types.arrays.FloatArray;
 import java.util.List;
 
 public class TornadoVMMasterPlan {
-    private static final boolean ENABLE_TORNADOVM_INIT_TIME = Boolean.parseBoolean(System.getProperty("llama.EnableTimingForTornadoVMInit", "False"));
+    private static final boolean ENABLE_TORNADOVM_INIT_TIME = Boolean.parseBoolean(System.getProperty("llama.EnableTimingForTornadoVMInit", "True"));
 
     private final State state;
     private final Configuration config;
