@@ -367,7 +367,7 @@ llama-tornado --gpu --model Llama-3.2-1B-Instruct-Q8_0.gguf --prompt "tell me a 
   - **Flexible backend switching** - choose OpenCL or PTX at runtime (need to build TornadoVM with both enabled).
   - **Cross-platform compatibility**:
     - ✅ NVIDIA GPUs (OpenCL & PTX )
-    - ✅ Intel GPUs (OpenCL & PTX )
+    - ✅ Intel GPUs (OpenCL)
     - ✅ Apple GPUs (OpenCL)
 
 Click [here](https://github.com/beehive-lab/GPULlama3.java/tree/main/docs/TORNADOVM_TRANSFORMER_OPTIMIZATIONS.md) to view a more detailed list of the transformer optimizations implemented in TornadoVM.
