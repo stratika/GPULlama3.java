@@ -114,9 +114,9 @@ Check models below.
 
 Download `Q4_0` and (optionally) `Q8_0` quantized .gguf files from:
 - https://huggingface.co/mukel/Llama-3.2-1B-Instruct-GGUF
-  - https://huggingface.co/mukel/Llama-3.2-3B-Instruct-GGUF
-  - https://huggingface.co/mukel/Meta-Llama-3.1-8B-Instruct-GGUF
-  - https://huggingface.co/mukel/Meta-Llama-3-8B-Instruct-GGUF
+- https://huggingface.co/mukel/Llama-3.2-3B-Instruct-GGUF
+- https://huggingface.co/mukel/Meta-Llama-3.1-8B-Instruct-GGUF
+- https://huggingface.co/mukel/Meta-Llama-3-8B-Instruct-GGUF
 
 The `Q4_0` quantized models are recommended, except for the very small models (1B), please be gentle with [huggingface.co](https://huggingface.co) servers:
 ```
