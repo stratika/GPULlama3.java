@@ -30,6 +30,10 @@ Previous intergration of TornadoVM and Llama2 it can be found in <a href="https:
 </table>
 
 -----------
+### GPULlama3.java running on a RTX 5090 with nvtop on bottom to track GPU utilization and memory usage.
+
+![Demo](docs/inter-output.gif)
+----------
 
 ### TornadoVM-Accelerated Inference Performance and Optimization Status
 
