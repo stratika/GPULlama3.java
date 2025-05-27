@@ -1,8 +1,8 @@
 package com.example.tornadovm;
 
 import com.example.auxiliary.Tuple2;
-import com.example.inference.engine.impl.Configuration;
-import com.example.inference.engine.impl.Llama;
+import com.example.inference.engine.impl.llama.LlamaConfiguration;
+import com.example.inference.engine.impl.llama.Llama;
 import com.example.loader.weights.State;
 import uk.ac.manchester.tornado.api.GridScheduler;
 import uk.ac.manchester.tornado.api.ImmutableTaskGraph;
@@ -17,7 +17,7 @@ public class TornadoVMMasterPlan {
     private static final boolean ENABLE_TORNADOVM_INIT_TIME = Boolean.parseBoolean(System.getProperty("llama.EnableTimingForTornadoVMInit", "False"));
 
     private final State state;
-    private final Configuration config;
+    private final LlamaConfiguration config;
     public GridScheduler scheduler;
     public TornadoExecutionPlan executionPlan;
     List<ImmutableTaskGraph> taskGraphs;
@@ -117,7 +117,7 @@ public class TornadoVMMasterPlan {
 
         // 2. Execute each transformer layer graph sequentially
         // Each graph computes attention and feed-forward transformations for one layer
-        for (int layer = 0; layer < config.numberOfLayers; layer++) {
+        for (int layer = 0; layer < config.numberOfLayers(); layer++) {
             executionPlan.withGraph(getLayerGraphIndex(layer))
                     .withGridScheduler(scheduler)
                     .execute();
@@ -166,12 +166,12 @@ public class TornadoVMMasterPlan {
         executionPlan.withGraph(0).withGridScheduler(scheduler).execute();
 
         // Execute layer processing graphs
-        for (int layer = 0; layer < config.numberOfLayers; layer++) {
+        for (int layer = 0; layer < config.numberOfLayers(); layer++) {
             executionPlan.withGraph(layer + 1).withGridScheduler(scheduler).execute();
         }
 
         // Execute logits graph
-        executionPlan.withGraph(config.numberOfLayers + 1).withGridScheduler(scheduler).execute();
+        executionPlan.withGraph(config.numberOfLayers() + 1).withGridScheduler(scheduler).execute();
     }
 
     /**

@@ -1,10 +1,15 @@
-package com.example.inference.engine.impl;
+package com.example.inference.engine.impl.llama;
 
 import com.example.auxiliary.Parallel;
+import com.example.auxiliary.format.LlamaChatFormat;
 import com.example.core.model.tensor.FloatTensor;
 import com.example.inference.Sampler;
+import com.example.inference.engine.impl.Configuration;
+import com.example.inference.engine.impl.Model;
+import com.example.inference.engine.impl.Options;
 import com.example.loader.weights.State;
 import com.example.loader.weights.Weights;
+import com.example.tokenizer.impl.LlamaTokenizer;
 import com.example.tokenizer.impl.Tokenizer;
 import com.example.tornadovm.TornadoVMMasterPlan;
 import uk.ac.manchester.tornado.api.types.arrays.FloatArray;
@@ -13,11 +18,18 @@ import java.lang.foreign.MemorySegment;
 import java.nio.FloatBuffer;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Scanner;
 import java.util.Set;
 import java.util.function.IntConsumer;
 
-public record Llama(Configuration configuration, Tokenizer tokenizer, Weights weights) {
+import static com.example.LlamaApp.SHOW_PERF_INTERACTIVE;
+import static com.example.LlamaApp.USE_TORNADOVM;
+
+public record Llama(LlamaConfiguration configuration, Tokenizer tokenizer, Weights weights) implements Model {
     private static final int BATCH_SIZE = Integer.getInteger("llama.BatchSize", 16);
+
+    /* For explicit use */
+    private LlamaTokenizer getAsLlamaTokenizer() { return (LlamaTokenizer) tokenizer; }
 
     public static void rmsnorm(FloatTensor out, FloatTensor x, FloatBuffer weight, int size, float rmsNormEps) {
         // calculate sum of squares
@@ -32,21 +44,21 @@ public record Llama(Configuration configuration, Tokenizer tokenizer, Weights we
 
     public static FloatTensor forwardJava(Llama model, State state, int token, int position) {
         // a few convenience variables
-        Configuration config = model.configuration();
-        Weights weights = model.weights();
-        int dim = config.dim;
-        int headSize = config.headSize;
-        int kvDim = (config.dim * config.numberOfKeyValueHeads) / config.numberOfHeads;
-        int kvMul = config.numberOfHeads / config.numberOfKeyValueHeads; // integer multiplier of the kv sharing in multiquery
+        final Configuration config = model.configuration();
+        final Weights weights = model.weights();
+        int dim = config.dim();
+        int headSize = config.headSize();
+        int kvDim = (config.dim() * config.numberOfKeyValueHeads()) / config.numberOfHeads();
+        int kvMul = config.numberOfHeads() / config.numberOfKeyValueHeads(); // integer multiplier of the kv sharing in multiquery
         float sqrtHeadSize = (float) Math.sqrt(headSize);
 
         // copy the token embedding into x
         weights.token_embedding_table.copyTo(token * dim, state.x, 0, dim);
 
         // forward all the layers
-        for (int l = 0; l < config.numberOfLayers; l++) {
+        for (int l = 0; l < config.numberOfLayers(); l++) {
             // attention rmsnorm
-            rmsnorm(state.xb, state.x, weights.rms_att_weight[l], dim, config.rmsNormEps);
+            rmsnorm(state.xb, state.x, weights.rms_att_weight[l], dim, config.rmsNormEps());
 
             // qkv matmuls for this position
 
@@ -78,14 +90,14 @@ public record Llama(Configuration configuration, Tokenizer tokenizer, Weights we
             int curLayer = l;
 
             // multihead attention. iterate over all heads
-            Parallel.parallelFor(0, config.numberOfHeads, h -> {
+            Parallel.parallelFor(0, config.numberOfHeads(), h -> {
                 // get the query vector for this head
                 // float* q = s.q + h * headSize;
                 int qOffset = h * headSize;
 
                 // attention scores for this head
                 // float* att = s.att + h * config.seq_len;
-                int attOffset = h * config.contextLength;
+                int attOffset = h * config.contextLength();
 
                 // iterate over all timesteps, including the current one
                 for (int t = 0; t <= position; t++) {
@@ -126,13 +138,13 @@ public record Llama(Configuration configuration, Tokenizer tokenizer, Weights we
             state.x.addInPlace(state.xb2);
 
             // ffn rmsnorm
-            rmsnorm(state.xb, state.x, weights.rms_ffn_weight[l], dim, config.rmsNormEps);
+            rmsnorm(state.xb, state.x, weights.rms_ffn_weight[l], dim, config.rmsNormEps());
 
             //            System.out.println("x " + weights.w1.toString() + " " + weights.w2.toString() + " " + weights.w3.toString());
             // Now for FFN in PyTorch we have: self.w2(F.silu(self.w1(x)) * self.w3(x))
             // first calculate self.w1(x) and self.w3(x)
-            weights.w1[l].matmul(state.xb, state.hb, config.hiddenDim, dim);
-            weights.w3[l].matmul(state.xb, state.hb2, config.hiddenDim, dim);
+            weights.w1[l].matmul(state.xb, state.hb, config.hiddenDim(), dim);
+            weights.w3[l].matmul(state.xb, state.hb2, config.hiddenDim(), dim);
 
             // SwiGLU non-linearity
             // silu(x)=x*σ(x), where σ(x) is the logistic sigmoid
@@ -142,15 +154,15 @@ public record Llama(Configuration configuration, Tokenizer tokenizer, Weights we
             state.hb.multiplyInPlace(state.hb2);
 
             // final matmul to get the output of the ffn
-            weights.w2[l].matmul(state.hb, state.xb, dim, config.hiddenDim);
+            weights.w2[l].matmul(state.hb, state.xb, dim, config.hiddenDim());
 
             // residual connection
             state.x.addInPlace(state.xb);
         }
 
-        rmsnorm(state.x, state.x, weights.rms_final_weight, dim, config.rmsNormEps);
+        rmsnorm(state.x, state.x, weights.rms_final_weight, dim, config.rmsNormEps());
 
-        weights.wcls.matmul(state.x, state.logits, config.vocabularySize, dim);
+        weights.wcls.matmul(state.x, state.logits, config.vocabularySize(), dim);
 
         return state.logits;
     }
@@ -180,27 +192,30 @@ public record Llama(Configuration configuration, Tokenizer tokenizer, Weights we
      *         The execution plan for TornadoVM acceleration
      * @return FloatTensor containing the output logits for token prediction
      */
-    public static FloatArray forwardTornadoVM( //
+    private static FloatArray forwardTornadoVM( //
             Llama model,  //
             State state,  //
             int token,    //
             int position,   //
             TornadoVMMasterPlan tornadoVMMasterPlan) { //
 
-        MemorySegment.copy(model.weights.tokenEmbeddingTable.getSegment(), token * model.configuration.dim * Float.BYTES, state.wrapX.getSegment(), 0, model.configuration.dim * Float.BYTES);
+        final Configuration configuration = model.configuration();
+        final Weights weights = model.weights();
+
+        MemorySegment.copy(weights.tokenEmbeddingTable.getSegment(), token * configuration.dim() * Float.BYTES, state.wrapX.getSegment(), 0, configuration.dim() * Float.BYTES);
 
         return tornadoVMMasterPlan.tornadoVMForwardExecuteLayered(position);
     }
 
-    public static List<Integer> generateTokensGPU(Llama model, State state,
-            int startPosition, List<Integer> promptTokens, Set<Integer> stopTokens, int maxTokens, Sampler sampler, boolean echo,   IntConsumer onTokenGenerated,
-            TornadoVMMasterPlan tornadoVMPlan) {
+    @Override
+    public List<Integer> generateTokensGPU(State state, int startPosition, List<Integer> promptTokens, Set<Integer> stopTokens,
+                                           int maxTokens, Sampler sampler, boolean echo, IntConsumer onTokenGenerated, TornadoVMMasterPlan tornadoVMPlan) {
         // === Setup and Initialization ===
         long startNanos = System.nanoTime();
         long inferenceStartNanos = 0;
 
         // Pre-validate the max tokens to avoid checking in the loop
-        int actualMaxTokens = Math.min(maxTokens > 0 ? maxTokens : model.configuration().contextLength, model.configuration().contextLength);
+        int actualMaxTokens = Math.min(maxTokens > 0 ? maxTokens : configuration.contextLength(), configuration.contextLength());
 
         // Preallocate with expected capacity to avoid resizing
         List<Integer> generatedTokens = new ArrayList<>(Math.min(256, actualMaxTokens - promptTokens.size())); // Conservative estimate
@@ -226,7 +241,7 @@ public record Llama(Configuration configuration, Tokenizer tokenizer, Weights we
         // Main generation loop
         while (pos < actualMaxTokens) {
             // GPU Forward Pass - No conditional check since we know we're using GPU
-            FloatArray logits = forwardTornadoVM(model, state, currentToken, pos, tornadoVMPlan);
+            FloatArray logits = forwardTornadoVM(this, state, currentToken, pos, tornadoVMPlan);
 
             // Process prompt tokens if still remaining
             if (promptIndex < promptTokens.size()) {
@@ -235,7 +250,7 @@ public record Llama(Configuration configuration, Tokenizer tokenizer, Weights we
 
                 if (echo) {
                     // Decode and output token
-                    System.err.print(Tokenizer.replaceControlCharacters(model.tokenizer().decode(List.of(nextToken))));
+                    System.err.print(Tokenizer.replaceControlCharacters(tokenizer.decode(List.of(nextToken))));
                 }
             } else {
                 // Mark first inference token
@@ -253,7 +268,7 @@ public record Llama(Configuration configuration, Tokenizer tokenizer, Weights we
 
                 // Output if needed
                 if (echo && onTokenGenerated == null) {
-                    System.err.print(Tokenizer.replaceControlCharacters(model.tokenizer().decode(List.of(nextToken))));
+                    System.err.print(Tokenizer.replaceControlCharacters(tokenizer.decode(List.of(nextToken))));
                 }
 
                 // Store token
@@ -282,8 +297,9 @@ public record Llama(Configuration configuration, Tokenizer tokenizer, Weights we
         return generatedTokens;
     }
 
-    public static List<Integer> generateTokens(Llama model, State state, int startPosition, List<Integer> promptTokens, Set<Integer> stopTokens, int maxTokens, Sampler sampler, boolean echo,
-            IntConsumer onTokenGenerated) {
+    @Override
+    public List<Integer> generateTokens(State state,
+                                        int startPosition, List<Integer> promptTokens, Set<Integer> stopTokens, int maxTokens, Sampler sampler, boolean echo, IntConsumer onTokenGenerated) {
         // Initialize TornadoVM plan if enabled
 
         // Start timing the whole process
@@ -292,8 +308,8 @@ public record Llama(Configuration configuration, Tokenizer tokenizer, Weights we
 
         Object logits;
         // Validate and adjust maxTokens if necessary
-        if (maxTokens < 0 || model.configuration().contextLength < maxTokens) {
-            maxTokens = model.configuration().contextLength;
+        if (maxTokens < 0 || configuration.contextLength() < maxTokens) {
+            maxTokens = configuration.contextLength();
         }
 
         // Storage for generated tokens
@@ -307,14 +323,14 @@ public record Llama(Configuration configuration, Tokenizer tokenizer, Weights we
 
         while (pos < maxTokens) {
 
-            logits = forwardJava(model, state, currentToken, pos);
+            logits = forwardJava(this, state, currentToken, pos);
 
             // Handle token processing
             if (promptIndex < promptTokens.size()) {
                 // We're still processing the prompt tokens
                 nextToken = promptTokens.get(promptIndex++);
                 if (echo) {
-                    System.err.print(Tokenizer.replaceControlCharacters(model.tokenizer().decode(List.of(nextToken))));
+                    System.err.print(Tokenizer.replaceControlCharacters(tokenizer.decode(List.of(nextToken))));
                 }
             } else {
                 // Mark the start of actual generation (after prompt processing)
@@ -327,7 +343,7 @@ public record Llama(Configuration configuration, Tokenizer tokenizer, Weights we
 
                 // Output the token if echo is enabled
                 if (echo) {
-                    System.err.print(Tokenizer.replaceControlCharacters(model.tokenizer().decode(List.of(nextToken))));
+                    System.err.print(Tokenizer.replaceControlCharacters(tokenizer.decode(List.of(nextToken))));
                 }
 
                 // Track the generated token
@@ -360,17 +376,161 @@ public record Llama(Configuration configuration, Tokenizer tokenizer, Weights we
         return generatedTokens;
     }
 
-
+    @Override
     public State createNewState() {
         State state = new State(configuration(), -1);
         state.latestToken = tokenizer.getSpecialTokens().get("<|begin_of_text|>");
         return state;
     }
 
+    @Override
     public State createNewState(int batchsize) {
         State state = new State(configuration(), batchsize);
         state.latestToken = tokenizer.getSpecialTokens().get("<|begin_of_text|>");
         return state;
+    }
+
+    @Override
+    public void runInteractive(Sampler sampler, Options options) {
+        State state = null;
+        List<Integer> conversationTokens = new ArrayList<>();
+        LlamaChatFormat chatFormat = new LlamaChatFormat(getAsLlamaTokenizer());
+        conversationTokens.add(chatFormat.beginOfText);
+        if (options.systemPrompt() != null) {
+            conversationTokens.addAll(chatFormat.encodeMessage(new LlamaChatFormat.Message(LlamaChatFormat.Role.SYSTEM, options.systemPrompt())));
+        }
+        int startPosition = 0;
+        Scanner in = new Scanner(System.in);
+
+        // Initialize TornadoVM plan once at the beginning if GPU path is enabled
+        TornadoVMMasterPlan tornadoVMPlan = null;
+
+        try {
+            while (true) {
+                System.out.print("> ");
+                System.out.flush();
+                String userText = in.nextLine();
+                if (List.of("quit", "exit").contains(userText)) {
+                    break;
+                }
+                if (state == null) {
+                    state = createNewState();
+                }
+
+                if (USE_TORNADOVM && tornadoVMPlan == null) {
+                    tornadoVMPlan = TornadoVMMasterPlan.initializeTornadoVMPlan(state, this);
+                }
+
+                conversationTokens.addAll(chatFormat.encodeMessage(new LlamaChatFormat.Message(LlamaChatFormat.Role.USER, userText)));
+                conversationTokens.addAll(chatFormat.encodeHeader(new LlamaChatFormat.Message(LlamaChatFormat.Role.ASSISTANT, "")));
+                Set<Integer> stopTokens = chatFormat.getStopTokens();
+
+                List<Integer> responseTokens;
+                IntConsumer tokenConsumer = token -> {
+                    if (options.stream()) {
+                        if (!tokenizer().isSpecialToken(token)) {
+                            System.out.print(tokenizer().decode(List.of(token)));
+                        }
+                    }
+                };
+
+                // Choose between GPU and CPU path based on configuration
+                if (USE_TORNADOVM) {
+                    // GPU path using TornadoVM
+                    responseTokens = generateTokensGPU(state, startPosition,
+                            conversationTokens.subList(startPosition, conversationTokens.size()),
+                            stopTokens, options.maxTokens(), sampler, options.echo(),
+                            options.stream() ? tokenConsumer : null, tornadoVMPlan);
+                } else {
+                    // CPU path
+                    responseTokens = generateTokens(state, startPosition,
+                            conversationTokens.subList(startPosition, conversationTokens.size()),
+                            stopTokens, options.maxTokens(), sampler, options.echo(), tokenConsumer);
+                }
+
+                // Include stop token in the prompt history, but not in the response displayed to the user.
+                conversationTokens.addAll(responseTokens);
+                startPosition = conversationTokens.size();
+                Integer stopToken = null;
+                if (!responseTokens.isEmpty() && stopTokens.contains(responseTokens.getLast())) {
+                    stopToken = responseTokens.getLast();
+                    responseTokens.removeLast();
+                }
+                if (!options.stream()) {
+                    String responseText = tokenizer().decode(responseTokens);
+                    System.out.println(responseText);
+                }
+                if (stopToken == null) {
+                    System.err.println("\n Ran out of context length...\n Increase context length with by passing to llama-tornado --max-tokens XXX");
+                    break;
+                }
+                System.out.print("\n");
+
+                // Optionally print performance metrics after each response
+                if (SHOW_PERF_INTERACTIVE) {
+                    Llama.LastRunMetrics.printMetrics();
+                }
+            }
+        } finally {
+            // Clean up TornadoVM resources when exiting the chat loop
+            if (USE_TORNADOVM && tornadoVMPlan != null) {
+                try {
+                    tornadoVMPlan.freeTornadoExecutionPlan();
+                } catch (Exception e) {
+                    System.err.println("Error while cleaning up TornadoVM resources: " + e.getMessage());
+                }
+            }
+        }
+    }
+
+    @Override
+    public void runInstructOnce(Sampler sampler, Options options) {
+        State state = createNewState();
+        LlamaChatFormat chatFormat = new LlamaChatFormat(getAsLlamaTokenizer());
+        TornadoVMMasterPlan tornadoVMPlan =null;
+
+        List<Integer> promptTokens = new ArrayList<>();
+        promptTokens.add(chatFormat.beginOfText);
+        if (options.systemPrompt() != null) {
+            promptTokens.addAll(chatFormat.encodeMessage(new LlamaChatFormat.Message(LlamaChatFormat.Role.SYSTEM, options.systemPrompt())));
+        }
+        promptTokens.addAll(chatFormat.encodeMessage(new LlamaChatFormat.Message(LlamaChatFormat.Role.USER, options.prompt())));
+        promptTokens.addAll(chatFormat.encodeHeader(new LlamaChatFormat.Message(LlamaChatFormat.Role.ASSISTANT, "")));
+        List<Integer> responseTokens;
+
+        // Define the token consumer
+        IntConsumer tokenConsumer = token -> {
+            if (options.stream()) {
+                if (!tokenizer.isSpecialToken(token)) {
+                    System.out.print(tokenizer.decode(List.of(token)));
+                }
+            }
+        };
+
+        Set<Integer> stopTokens = chatFormat.getStopTokens();
+        if (USE_TORNADOVM) {
+            tornadoVMPlan = TornadoVMMasterPlan.initializeTornadoVMPlan(state, this);
+            // Call generateTokensGPU without the token consumer parameter
+            responseTokens = generateTokensGPU(state, 0, promptTokens, stopTokens, options.maxTokens(),
+                    sampler, options.echo(), options.stream() ? tokenConsumer : null, tornadoVMPlan);
+        } else {
+            // CPU path still uses the token consumer
+            responseTokens = generateTokens(state, 0, promptTokens, stopTokens, options.maxTokens(), sampler, options.echo(), tokenConsumer);
+        }
+
+        if (!responseTokens.isEmpty() && stopTokens.contains(responseTokens.getLast())) {
+            responseTokens.removeLast();
+        }
+        if (!options.stream()) {
+            String responseText = tokenizer.decode(responseTokens);
+            System.out.println(responseText);
+        }
+
+        Llama.LastRunMetrics.printMetrics();
+
+        if (tornadoVMPlan != null) {
+            tornadoVMPlan.freeTornadoExecutionPlan();
+        }
     }
 
     /**

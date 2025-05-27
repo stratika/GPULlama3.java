@@ -26,16 +26,26 @@ public record Vocabulary(String[] tokens, float[] scores, Map<String, Integer> t
         return value != null ? OptionalInt.of(value) : OptionalInt.empty();
     }
 
-    public static Vocabulary loadVocabulary(Map<String, Object> metadata) {
-        String model = (String) metadata.get("tokenizer.ggml.model");
-        if (!TOKENIZER_LLAMA_3_MODEL.equals(model)) {
-            throw new IllegalArgumentException("expected " + TOKENIZER_LLAMA_3_MODEL + " but found " + model);
-        }
+    public static Vocabulary loadLlamaVocabulary(Map<String, Object> metadata) {
         String[] tokens = (String[]) metadata.get("tokenizer.ggml.tokens");
         return new Vocabulary(tokens, null);
     }
 
+    public static Vocabulary loadMistralVocabulary(Map<String, Object> metadata) {
+        String[] tokens = (String[]) metadata.get("tokenizer.ggml.tokens");
+        float[] scores = (float[]) metadata.get("tokenizer.ggml.scores");
+        Vocabulary v = new Vocabulary(tokens, scores);
+        return v;
+    }
+
     public int size() {
         return tokens.length;
+    }
+
+    /**
+     * Only for Mistral.
+     */
+    public float getScore(int tokenIndex) {
+        return scores[tokenIndex];
     }
 }

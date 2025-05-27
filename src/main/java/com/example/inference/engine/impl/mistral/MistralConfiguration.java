@@ -1,0 +1,15 @@
+package com.example.inference.engine.impl.mistral;
+
+import com.example.inference.engine.impl.Configuration;
+
+public record MistralConfiguration(
+        int dim, int hiddenDim, int numberOfLayers, int numberOfHeads,
+        int numberOfKeyValueHeads, int vocabularySize, int contextLength,
+        boolean sharedWeights, float rmsNormEps, float ropeTheta
+) implements Configuration {
+
+    public int headSize() {
+        return dim / numberOfHeads;
+    }
+}
+
