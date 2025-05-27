@@ -55,6 +55,12 @@ This table shows inference performance across different hardware and quantizatio
 |                              | M4 Pro       | 16.77 tokens/s        | 16.67 tokens/s        | 8.56 tokens/s         |      (WIP)    |
 | **AMD / OpenCL**             | Radeon RX    | (WIP)                 | (WIP)                 | (WIP)                 |      (WIP)    |
 
+##### ⚠️ Note on Apple Silicon Performance
+
+TornadoVM currently runs on Apple Silicon via [OpenCL](https://developer.apple.com/opencl/), which has been officially deprecated since macOS 10.14.
+
+Despite being deprecated, OpenCL can still run on Apple Silicon; albeit, with older drivers which do not support all optimizations of TornadoVM. Therefore, the performance is not optimal since TornadoVM does not have a Metal backend yet (it currently has OpenCL, PTX, and SPIR-V backends).
+
 -----------
 
 ## Setup & Configuration
