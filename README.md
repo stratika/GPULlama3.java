@@ -395,6 +395,17 @@ Click [here](https://github.com/beehive-lab/GPULlama3.java/tree/main/docs/GPULla
 
 -----------
 
+## Acknowledgments
+
+This work is partially funded by the following EU & UKRI grants (most recent first):
+
+- EU Horizon Europe & UKRI [AERO 101092850](https://aero-project.eu/).
+- EU Horizon Europe & UKRI [P2CODE 101093069](https://p2code-project.eu/).
+- EU Horizon Europe & UKRI [ENCRYPT 101070670](https://encrypt-project.eu).
+- EU Horizon Europe & UKRI [TANGO 101070052](https://tango-project.eu).
+
+-----------
+
 ## License
 
 MIT
