@@ -47,9 +47,9 @@ This table shows inference performance across different hardware and quantizatio
 |:----------------------------:|:------------:|:---------------------:|:---------------------:|:---------------------:|:-------------:|
 |                              |              | **Q8_0**              | **Q4_0**              | **Q4_0**              |  **Support**  |
 | **NVIDIA / OpenCL-PTX**      | RTX 3070     | 52 tokens/s           | 50.56 tokens/s        | 22.96 tokens/s        |       ✅      |
-|                              | RTX 4090     | 66.07 tokens/s        | 65.81 tokens/s        | 35.51 tokens/s         |       ✅      |
+|                              | RTX 4090     | 66.07 tokens/s        | 65.81 tokens/s        | 35.51 tokens/s        |       ✅      |
 |                              | RTX 5090     | 96.65 tokens/s        | 94.71 tokens/s        | 47.68 tokens/s        |       ✅      |
-|                              | H100         | XXXX tokens/s         | XXXX tokens/s         | XXXX tokens/s         |       ✅      |
+|                              | L4 Tensor    | 52.96 tokens/s        | 52.92 tokens/s        | 22.68 tokens/s        |       ✅      |
 | **Intel / OpenCL**           | Arc A770     | 15.65 tokens/s        | 15.09 tokens/s        | 7.02 tokens/s         |      (WIP)    |
 | **Apple Silicon / OpenCL**   | M3 Pro       | 14.04 tokens/s        | 13.83 tokens/s        | 6.78 tokens/s         |      (WIP)    |
 |                              | M4 Pro       | 16.77 tokens/s        | 16.67 tokens/s        | 8.56 tokens/s         |      (WIP)    |
