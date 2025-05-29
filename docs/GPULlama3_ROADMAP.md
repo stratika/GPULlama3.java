@@ -1,23 +1,23 @@
 ### 🚧 Work-in-progress Features
 
+- [ ] **Additional quantization formats**
+  - [ ] Q8 
+  - [ ] Q4
+  - [ ] INT8 native support for GPUs
 - [ ] **Additional architectures and model format**
   - [ ] Mistral/Mixtral models
+  - [ ] Qwen
   - [ ] Gemma/Gemma2 models
-  - [ ] Phi models
-  - [ ] SmolLM
-  - [ ] TinyLlama
+  - [ ] TinyLlamas
   - [ ] SafeTensors format
   - [ ] PyTorch checkpoint loading
   - [ ] Automatic model conversion utilities
-- [ ] **Additional quantization formats**
-  - [ ] INT8
-  - [ ] FP16 support
 - [ ] **Advanced inference capabilities**
   - [ ] Batch inference support
   - [ ] Speculative decoding
 - [ ] **Performance optimizations**
   - [ ] Multi-GPU support
-  - [ ] Memory-efficient attention mechanisms
-  - [ ] Kernel fusion improvements
+  - [X] Memory-efficient attention mechanisms
+  - [ ] More Kernel fusion improvements
 - [ ] **LangChain4j integration**
 - [ ] **GraalVM Native Image**
