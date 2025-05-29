@@ -237,7 +237,7 @@ GPU-accelerated LLaMA.java model runner using TornadoVM
 
 options:
   -h, --help            show this help message and exit
-  --model MODEL_PATH    Path to the LLaMA model file (e.g., Llama-3.2-1B-Instruct-Q8_0.gguf) (default: None)
+  --model MODEL_PATH    Path to the LLaMA model file (e.g., beehive-llama-3.2-8b-instruct-fp16.gguf) (default: None)
 
 LLaMA Configuration:
   --prompt PROMPT       Input prompt for the model (default: None)
@@ -379,7 +379,7 @@ llama-tornado --gpu --model beehive-llama-3.2-1b-instruct-fp16.gguf --prompt "te
 
 ## Current Features & Roadmap
 
-  - **Support for GGUF format models** with Q8_0 and Q4_0 quantization.
+  - **Support for GGUF format models** with full FP16 and partial support for Q8_0 and Q4_0 quantization.
   - **Instruction-following and chat modes** for various use cases.
   - **Interactive CLI** with `--interactive` and `--instruct` modes.
   - **Flexible backend switching** - choose OpenCL or PTX at runtime (need to build TornadoVM with both enabled).
