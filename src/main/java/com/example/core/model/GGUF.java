@@ -1,6 +1,5 @@
 package com.example.core.model;
 
-
 import com.example.aux.Timer;
 import com.example.core.model.tensor.FloatTensor;
 import com.example.core.model.tensor.GGMLTensorEntry;
@@ -23,20 +22,44 @@ public final class GGUF {
     private static final int GGUF_MAGIC = 0x46554747;
     private static final int DEFAULT_ALIGNMENT = 32; // must be a power of 2
     private static final List<Integer> SUPPORTED_GGUF_VERSIONS = List.of(2, 3);
+    private final ByteBuffer BB_1 = ByteBuffer.allocate(Byte.BYTES).order(ByteOrder.LITTLE_ENDIAN);
+    private final ByteBuffer BB_2 = ByteBuffer.allocate(Short.BYTES).order(ByteOrder.LITTLE_ENDIAN);
+    private final ByteBuffer BB_4 = ByteBuffer.allocate(Integer.BYTES).order(ByteOrder.LITTLE_ENDIAN);
+    private final ByteBuffer BB_8 = ByteBuffer.allocate(Long.BYTES).order(ByteOrder.LITTLE_ENDIAN);
     private int magic;
     private int version;
     private int tensorCount; // uint64_t
     private int alignment;
     private int metadata_kv_count; // uint64_t
     private Map<String, Object> metadata;
+    private Map<String, GGUFTensorInfo> tensorInfos;
+    private long tensorDataOffset;
+
+    public static GGUF loadModel(Path modelPath) throws IOException {
+        try (FileChannel fileChannel = FileChannel.open(modelPath); var ignored = Timer.log("Parse " + modelPath)) {
+            GGUF gguf = new GGUF();
+            gguf.loadModelImpl(fileChannel);
+            return gguf;
+        }
+    }
+
+    public static Map<String, GGMLTensorEntry> loadTensors(FileChannel fileChannel, long tensorDataOffset, Map<String, GGUFTensorInfo> tensorInfos) throws IOException {
+        Arena arena = Arena.ofAuto();
+        MemorySegment tensorData = fileChannel.map(FileChannel.MapMode.READ_ONLY, tensorDataOffset, fileChannel.size() - tensorDataOffset, arena);
+        Map<String, GGMLTensorEntry> tensorEntries = HashMap.newHashMap(tensorInfos.size());
+        for (Map.Entry<String, GGUFTensorInfo> entry : tensorInfos.entrySet()) {
+            GGUFTensorInfo ti = entry.getValue();
+            int numberOfElements = FloatTensor.numberOfElements(ti.dimensions());
+            int sizeInBytes = Math.toIntExact(ti.ggmlType().byteSizeFor(numberOfElements));
+            MemorySegment memorySegment = tensorData.asSlice(ti.offset(), sizeInBytes);
+            tensorEntries.put(ti.name(), new GGMLTensorEntry(tensorData, ti.name(), ti.ggmlType(), ti.dimensions(), memorySegment));
+        }
+        return tensorEntries;
+    }
 
     public Map<String, GGUFTensorInfo> getTensorInfos() {
         return tensorInfos;
     }
-
-    private Map<String, GGUFTensorInfo> tensorInfos;
-
-    private long tensorDataOffset;
 
     public long getTensorDataOffset() {
         return tensorDataOffset;
@@ -44,20 +67,6 @@ public final class GGUF {
 
     public Map<String, Object> getMetadata() {
         return metadata;
-    }
-
-    private final ByteBuffer BB_1 = ByteBuffer.allocate(Byte.BYTES).order(ByteOrder.LITTLE_ENDIAN);
-    private final ByteBuffer BB_2 = ByteBuffer.allocate(Short.BYTES).order(ByteOrder.LITTLE_ENDIAN);
-    private final ByteBuffer BB_4 = ByteBuffer.allocate(Integer.BYTES).order(ByteOrder.LITTLE_ENDIAN);
-    private final ByteBuffer BB_8 = ByteBuffer.allocate(Long.BYTES).order(ByteOrder.LITTLE_ENDIAN);
-
-    public static GGUF loadModel(Path modelPath) throws IOException {
-        try (FileChannel fileChannel = FileChannel.open(modelPath);
-                var ignored = Timer.log("Parse " + modelPath)) {
-            GGUF gguf = new GGUF();
-            gguf.loadModelImpl(fileChannel);
-            return gguf;
-        }
     }
 
     private void loadModelImpl(FileChannel fileChannel) throws IOException {
@@ -88,25 +97,6 @@ public final class GGUF {
         // should be padded to `ALIGNMENT` bytes.
         // uint8_t tensor_data[];
         this.tensorDataOffset = fileChannel.position();
-    }
-
-    public static Map<String, GGMLTensorEntry> loadTensors(FileChannel fileChannel, long tensorDataOffset, Map<String, GGUFTensorInfo> tensorInfos) throws IOException {
-        Arena arena = Arena.ofAuto();
-        MemorySegment tensorData = arena.allocate(fileChannel.size(), 1);
-        fileChannel.read(tensorData.asByteBuffer(), (int) tensorDataOffset);
-
-        Map<String, com.example.core.model.tensor.GGMLTensorEntry> tensorEntries = HashMap.newHashMap(tensorInfos.size());
-        for (Map.Entry<String, GGUFTensorInfo> entry : tensorInfos.entrySet()) {
-            GGUFTensorInfo ti = entry.getValue();
-            int numberOfElements = FloatTensor.numberOfElements(ti.dimensions());
-            int sizeInBytes = Math.toIntExact(ti.ggmlType().byteSizeFor(numberOfElements));
-            MemorySegment memorySegment = tensorData.asSlice(ti.offset(), sizeInBytes);
-            tensorEntries.put(ti.name(), new GGMLTensorEntry(tensorData, ti.name(), ti.ggmlType(), ti.dimensions(), memorySegment));
-        }
-        return tensorEntries;
-    }
-
-    public record GGUFTensorInfo(String name, int[] dimensions, GGMLType ggmlType, long offset) {
     }
 
     private GGMLType readGGMLType(FileChannel fileChannel) throws IOException {
@@ -333,5 +323,8 @@ public final class GGUF {
         alignment = (int) metadata.getOrDefault("general.alignment", DEFAULT_ALIGNMENT);
         assert Integer.bitCount(alignment) == 1 : "alignment must be a power of two";
         return alignment;
+    }
+
+    public record GGUFTensorInfo(String name, int[] dimensions, GGMLType ggmlType, long offset) {
     }
 }
