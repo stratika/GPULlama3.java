@@ -2,17 +2,8 @@
 
 ### Core Numerical Optimizations
 - **Quantized Weight Support**
-  - Optimized implementations for Q8_0 and Q4_0 formats
-  - Block-based quantization with FP16 scale per 32-element block
-- **Vectorized Matrix Operations**
-  - Uses vector parallelism with configurable unroll factors
-  - Processes 4 elements at once with vectorization
-- **Loop Unrolling**
-  - Strategic unrolling for performance (16x factor in matrix operations)
-  - Reduces branch penalties and improves instruction-level parallelism
-- **Fused Multiply-Add (FMA)**
-  - Uses fused operations for better numerical precision and performance
-  - Optimizes dot product calculations
+  - Optimized implementations for FP16 format
+  - [*Experimental*] support for Q8 and Q4 with dequantize to FP16 
 
 ### Memory and Caching Optimizations
 - **Key-Value Cache**
