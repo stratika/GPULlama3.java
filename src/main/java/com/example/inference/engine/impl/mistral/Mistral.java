@@ -20,13 +20,12 @@ import java.util.Scanner;
 import java.util.Set;
 import java.util.function.IntConsumer;
 
+import static com.example.LlamaApp.USE_TORNADOVM;
+
 /**
  * Llama class in mistral.java
  */
 public record Mistral(MistralConfiguration configuration, Tokenizer tokenizer, Weights weights) implements Model {
-
-    /* For explicit use */
-    private MistralTokenizer getAsMistralTokenizer() { return (MistralTokenizer) tokenizer; }
 
     static void rmsnorm(FloatTensor out, FloatTensor x, FloatBuffer weight, int size, float rmsNormEps) {
         // calculate sum of squares
@@ -163,15 +162,20 @@ public record Mistral(MistralConfiguration configuration, Tokenizer tokenizer, W
         return state.logits;
     }
 
+    /* For explicit use */
+    private MistralTokenizer getAsMistralTokenizer() {
+        return (MistralTokenizer) tokenizer;
+    }
+
     @Override
-    public List<Integer> generateTokensGPU(State state, int startPosition, List<Integer> promptTokens, Set<Integer> stopTokens,
-                                           int maxTokens, Sampler sampler, boolean echo, IntConsumer onTokenGenerated, TornadoVMMasterPlan tornadoVMPlan) {
+    public List<Integer> generateTokensGPU(State state, int startPosition, List<Integer> promptTokens, Set<Integer> stopTokens, int maxTokens, Sampler sampler, boolean echo,
+            IntConsumer onTokenGenerated, TornadoVMMasterPlan tornadoVMPlan) {
         throw new UnsupportedOperationException("Mistral.generateTokensGPU is not implemented yet");
     }
 
     @Override
-    public List<Integer> generateTokens(State state, int startPosition, List<Integer> promptTokens, Set<Integer> stopTokens,
-                                        int maxTokens, Sampler sampler, boolean echo, IntConsumer onTokenGenerated) {
+    public List<Integer> generateTokens(State state, int startPosition, List<Integer> promptTokens, Set<Integer> stopTokens, int maxTokens, Sampler sampler, boolean echo,
+            IntConsumer onTokenGenerated) {
         long startNanos = System.nanoTime();
         if (maxTokens < 0 || configuration.contextLength() < maxTokens) {
             maxTokens = configuration.contextLength();
@@ -248,14 +252,15 @@ public record Mistral(MistralConfiguration configuration, Tokenizer tokenizer, W
             }
             conversationTokens.addAll(chatFormat.encodeMessage(userText, true, true));
             Set<Integer> stopTokens = chatFormat.getStopTokens();
-            List<Integer> responseTokens = generateTokens(state, startPosition, conversationTokens.subList(startPosition, conversationTokens.size()), stopTokens, options.maxTokens(), sampler, options.echo(), token -> {
-                if (options.stream()) {
-                    int tokenType = mistralTokenizer.getTokenType(token);
-                    if (tokenType == 1 || tokenType == 6) {
-                        System.out.print(mistralTokenizer.decode(List.of(token)));
-                    }
-                }
-            });
+            List<Integer> responseTokens = generateTokens(state, startPosition, conversationTokens.subList(startPosition, conversationTokens.size()), stopTokens, options.maxTokens(), sampler,
+                    options.echo(), token -> {
+                        if (options.stream()) {
+                            int tokenType = mistralTokenizer.getTokenType(token);
+                            if (tokenType == 1 || tokenType == 6) {
+                                System.out.print(mistralTokenizer.decode(List.of(token)));
+                            }
+                        }
+                    });
             // Include stop token in the prompt history, but not in the response displayed to the user.
             conversationTokens.addAll(responseTokens);
             startPosition = conversationTokens.size();
@@ -288,15 +293,26 @@ public record Mistral(MistralConfiguration configuration, Tokenizer tokenizer, W
             promptTokens.addAll(chatFormat.encodeMessage(options.prompt(), true, true));
         }
 
+          List<Integer> responseTokens;
         Set<Integer> stopTokens = chatFormat.getStopTokens();
-        List<Integer> responseTokens = generateTokens(state, 0, promptTokens, stopTokens, options.maxTokens(), sampler, options.echo(), token -> {
+        IntConsumer tokenConsumer = token -> {
             if (options.stream()) {
                 int tokenType = mistralTokenizer.getTokenType(token);
                 if (tokenType == 1 || tokenType == 6) {
                     System.out.print(mistralTokenizer.decode(List.of(token)));
                 }
             }
-        });
+        };
+
+        TornadoVMMasterPlan tornadoVMPlan = null;
+        if (USE_TORNADOVM) {
+            tornadoVMPlan = TornadoVMMasterPlan.initializeTornadoVMPlan(state, this);
+            // Call generateTokensGPU without the token consumer parameter
+            responseTokens = generateTokensGPU(state, 0, promptTokens, stopTokens, options.maxTokens(), sampler, options.echo(), options.stream() ? tokenConsumer : null, tornadoVMPlan);
+        } else {
+            responseTokens = generateTokens(state, 0, promptTokens, stopTokens, options.maxTokens(), sampler, options.echo(), tokenConsumer);
+        }
+
         if (!responseTokens.isEmpty() && stopTokens.contains(responseTokens.getLast())) {
             responseTokens.removeLast();
         }

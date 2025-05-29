@@ -1,8 +1,8 @@
 package com.example.tornadovm;
 
 import com.example.auxiliary.Tuple2;
-import com.example.inference.engine.impl.llama.LlamaConfiguration;
-import com.example.inference.engine.impl.llama.Llama;
+import com.example.inference.engine.impl.Configuration;
+import com.example.inference.engine.impl.Model;
 import com.example.loader.weights.State;
 import uk.ac.manchester.tornado.api.GridScheduler;
 import uk.ac.manchester.tornado.api.ImmutableTaskGraph;
@@ -17,12 +17,12 @@ public class TornadoVMMasterPlan {
     private static final boolean ENABLE_TORNADOVM_INIT_TIME = Boolean.parseBoolean(System.getProperty("llama.EnableTimingForTornadoVMInit", "False"));
 
     private final State state;
-    private final LlamaConfiguration config;
+    private final Configuration config;
     public GridScheduler scheduler;
     public TornadoExecutionPlan executionPlan;
     List<ImmutableTaskGraph> taskGraphs;
 
-    public TornadoVMMasterPlan(State state, Llama model, boolean isNvidia) {
+    public TornadoVMMasterPlan(State state, Model model, boolean isNvidia) {
         TornadoVMLayerPlanner tornadoVMLayerPlanner = new TornadoVMLayerPlanner(state, model);
         Tuple2<List<ImmutableTaskGraph>, GridScheduler> tornadoVMPlan = isNvidia ? tornadoVMLayerPlanner.setupTornadoForwardPlanLayered() : tornadoVMLayerPlanner.setupTornadoForwardPlanLayeredNonNvidia();
         this.taskGraphs = tornadoVMPlan.getFirst();
@@ -43,7 +43,7 @@ public class TornadoVMMasterPlan {
      * @param model The Llama model instance
      * @return The initialized TornadoVMMasterPlan ready for inference
      */
-    public static TornadoVMMasterPlan initializeTornadoVMPlan(State state, Llama model) {
+    public static TornadoVMMasterPlan initializeTornadoVMPlan(State state, Model model) {
         // Initialize timing variables outside conditional blocks to avoid scope issues
         long startTime = System.nanoTime();
         long planCreationTime = 0;

@@ -1,6 +1,8 @@
 package com.example.tornadovm;
 
 import com.example.auxiliary.Tuple2;
+import com.example.inference.engine.impl.Configuration;
+import com.example.inference.engine.impl.Model;
 import com.example.inference.engine.impl.llama.LlamaConfiguration;
 import com.example.inference.engine.impl.llama.Llama;
 import com.example.loader.weights.State;
@@ -49,7 +51,7 @@ import java.util.List;
         private static final int THREAD_SCALE_FOR_LOGITS = 8;
 
     private final State state;
-    private final LlamaConfiguration config;
+    private final Configuration config;
     private final Weights weights;
     private final KernelContext context;
 
@@ -61,7 +63,7 @@ import java.util.List;
          * @param model
          *         The Llama model instance containing configuration and weights
          */
-        public TornadoVMLayerPlanner(State state, Llama model) {
+        public TornadoVMLayerPlanner(State state, Model model) {
             this.state = state;
             this.config = model.configuration();
             this.weights = model.weights();

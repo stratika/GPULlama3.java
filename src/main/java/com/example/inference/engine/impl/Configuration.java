@@ -32,4 +32,7 @@ public interface Configuration {
     /** Size of each attention head (derived from dim / numberOfHeads) */
     int headSize();
 
+    int kvDim();
+
+    int kvMul();
 }
