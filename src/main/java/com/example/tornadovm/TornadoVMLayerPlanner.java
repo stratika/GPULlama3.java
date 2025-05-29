@@ -184,11 +184,8 @@ import java.util.List;
         // @formatter:on
         private TaskGraph configureQuantizedMatrixVectorFinalWeight(TaskGraph logits) {
             switch (weights.weightType) {
+                case F16:
                 case Q8_0:
-                    logits.task("projection", TransformerComputeKernelsLayered::matrixVectorGeneric,  //
-                            context, state.wrapX, state.wrapLogits, weights.wclsHalfFloat, //
-                            config.dim, config.vocabularySize, LOCAL_WORK_GROUP_SIZE_ALLOC * THREAD_SCALE_FOR_LOGITS); //
-                    break;
                 case Q4_0:
                     logits.task("projection", TransformerComputeKernelsLayered::matrixVectorGeneric,  //
                             context, state.wrapX, state.wrapLogits, weights.wclsHalfFloat, //
