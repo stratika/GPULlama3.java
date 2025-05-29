@@ -1,5 +1,6 @@
 ### 🚧 Work-in-progress Features
 
+- [ ] **LangChain4j integration**
 - [ ] **Additional quantization formats**
   - [ ] Q8 
   - [ ] Q4
@@ -19,5 +20,4 @@
   - [ ] Multi-GPU support
   - [X] Memory-efficient attention mechanisms
   - [ ] More Kernel fusion improvements
-- [ ] **LangChain4j integration**
 - [ ] **GraalVM Native Image**
