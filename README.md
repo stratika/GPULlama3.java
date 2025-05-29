@@ -47,13 +47,20 @@ This table shows inference performance across different hardware and quantizatio
 |:----------------------------:|:------------:|:---------------------:|:---------------------:|:---------------------:|:-------------:|
 |                              |              | **Q8_0**              | **Q4_0**              | **Q4_0**              |  **Support**  |
 | **NVIDIA / OpenCL-PTX**      | RTX 3070     | 52 tokens/s           | 50.56 tokens/s        | 22.96 tokens/s        |       ✅      |
-|                              | RTX 4090     | 66.07 tokens/s        | 65.81 tokens/s        | 35.51 tokens/s         |       ✅      |
+|                              | RTX 4090     | 66.07 tokens/s        | 65.81 tokens/s        | 35.51 tokens/s        |       ✅      |
 |                              | RTX 5090     | 96.65 tokens/s        | 94.71 tokens/s        | 47.68 tokens/s        |       ✅      |
-|                              | H100         | XXXX tokens/s         | XXXX tokens/s         | XXXX tokens/s         |       ✅      |
+|                              | L4 Tensor    | 52.96 tokens/s        | 52.92 tokens/s        | 22.68 tokens/s        |       ✅      |
 | **Intel / OpenCL**           | Arc A770     | 15.65 tokens/s        | 15.09 tokens/s        | 7.02 tokens/s         |      (WIP)    |
 | **Apple Silicon / OpenCL**   | M3 Pro       | 14.04 tokens/s        | 13.83 tokens/s        | 6.78 tokens/s         |      (WIP)    |
 |                              | M4 Pro       | 16.77 tokens/s        | 16.67 tokens/s        | 8.56 tokens/s         |      (WIP)    |
 | **AMD / OpenCL**             | Radeon RX    | (WIP)                 | (WIP)                 | (WIP)                 |      (WIP)    |
+
+##### ⚠️ Note on Apple Silicon Performance
+
+TornadoVM currently runs on Apple Silicon via [OpenCL](https://developer.apple.com/opencl/), which has been officially deprecated since macOS 10.14.
+
+Despite being deprecated, OpenCL can still run on Apple Silicon; albeit, with older drivers which do not support all optimizations of TornadoVM. Therefore, the performance is not optimal since TornadoVM does not have a Metal backend yet (it currently has OpenCL, PTX, and SPIR-V backends). We recommend using Mac’s for development and testing performance on OpenCL/PTX compatible Nvidia GPUs for the time being (until we add a Metal backend to TornadoVM and start optimizing it).
+
 
 -----------
 
@@ -385,6 +392,17 @@ llama-tornado --gpu --model Llama-3.2-1B-Instruct-Q8_0.gguf --prompt "tell me a 
 Click [here](https://github.com/beehive-lab/GPULlama3.java/tree/main/docs/TORNADOVM_TRANSFORMER_OPTIMIZATIONS.md) to view a more detailed list of the transformer optimizations implemented in TornadoVM.
 
 Click [here](https://github.com/beehive-lab/GPULlama3.java/tree/main/docs/GPULlama3_ROADMAP.md) to see the roadmap of the project.
+
+-----------
+
+## Acknowledgments
+
+This work is partially funded by the following EU & UKRI grants (most recent first):
+
+- EU Horizon Europe & UKRI [AERO 101092850](https://aero-project.eu/).
+- EU Horizon Europe & UKRI [P2CODE 101093069](https://p2code-project.eu/).
+- EU Horizon Europe & UKRI [ENCRYPT 101070670](https://encrypt-project.eu).
+- EU Horizon Europe & UKRI [TANGO 101070052](https://tango-project.eu).
 
 -----------
 
