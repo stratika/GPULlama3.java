@@ -43,17 +43,17 @@ Previous intergration of TornadoVM and Llama2 it can be found in <a href="https:
 
 This table shows inference performance across different hardware and quantization options.
 
-| Vendor / Backend             | Hardware     | Llama-3.2-1B-Instruct | Llama-3.2-1B-Instruct | Llama-3.2-3B-Instruct | Optimizations |
-|:----------------------------:|:------------:|:---------------------:|:---------------------:|:---------------------:|:-------------:|
-|                              |              | **Q8_0**              | **Q4_0**              | **Q4_0**              |  **Support**  |
-| **NVIDIA / OpenCL-PTX**      | RTX 3070     | 52 tokens/s           | 50.56 tokens/s        | 22.96 tokens/s        |       ✅      |
-|                              | RTX 4090     | 66.07 tokens/s        | 65.81 tokens/s        | 35.51 tokens/s        |       ✅      |
-|                              | RTX 5090     | 96.65 tokens/s        | 94.71 tokens/s        | 47.68 tokens/s        |       ✅      |
-|                              | L4 Tensor    | 52.96 tokens/s        | 52.92 tokens/s        | 22.68 tokens/s        |       ✅      |
-| **Intel / OpenCL**           | Arc A770     | 15.65 tokens/s        | 15.09 tokens/s        | 7.02 tokens/s         |      (WIP)    |
-| **Apple Silicon / OpenCL**   | M3 Pro       | 14.04 tokens/s        | 13.83 tokens/s        | 6.78 tokens/s         |      (WIP)    |
-|                              | M4 Pro       | 16.77 tokens/s        | 16.67 tokens/s        | 8.56 tokens/s         |      (WIP)    |
-| **AMD / OpenCL**             | Radeon RX    | (WIP)                 | (WIP)                 | (WIP)                 |      (WIP)    |
+| Vendor / Backend             | Hardware     | Llama-3.2-1B-Instruct | Llama-3.2-3B-Instruct | Optimizations |
+|:----------------------------:|:------------:|:---------------------:|:---------------------:|:-------------:|
+|                              |              | **FP16**              |       **FP16**        |  **Support**  |
+| **NVIDIA / OpenCL-PTX**      | RTX 3070     | 52 tokens/s           |    22.96 tokens/s     |       ✅      |
+|                              | RTX 4090     | 66.07 tokens/s        |    35.51 tokens/s     |       ✅      |
+|                              | RTX 5090     | 96.65 tokens/s        |    47.68 tokens/s     |       ✅      |
+|                              | L4 Tensor    | 52.96 tokens/s        |    22.68 tokens/s     |       ✅      |
+| **Intel / OpenCL**           | Arc A770     | 15.65 tokens/s        |     7.02 tokens/s     |      (WIP)    |
+| **Apple Silicon / OpenCL**   | M3 Pro       | 14.04 tokens/s        |     6.78 tokens/s     |      (WIP)    |
+|                              | M4 Pro       | 16.77 tokens/s        |     8.56 tokens/s     |      (WIP)    |
+| **AMD / OpenCL**             | Radeon RX    | (WIP)                 |         (WIP)         |      (WIP)    |
 
 ##### ⚠️ Note on Apple Silicon Performance
 
@@ -118,42 +118,46 @@ source set_paths
 make
 
 # Run the model (make sure you have downloaded the model file first -  see below)
-./llama-tornado --gpu  --verbose-init --opencl --model Llama-3.2-1B-Instruct-Q4_0.gguf --prompt "tell me a joke"
+./llama-tornado --gpu  --verbose-init --opencl --model beehive-llama-3.2-1b-instruct-fp16.gguf --prompt "tell me a joke"
 ```
 -----------
 
-The above model can we swapped with one of the other models, such as `Llama-3.2-3B-Instruct-Q4_0.gguf` or `Meta-Llama-3-8B-Instruct-Q4_0.gguf`, depending on your needs.
+The above model can we swapped with one of the other models, such as `beehive-llama-3.2-3b-instruct-fp16.gguf` or `beehive-llama-3.2-8b-instruct-fp16.gguf`, depending on your needs.
 Check models below.
 
 ## Download Model Files
 
-Download `Q4_0` and (optionally) `Q8_0` quantized .gguf files from:
-- https://huggingface.co/mukel/Llama-3.2-1B-Instruct-GGUF
-- https://huggingface.co/mukel/Llama-3.2-3B-Instruct-GGUF
-- https://huggingface.co/mukel/Meta-Llama-3.1-8B-Instruct-GGUF
-- https://huggingface.co/mukel/Meta-Llama-3-8B-Instruct-GGUF
+Download `FP16` quantized .gguf files from:
+- https://huggingface.co/beehive-lab/Llama-3.2-1B-Instruct-GGUF-FP16
+- https://huggingface.co/beehive-lab/Llama-3.2-3B-Instruct-GGUF-FP16
+- https://huggingface.co/beehive-lab/Llama-3.2-8B-Instruct-GGUF-FP16
 
-The `Q4_0` quantized models are recommended, except for the very small models (1B), please be gentle with [huggingface.co](https://huggingface.co) servers:
+Please be gentle with [huggingface.co](https://huggingface.co) servers:
+
+**Note** FP16 models are first-class citizens for the current version.
+```
+# Llama 3.2 (1B) - FP16
+wget https://huggingface.co/beehive-lab/Llama-3.2-1B-Instruct-GGUF-FP16/resolve/main/beehive-llama-3.2-1b-instruct-fp16.gguf
+
+# Llama 3.2 (3B) - FP16 
+wget https://huggingface.co/beehive-lab/Llama-3.2-3B-Instruct-GGUF-FP16/resolve/main/beehive-llama-3.2-3b-instruct-fp16.gguf
+
+# Llama 3 (8B) - FP16 
+wget https://huggingface.co/beehive-lab/Llama-3.2-8B-Instruct-GGUF-FP16/resolve/main/beehive-llama-3.2-8b-instruct-fp16.gguf
+```
+
+**[Experimental]** you can download the Q8 and Q4 used in the original implementation of Llama3.java, but for now are going to be dequanted to FP16 for TornadoVM support:
 ```
 # Llama 3.2 (1B) - Q4_0
 curl -L -O https://huggingface.co/mukel/Llama-3.2-1B-Instruct-GGUF/resolve/main/Llama-3.2-1B-Instruct-Q4_0.gguf
-
 # Llama 3.2 (3B) - Q4_0 
 curl -L -O https://huggingface.co/mukel/Llama-3.2-3B-Instruct-GGUF/resolve/main/Llama-3.2-3B-Instruct-Q4_0.gguf
-
 # Llama 3 (8B) - Q4_0 
 curl -L -O https://huggingface.co/mukel/Meta-Llama-3-8B-Instruct-GGUF/resolve/main/Meta-Llama-3-8B-Instruct-Q4_0.gguf
-
 # Llama 3.2 (1B) - Q8_0 
 curl -L -O https://huggingface.co/mukel/Llama-3.2-1B-Instruct-GGUF/resolve/main/Llama-3.2-1B-Instruct-Q8_0.gguf
-
 # Llama 3.1 (8B) - Q8_0 
 curl -L -O https://huggingface.co/mukel/Meta-Llama-3.1-8B-Instruct-GGUF/resolve/main/Meta-Llama-3.1-8B-Instruct-Q4_0.gguf
-
-# Llama 3 (8B) - Q8_0
-# Optionally download the Q8_0 quantized models
-# curl -L -O https://huggingface.co/mukel/Meta-Llama-3-8B-Instruct-GGUF/resolve/main/Meta-Llama-3-8B-Instruct-Q8_0.gguf
-# curl -L -O https://huggingface.co/mukel/Meta-Llama-3.1-8B-Instruct-GGUF/resolve/main/Meta-Llama-3.1-8B-Instruct-Q8_0.gguf
 ```
 
 -----------
@@ -168,18 +172,13 @@ To execute Llama3 models with TornadoVM on GPUs use the `llama-tornado` script w
 Run a model with a text prompt:
 
 ```bash
-./llama-tornado --gpu --verbose-init --opencl --model Llama-3.2-1B-Instruct-Q8_0.gguf --prompt "Explain the benefits of GPU acceleration."
+./llama-tornado --gpu --verbose-init --opencl --model beehive-llama-3.2-1b-instruct-fp16.gguf --prompt "Explain the benefits of GPU acceleration."
 ```
 
-#### GPU Execution (Q8_0 Model)
+#### GPU Execution (FP16 Model)
 Enable GPU acceleration with Q8_0 quantization:
 ```bash
-llama-tornado --gpu  --verbose-init --model Llama-3.2-1B-Instruct-Q8_0.gguf --prompt "tell me a joke"
-```
-#### GPU Execution (Q4_0 Model)
-Run with Q4_0 quantization for lower memory usage:
-```bash
-llama-tornado --gpu  --verbose-init --model Llama-3.2-1B-Instruct-Q4_0.gguf --prompt "tell me a joke"
+llama-tornado --gpu  --verbose-init --model beehive-llama-3.2-1b-instruct-fp16.gguf --prompt "tell me a joke"
 ```
 
 -----------
@@ -188,7 +187,7 @@ llama-tornado --gpu  --verbose-init --model Llama-3.2-1B-Instruct-Q4_0.gguf --pr
 
 ### Out of Memory Error
 
-You may encounter an out of memory error like:
+You may encounter an out-of-memory error like:
 ```
 Exception in thread "main" uk.ac.manchester.tornado.api.exceptions.TornadoOutOfMemoryException: Unable to allocate 100663320 bytes of memory.
 To increase the maximum device memory, use -Dtornado.device.memory=<X>GB
@@ -202,10 +201,10 @@ First, check your GPU specifications. If your GPU has high memory capacity, you 
 
 ```bash
 # For 3B models, try increasing to 15GB
-./llama-tornado --gpu --model Llama-3.2-3B-Instruct-Q4_0.gguf --prompt "Tell me a joke" --gpu-memory 15GB
+./llama-tornado --gpu --model beehive-llama-3.2-3b-instruct-fp16.gguf --prompt "Tell me a joke" --gpu-memory 15GB
 
 # For 8B models, you may need even more (20GB or higher)
-./llama-tornado --gpu --model Meta-Llama-3-8B-Instruct-Q4_0.gguf --prompt "Tell me a joke" --gpu-memory 20GB
+./llama-tornado --gpu --model beehive-llama-3.2-8b-instruct-fp16.gguf --prompt "Tell me a joke" --gpu-memory 20GB
 ```
 
 ### GPU Memory Requirements by Model Size
@@ -320,7 +319,7 @@ This flag shows the exact Java command with all JVM flags that are being invoked
 Hence, it makes it simple to replicate or embed the invoked flags in any external tool or codebase.
 
 ```bash
-llama-tornado --gpu --model Llama-3.2-1B-Instruct-Q8_0.gguf --prompt "tell me a joke" --show-command
+llama-tornado --gpu --model beehive-llama-3.2-1b-instruct-fp16.gguf --prompt "tell me a joke" --show-command
 ```
 
 <details>
@@ -363,7 +362,7 @@ llama-tornado --gpu --model Llama-3.2-1B-Instruct-Q8_0.gguf --prompt "tell me a 
     --add-modules ALL-SYSTEM,tornado.runtime,tornado.annotation,tornado.drivers.common,tornado.drivers.opencl \
     -cp /home/mikepapadim/repos/gpu-llama3.java/target/gpu-llama3-1.0-SNAPSHOT.jar \
     com.example.LlamaApp \
-    -m Llama-3.2-1B-Instruct-Q8_0.gguf \
+    -m beehive-llama-3.2-1b-instruct-fp16.gguf \
     --temperature 0.1 \
     --top-p 0.95 \
     --seed 1746903566 \
