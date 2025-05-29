@@ -17,10 +17,12 @@
 <td style="width: 40%; vertical-align: middle; border: none;">
 <img src="docs/java-tornado-gpu.jpg" width="100%">
 </td>
-<td style="vertical-align: middle; padding-left: 20px; border: none;">
-Integration of <strong>Llama3 models</strong> with <strong>TornadoVM</strong> to enable accelerated inference on Java using GPUs and CPUs. This project allows you to run Llama3 inference efficiently, leveraging TornadoVM's parallel computing features for enhanced performance.
+<td style="vertical-align: middle; padding-left: 20px; border: none;">  
+<strong>Llama3</strong> models written in <strong>native Java</strong> automatically accelerated on GPUs with <strong>TornadoVM</strong>.
+This project allows you to run Llama3 inference efficiently, leveraging TornadoVM's parallel computing features for enhanced performance.
+
 <br><br>
-This project builds on <a href="https://github.com/mukel/llama3.java">Llama3.java</a>, based on the original <a href="https://github.com/meta-llama/llama3">Llama 3</a>, <a href="https://llama.meta.com/docs/model-cards-and-prompt-formats/llama3_1">3.1</a>, and <a href="https://ai.meta.com/blog/llama-3-2-connect-2024-vision-edge-mobile-devices/">3.2</a> models, with TornadoVM support for parallelism and hardware acceleration.
+Builds on <a href="https://github.com/mukel/llama3.java">Llama3.java</a>, based on the original <a href="https://github.com/meta-llama/llama3">Llama 3</a>, <a href="https://llama.meta.com/docs/model-cards-and-prompt-formats/llama3_1">3.1</a>, and <a href="https://ai.meta.com/blog/llama-3-2-connect-2024-vision-edge-mobile-devices/">3.2</a> models, with TornadoVM support for parallelism and hardware acceleration.
 <br><br>
 Thanks to <a href="https://github.com/mukel">Alfonso² Peterssen</a> for the original implementation of Llama3.java.
 <br><br>
@@ -41,7 +43,15 @@ Previous intergration of TornadoVM and Llama2 it can be found in <a href="https:
 
 ### TornadoVM-Accelerated Inference Performance and Optimization Status
 
-This table shows inference performance across different hardware and quantization options.
+We are at the early stages of Java entering the AI world with features added to the JVM that enable faster execution such as GPU acceleration, Vector acceleration, high-performance access to off-heap memory and others.
+<br><br>This repository provides the first Java-native implementation of Llama3 that automatically compiles and executes Java code on GPUs via TornadoVM. 
+The baseline numbers presented below provide a solid starting point for achieving more competitive performance compared to llama.cpp or native CUDA implementations. 
+[Our roadmap](https://github.com/beehive-lab/GPULlama3.java/blob/main/docs/GPULlama3_ROADMAP.md) provides the upcoming set of features that will dramatically improve the numbers below with the clear target being to achieve performance parity with the fastest implementations. 
+<br><br>
+If you achieve additional performance data points (e.g. new hardware or platforms) please let us know to add them below. 
+<br><br>
+In addition, if you are interested to learn more about the challenges of managed programming languages and GPU acceleration, you can read [our book](https://link.springer.com/book/10.1007/978-3-031-49559-5) or consult the [TornadoVM educational pages](https://www.tornadovm.org/resources). 
+
 
 | Vendor / Backend             | Hardware     | Llama-3.2-1B-Instruct | Llama-3.2-3B-Instruct | Optimizations |
 |:----------------------------:|:------------:|:---------------------:|:---------------------:|:-------------:|
