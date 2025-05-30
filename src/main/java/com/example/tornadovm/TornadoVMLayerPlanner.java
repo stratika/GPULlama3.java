@@ -1,10 +1,8 @@
 package com.example.tornadovm;
 
 import com.example.auxiliary.Tuple2;
-import com.example.inference.engine.impl.Configuration;
-import com.example.inference.engine.impl.Model;
-import com.example.inference.engine.impl.llama.LlamaConfiguration;
-import com.example.inference.engine.impl.llama.Llama;
+import com.example.model.Configuration;
+import com.example.model.Model;
 import com.example.loader.weights.State;
 import com.example.loader.weights.Weights;
 import uk.ac.manchester.tornado.api.GridScheduler;

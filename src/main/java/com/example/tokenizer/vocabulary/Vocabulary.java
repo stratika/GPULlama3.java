@@ -1,5 +1,6 @@
 package com.example.tokenizer.vocabulary;
 
+import java.util.Arrays;
 import java.util.Map;
 import java.util.OptionalInt;
 import java.util.stream.Collectors;
@@ -47,5 +48,18 @@ public record Vocabulary(String[] tokens, float[] scores, Map<String, Integer> t
      */
     public float getScore(int tokenIndex) {
         return scores[tokenIndex];
+    }
+
+    @Override
+    public String toString() {
+        StringBuilder sb = new StringBuilder();
+        sb.append("Vocabulary:\n");
+        sb.append("Tokens: ").append(Arrays.toString(tokens)).append("\n");
+        sb.append("Scores: ").append(Arrays.toString(scores)).append("\n");
+        sb.append("Token to Index Map:\n");
+        tokenToIndex.forEach((token, index) ->
+                sb.append("  ").append(token).append(" -> ").append(index).append("\n")
+        );
+        return sb.toString();
     }
 }

@@ -40,6 +40,7 @@ public class MistralChatFormat implements ChatFormat {
         this.middle = specialTokens.getOrDefault("[MIDDLE]", unknownToken);
     }
 
+    @Override
     public int getBeginOfText() { return beginOfText; }
 
     public Set<Integer> getStopTokens() {

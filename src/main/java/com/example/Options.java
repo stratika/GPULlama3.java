@@ -1,4 +1,4 @@
-package com.example.inference.engine.impl;
+package com.example;
 
 import java.io.PrintStream;
 import java.nio.file.Path;

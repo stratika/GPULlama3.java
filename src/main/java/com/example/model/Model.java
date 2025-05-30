@@ -1,6 +1,8 @@
-package com.example.inference.engine.impl;
+package com.example.model;
 
 import com.example.inference.Sampler;
+import com.example.Options;
+import com.example.loader.weights.ModelLoader.ModelType;
 import com.example.loader.weights.State;
 import com.example.loader.weights.Weights;
 import com.example.tokenizer.impl.Tokenizer;
@@ -14,6 +16,8 @@ public interface Model {
     Configuration configuration();
     Tokenizer tokenizer();
     Weights weights();
+
+    ModelType getModelType();
 
     List<Integer> generateTokensGPU(State state, int startPosition, List<Integer> promptTokens, Set<Integer> stopTokens,
                                     int maxTokens, Sampler sampler, boolean echo, IntConsumer onTokenGenerated, TornadoVMMasterPlan tornadoVMPlan);

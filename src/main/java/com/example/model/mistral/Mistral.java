@@ -1,12 +1,13 @@
-package com.example.inference.engine.impl.mistral;
+package com.example.model.mistral;
 
 import com.example.auxiliary.Parallel;
 import com.example.auxiliary.format.MistralChatFormat;
 import com.example.core.model.tensor.FloatTensor;
 import com.example.inference.Sampler;
-import com.example.inference.engine.impl.Configuration;
-import com.example.inference.engine.impl.Model;
-import com.example.inference.engine.impl.Options;
+import com.example.model.Configuration;
+import com.example.model.Model;
+import com.example.Options;
+import com.example.loader.weights.ModelLoader;
 import com.example.loader.weights.State;
 import com.example.loader.weights.Weights;
 import com.example.tokenizer.impl.MistralTokenizer;
@@ -26,6 +27,9 @@ import static com.example.LlamaApp.USE_TORNADOVM;
  * Llama class in mistral.java
  */
 public record Mistral(MistralConfiguration configuration, Tokenizer tokenizer, Weights weights) implements Model {
+
+    /* For explicit use */
+    private MistralTokenizer getAsMistralTokenizer() { return (MistralTokenizer) tokenizer; }
 
     static void rmsnorm(FloatTensor out, FloatTensor x, FloatBuffer weight, int size, float rmsNormEps) {
         // calculate sum of squares
@@ -162,20 +166,20 @@ public record Mistral(MistralConfiguration configuration, Tokenizer tokenizer, W
         return state.logits;
     }
 
-    /* For explicit use */
-    private MistralTokenizer getAsMistralTokenizer() {
-        return (MistralTokenizer) tokenizer;
+    @Override
+    public ModelLoader.ModelType getModelType() {
+        return ModelLoader.ModelType.MISTRAL;
     }
 
     @Override
-    public List<Integer> generateTokensGPU(State state, int startPosition, List<Integer> promptTokens, Set<Integer> stopTokens, int maxTokens, Sampler sampler, boolean echo,
-            IntConsumer onTokenGenerated, TornadoVMMasterPlan tornadoVMPlan) {
+    public List<Integer> generateTokensGPU(State state, int startPosition, List<Integer> promptTokens, Set<Integer> stopTokens,
+                                           int maxTokens, Sampler sampler, boolean echo, IntConsumer onTokenGenerated, TornadoVMMasterPlan tornadoVMPlan) {
         throw new UnsupportedOperationException("Mistral.generateTokensGPU is not implemented yet");
     }
 
     @Override
-    public List<Integer> generateTokens(State state, int startPosition, List<Integer> promptTokens, Set<Integer> stopTokens, int maxTokens, Sampler sampler, boolean echo,
-            IntConsumer onTokenGenerated) {
+    public List<Integer> generateTokens(State state, int startPosition, List<Integer> promptTokens, Set<Integer> stopTokens,
+                                        int maxTokens, Sampler sampler, boolean echo, IntConsumer onTokenGenerated) {
         long startNanos = System.nanoTime();
         if (maxTokens < 0 || configuration.contextLength() < maxTokens) {
             maxTokens = configuration.contextLength();
@@ -282,9 +286,8 @@ public record Mistral(MistralConfiguration configuration, Tokenizer tokenizer, W
 
     @Override
     public void runInstructOnce(Sampler sampler, Options options) {
-        MistralTokenizer mistralTokenizer = getAsMistralTokenizer();
         State state = createNewState();
-        MistralChatFormat chatFormat = new MistralChatFormat(mistralTokenizer);
+        MistralChatFormat chatFormat = new MistralChatFormat(getAsMistralTokenizer());
         List<Integer> promptTokens = new ArrayList<>();
         promptTokens.add(chatFormat.getBeginOfText());
         if (options.suffix() != null) {
@@ -297,9 +300,9 @@ public record Mistral(MistralConfiguration configuration, Tokenizer tokenizer, W
         Set<Integer> stopTokens = chatFormat.getStopTokens();
         IntConsumer tokenConsumer = token -> {
             if (options.stream()) {
-                int tokenType = mistralTokenizer.getTokenType(token);
+                int tokenType = getAsMistralTokenizer().getTokenType(token);
                 if (tokenType == 1 || tokenType == 6) {
-                    System.out.print(mistralTokenizer.decode(List.of(token)));
+                    System.out.print(tokenizer.decode(List.of(token)));
                 }
             }
         };
@@ -317,7 +320,7 @@ public record Mistral(MistralConfiguration configuration, Tokenizer tokenizer, W
             responseTokens.removeLast();
         }
         if (!options.stream()) {
-            String responseText = mistralTokenizer.decode(responseTokens);
+            String responseText = tokenizer.decode(responseTokens);
             System.out.println(responseText);
         }
     }

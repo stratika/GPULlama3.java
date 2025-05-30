@@ -13,8 +13,10 @@ import java.util.regex.Pattern;
  * <a href="https://github.com/openai/gpt-2/blob/master/src/encoder.py">GPT 2 tokenizer</a>
  */
 public class MistralTokenizer implements Tokenizer {
+    // general fields
     private final Pattern compiledPattern;
     private final Vocabulary vocabulary;
+    // model-specific fields
     private final Map<String, Integer> specialTokens;
     private final int[] tokenType;
     private final int byte0;

@@ -10,14 +10,14 @@ import java.util.Set;
 
 public class LlamaChatFormat implements ChatFormat {
 
-    final LlamaTokenizer tokenizer;
-    public final int beginOfText;
-    final int endHeader;
-    final int startHeader;
-    final int endOfTurn;
-    final int endOfText;
-    final int endOfMessage;
-    final Set<Integer> stopTokens;
+    protected final LlamaTokenizer tokenizer;
+    protected final int beginOfText;
+    protected final int endHeader;
+    protected final int startHeader;
+    protected final int endOfTurn;
+    protected final int endOfText;
+    protected final int endOfMessage;
+    protected final Set<Integer> stopTokens;
 
     public LlamaChatFormat(LlamaTokenizer tokenizer) {
         this.tokenizer = tokenizer;
@@ -67,6 +67,11 @@ public class LlamaChatFormat implements ChatFormat {
             tokens.addAll(this.encodeHeader(new LlamaChatFormat.Message(LlamaChatFormat.Role.ASSISTANT, "")));
         }
         return tokens;
+    }
+
+    @Override
+    public int getBeginOfText() {
+        return beginOfText;
     }
 
     public record Message(LlamaChatFormat.Role role, String content) {

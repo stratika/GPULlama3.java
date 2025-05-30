@@ -2,7 +2,7 @@ package com.example.loader.weights;
 
 import com.example.core.model.tensor.ArrayFloatTensor;
 import com.example.core.model.tensor.FloatTensor;
-import com.example.inference.engine.impl.Configuration;
+import com.example.model.Configuration;
 import uk.ac.manchester.tornado.api.types.arrays.FloatArray;
 import uk.ac.manchester.tornado.api.types.arrays.IntArray;
 

@@ -11,8 +11,10 @@ import java.util.stream.Collectors;
 import java.util.stream.IntStream;
 
 public class LlamaTokenizer implements Tokenizer {
+    // general fields
     private final Pattern compiledPattern;
     private final Vocabulary vocabulary;
+    // model-specific fields
     private final Map<Pair<Integer, Integer>, Integer> merges;
     private final Map<String, Integer> specialTokens;
 
@@ -23,10 +25,12 @@ public class LlamaTokenizer implements Tokenizer {
         return compiledPattern.pattern();
     }
 
+    @Override
     public Map<String, Integer> getSpecialTokens() {
         return specialTokens;
     }
 
+    @Override
     public boolean isSpecialToken(int tokenIndex) {
         return specialTokens.containsValue(tokenIndex);
     }
@@ -220,6 +224,7 @@ public class LlamaTokenizer implements Tokenizer {
         return encodeImpl(sb.toString());
     }
 
+    @Override
     public List<Integer> encodeAsList(String text) {
         StringBuilder sb = new StringBuilder();
         byte[] bytes = text.getBytes(StandardCharsets.UTF_8);
@@ -229,6 +234,7 @@ public class LlamaTokenizer implements Tokenizer {
         return Arrays.stream(encodeImpl(sb.toString())).boxed().toList();
     }
 
+    @Override
     public String decode(List<Integer> tokens) {
         String decoded = decodeImpl(tokens);
         int[] decodedBytesAsInts = decoded.codePoints().map(BYTE_DECODER::get).toArray();

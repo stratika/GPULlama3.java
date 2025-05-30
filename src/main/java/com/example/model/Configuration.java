@@ -1,4 +1,4 @@
-package com.example.inference.engine.impl;
+package com.example.model;
 
 public interface Configuration {
 

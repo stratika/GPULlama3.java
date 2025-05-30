@@ -1,6 +1,6 @@
-package com.example.inference.engine.impl.mistral;
+package com.example.model.mistral;
 
-import com.example.inference.engine.impl.Configuration;
+import com.example.model.Configuration;
 
 public record MistralConfiguration(int dim, int hiddenDim, int numberOfLayers, int numberOfHeads, int numberOfKeyValueHeads, int vocabularySize, int contextLength, boolean sharedWeights,
                                    float rmsNormEps, float ropeTheta) implements Configuration {

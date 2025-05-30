@@ -1,6 +1,6 @@
-package com.example.inference.engine.impl.llama;
+package com.example.model.llama;
 
-import com.example.inference.engine.impl.Configuration;
+import com.example.model.Configuration;
 
 public record LlamaConfiguration(
         int dim, int hiddenDim, int numberOfLayers, int numberOfHeads,

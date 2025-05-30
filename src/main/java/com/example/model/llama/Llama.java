@@ -1,12 +1,13 @@
-package com.example.inference.engine.impl.llama;
+package com.example.model.llama;
 
 import com.example.auxiliary.Parallel;
 import com.example.auxiliary.format.LlamaChatFormat;
 import com.example.core.model.tensor.FloatTensor;
 import com.example.inference.Sampler;
-import com.example.inference.engine.impl.Configuration;
-import com.example.inference.engine.impl.Model;
-import com.example.inference.engine.impl.Options;
+import com.example.model.Configuration;
+import com.example.model.Model;
+import com.example.Options;
+import com.example.loader.weights.ModelLoader;
 import com.example.loader.weights.State;
 import com.example.loader.weights.Weights;
 import com.example.tokenizer.impl.LlamaTokenizer;
@@ -208,6 +209,11 @@ public record Llama(LlamaConfiguration configuration, Tokenizer tokenizer, Weigh
     }
 
     @Override
+    public ModelLoader.ModelType getModelType() {
+        return ModelLoader.ModelType.LLAMA_3;
+    }
+
+    @Override
     public List<Integer> generateTokensGPU(State state, int startPosition, List<Integer> promptTokens, Set<Integer> stopTokens,
                                            int maxTokens, Sampler sampler, boolean echo, IntConsumer onTokenGenerated, TornadoVMMasterPlan tornadoVMPlan) {
         // === Setup and Initialization ===
@@ -299,7 +305,13 @@ public record Llama(LlamaConfiguration configuration, Tokenizer tokenizer, Weigh
 
     @Override
     public List<Integer> generateTokens(State state,
-                                        int startPosition, List<Integer> promptTokens, Set<Integer> stopTokens, int maxTokens, Sampler sampler, boolean echo, IntConsumer onTokenGenerated) {
+                                        int startPosition,
+                                        List<Integer> promptTokens,
+                                        Set<Integer> stopTokens,
+                                        int maxTokens,
+                                        Sampler sampler,
+                                        boolean echo,
+                                        IntConsumer onTokenGenerated) {
         // Initialize TornadoVM plan if enabled
 
         // Start timing the whole process
@@ -395,7 +407,7 @@ public record Llama(LlamaConfiguration configuration, Tokenizer tokenizer, Weigh
         State state = null;
         List<Integer> conversationTokens = new ArrayList<>();
         LlamaChatFormat chatFormat = new LlamaChatFormat(getAsLlamaTokenizer());
-        conversationTokens.add(chatFormat.beginOfText);
+        conversationTokens.add(chatFormat.getBeginOfText());
         if (options.systemPrompt() != null) {
             conversationTokens.addAll(chatFormat.encodeMessage(new LlamaChatFormat.Message(LlamaChatFormat.Role.SYSTEM, options.systemPrompt())));
         }
@@ -490,7 +502,7 @@ public record Llama(LlamaConfiguration configuration, Tokenizer tokenizer, Weigh
         TornadoVMMasterPlan tornadoVMPlan =null;
 
         List<Integer> promptTokens = new ArrayList<>();
-        promptTokens.add(chatFormat.beginOfText);
+        promptTokens.add(chatFormat.getBeginOfText());
         if (options.systemPrompt() != null) {
             promptTokens.addAll(chatFormat.encodeMessage(new LlamaChatFormat.Message(LlamaChatFormat.Role.SYSTEM, options.systemPrompt())));
         }

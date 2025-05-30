@@ -4,4 +4,6 @@ import com.example.tokenizer.impl.Tokenizer;
 
 public interface ChatFormat {
 
+    int getBeginOfText();
+
 }

@@ -3,9 +3,9 @@ package com.example.aot;
 import com.example.auxiliary.Timer;
 import com.example.core.model.GGUF;
 import com.example.core.model.tensor.GGMLTensorEntry;
-import com.example.inference.engine.impl.Model;
-import com.example.inference.engine.impl.Options;
-import com.example.inference.engine.impl.llama.Llama;
+import com.example.model.Model;
+import com.example.Options;
+import com.example.model.llama.Llama;
 import com.example.loader.weights.ModelLoader;
 import com.example.loader.weights.Weights;
 
