@@ -5,12 +5,6 @@
 ![CUDA](https://img.shields.io/badge/CUDA/PTX-supported-76B900?style=for-the-badge&logo=nvidia)
 [![GPULlama3.java DeepWiki](https://deepwiki.com/badge.svg)](https://deepwiki.com/beehive-lab/GPULlama3.java)
 
-[//]: # (![Last Commit]&#40;https://img.shields.io/github/last-commit/beehive-lab/GPULlama3.java?style=for-the-badge&#41;)
-
-[//]: # (![Stars]&#40;https://img.shields.io/github/stars/beehive-lab//GPULlama3.java?style=social&#41;)
-
-[//]: # (![Forks]&#40;https://img.shields.io/github/forks/beehive-lab//GPULlama3.java?style=social&#41;)
-
 -----------
 <table style="border: none;">
 <tr style="border: none;">
