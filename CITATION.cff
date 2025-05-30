@@ -1,0 +1,20 @@
+cff-version: 1.2.0
+message: "If you use this software, please cite it as below."
+authors:
+- family-names: "Papadimitriou"
+  given-names: "Michail"
+- family-names: "Xekalaki"
+  given-names: "Mary"
+- family-names: "Fumero"
+  given-names: "Juan"
+- family-names: "Stratikopolos"
+  given-names: "Athanasios"
+- family-names: "Papadakis"
+  given-names: "Orion"
+- family-names: "Kotselidis"
+  given-names: "Christos"
+title: "GPULlama3.java"
+license: MIT License
+version: 0.1.0-beta
+date-released: 30-05-25
+url: "https://github.com/beehive-lab/GPULlama3.java"
