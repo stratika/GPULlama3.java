@@ -51,11 +51,14 @@ public record Llama(LlamaConfiguration configuration, Tokenizer tokenizer, Weigh
     public void runInteractive(Sampler sampler, Options options) {
         State state = null;
         List<Integer> conversationTokens = new ArrayList<>();
+
         LlamaChatFormat chatFormat = new LlamaChatFormat(getAsLlamaTokenizer());
         conversationTokens.add(chatFormat.getBeginOfText());
+
         if (options.systemPrompt() != null) {
             conversationTokens.addAll(chatFormat.encodeMessage(new LlamaChatFormat.Message(LlamaChatFormat.Role.SYSTEM, options.systemPrompt())));
         }
+
         int startPosition = 0;
         Scanner in = new Scanner(System.in);
 
@@ -71,6 +74,8 @@ public record Llama(LlamaConfiguration configuration, Tokenizer tokenizer, Weigh
                     break;
                 }
                 if (state == null) {
+                    // State allocation can take some time for large context sizes,
+                    // allocate the model state only after printing the user '>' prompt.
                     state = createNewState();
                 }
 
@@ -85,8 +90,8 @@ public record Llama(LlamaConfiguration configuration, Tokenizer tokenizer, Weigh
                 List<Integer> responseTokens;
                 IntConsumer tokenConsumer = token -> {
                     if (options.stream()) {
-                        if (!tokenizer().isSpecialToken(token)) {
-                            System.out.print(tokenizer().decode(List.of(token)));
+                        if (!tokenizer.isSpecialToken(token)) {
+                            System.out.print(tokenizer.decode(List.of(token)));
                         }
                     }
                 };
@@ -113,7 +118,7 @@ public record Llama(LlamaConfiguration configuration, Tokenizer tokenizer, Weigh
                     responseTokens.removeLast();
                 }
                 if (!options.stream()) {
-                    String responseText = tokenizer().decode(responseTokens);
+                    String responseText = tokenizer.decode(responseTokens);
                     System.out.println(responseText);
                 }
                 if (stopToken == null) {
@@ -143,10 +148,11 @@ public record Llama(LlamaConfiguration configuration, Tokenizer tokenizer, Weigh
     public void runInstructOnce(Sampler sampler, Options options) {
         State state = createNewState();
         LlamaChatFormat chatFormat = new LlamaChatFormat(getAsLlamaTokenizer());
-        TornadoVMMasterPlan tornadoVMPlan =null;
+        TornadoVMMasterPlan tornadoVMPlan = null;
 
         List<Integer> promptTokens = new ArrayList<>();
         promptTokens.add(chatFormat.getBeginOfText());
+
         if (options.systemPrompt() != null) {
             promptTokens.addAll(chatFormat.encodeMessage(new LlamaChatFormat.Message(LlamaChatFormat.Role.SYSTEM, options.systemPrompt())));
         }

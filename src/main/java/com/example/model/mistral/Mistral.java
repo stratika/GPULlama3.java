@@ -48,51 +48,87 @@ public record Mistral(MistralConfiguration configuration, Tokenizer tokenizer, W
 
     @Override
     public void runInteractive(Sampler sampler, Options options) {
-        MistralTokenizer mistralTokenizer = getAsMistralTokenizer();
         State state = null;
-        MistralChatFormat chatFormat = new MistralChatFormat(getAsMistralTokenizer());
         List<Integer> conversationTokens = new ArrayList<>();
+
+        MistralChatFormat chatFormat = new MistralChatFormat(getAsMistralTokenizer());
         conversationTokens.add(chatFormat.getBeginOfText());
+
         int startPosition = 0;
         Scanner in = new Scanner(System.in);
-        while (true) {
-            System.out.print("> ");
-            System.out.flush();
-            if (state == null) {
-                // State allocation can take some time for large context sizes,
-                // allocate the model state only after printing the user '>' prompt.
-                state = createNewState();
-            }
-            String userText = in.nextLine();
-            if (List.of("quit", "exit").contains(userText)) {
-                break;
-            }
-            conversationTokens.addAll(chatFormat.encodeMessage(userText, true, true));
-            Set<Integer> stopTokens = chatFormat.getStopTokens();
-            List<Integer> responseTokens = generateTokens(state, startPosition, conversationTokens.subList(startPosition, conversationTokens.size()), stopTokens, options.maxTokens(), sampler,
-                    options.echo(), token -> {
-                        if (options.stream()) {
-                            int tokenType = mistralTokenizer.getTokenType(token);
-                            if (tokenType == 1 || tokenType == 6) {
-                                System.out.print(mistralTokenizer.decode(List.of(token)));
-                            }
+
+        // Initialize TornadoVM plan once at the beginning if GPU path is enabled
+        TornadoVMMasterPlan tornadoVMPlan = null;
+
+        try {
+            while (true) {
+                System.out.print("> ");
+                System.out.flush();
+                String userText = in.nextLine();
+                if (List.of("quit", "exit").contains(userText)) {
+                    break;
+                }
+                if (state == null) {
+                    // State allocation can take some time for large context sizes,
+                    // allocate the model state only after printing the user '>' prompt.
+                    state = createNewState();
+                }
+
+                if (USE_TORNADOVM && tornadoVMPlan == null) {
+                    tornadoVMPlan = TornadoVMMasterPlan.initializeTornadoVMPlan(state, this);
+                }
+
+                conversationTokens.addAll(chatFormat.encodeMessage(userText, true, true));
+                Set<Integer> stopTokens = chatFormat.getStopTokens();
+
+                List<Integer> responseTokens;
+                IntConsumer tokenConsumer = token -> {
+                    if (options.stream()) {
+                        if (!tokenizer.isSpecialToken(token)) {
+                            System.out.print(tokenizer.decode(List.of(token)));
                         }
-                    });
-            // Include stop token in the prompt history, but not in the response displayed to the user.
-            conversationTokens.addAll(responseTokens);
-            startPosition = conversationTokens.size();
-            Integer stopToken = null;
-            if (!responseTokens.isEmpty() && stopTokens.contains(responseTokens.getLast())) {
-                stopToken = responseTokens.getLast();
-                responseTokens.removeLast();
+                    }
+                };
+
+                // Choose between GPU and CPU path based on configuration
+                if (USE_TORNADOVM) {
+                    // GPU path using TornadoVM
+                    responseTokens = InferenceEngine.generateTokensGPU(this, state, startPosition,
+                            conversationTokens.subList(startPosition, conversationTokens.size()), stopTokens,
+                            options.maxTokens(), sampler, options.echo(), options.stream() ? tokenConsumer : null, tornadoVMPlan);
+                } else {
+                    // CPU path
+                    responseTokens = InferenceEngine.generateTokens(this, state, startPosition,
+                            conversationTokens.subList(startPosition, conversationTokens.size()), stopTokens,
+                            options.maxTokens(), sampler, options.echo(), tokenConsumer);
+                }
+
+                // Include stop token in the prompt history, but not in the response displayed to the user.
+                conversationTokens.addAll(responseTokens);
+                startPosition = conversationTokens.size();
+                Integer stopToken = null;
+                if (!responseTokens.isEmpty() && stopTokens.contains(responseTokens.getLast())) {
+                    stopToken = responseTokens.getLast();
+                    responseTokens.removeLast();
+                }
+                if (!options.stream()) {
+                    String responseText = tokenizer.decode(responseTokens);
+                    System.out.println(responseText);
+                }
+                if (stopToken == null) {
+                    System.err.println("Ran out of context length...\n Increase context length with by passing to llama-tornado --max-tokens XXX");
+                    break;
+                }
+                System.out.print("\n");
             }
-            if (!options.stream()) {
-                String responseText = mistralTokenizer.decode(responseTokens);
-                System.out.println(responseText);
-            }
-            if (stopToken == null) {
-                System.err.println("Ran out of context length...");
-                break;
+        } finally {
+            // Clean up TornadoVM resources when exiting the chat loop
+            if (USE_TORNADOVM && tornadoVMPlan != null) {
+                try {
+                    tornadoVMPlan.freeTornadoExecutionPlan();
+                } catch (Exception e) {
+                    System.err.println("Error while cleaning up TornadoVM resources: " + e.getMessage());
+                }
             }
         }
     }
@@ -101,8 +137,11 @@ public record Mistral(MistralConfiguration configuration, Tokenizer tokenizer, W
     public void runInstructOnce(Sampler sampler, Options options) {
         State state = createNewState();
         MistralChatFormat chatFormat = new MistralChatFormat(getAsMistralTokenizer());
+        TornadoVMMasterPlan tornadoVMPlan = null;
+
         List<Integer> promptTokens = new ArrayList<>();
         promptTokens.add(chatFormat.getBeginOfText());
+
         if (options.suffix() != null) {
             promptTokens.addAll(chatFormat.encodeFillInTheMiddle(options.prompt(), options.suffix()));
         } else {
@@ -120,7 +159,6 @@ public record Mistral(MistralConfiguration configuration, Tokenizer tokenizer, W
             }
         };
 
-        TornadoVMMasterPlan tornadoVMPlan = null;
         if (USE_TORNADOVM) {
             tornadoVMPlan = TornadoVMMasterPlan.initializeTornadoVMPlan(state, this);
             // Call generateTokensGPU without the token consumer parameter
@@ -140,5 +178,9 @@ public record Mistral(MistralConfiguration configuration, Tokenizer tokenizer, W
         }
 
         LastRunMetrics.printMetrics();
+
+        if (tornadoVMPlan != null) {
+            tornadoVMPlan.freeTornadoExecutionPlan();
+        }
     }
 }
