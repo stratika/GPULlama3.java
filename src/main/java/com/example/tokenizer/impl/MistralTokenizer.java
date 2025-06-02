@@ -7,10 +7,20 @@ import java.util.*;
 import java.util.regex.Pattern;
 
 /**
- * Byte Pair Encoding tokenizer.
+ * TikToken-style BPE tokenizer with byte fallback.
  * <p>
- * Based on <a href="https://github.com/karpathy/minbpe">minbpe</a>, algorithmically follows along the
- * <a href="https://github.com/openai/gpt-2/blob/master/src/encoder.py">GPT 2 tokenizer</a>
+ * TikToken-style:
+ * A Byte Pair Encoding (BPE) strategy that converts text to UTF-8 bytes.
+ * Frequent pairs of bytes (or tokens) are merged according to a learned vocabulary.
+ * This reduces long words into common subwords or whole-word tokens.
+ * If a word or character isn't found, it falls back to byte-level tokens.
+ * <p>
+ * Byte fallback:
+ * A fail-safe mechanism.
+ * It ensures every byte has a token, so any input (even unknown words, misspellings, foreign languages, emojis, or binary) can be tokenized.
+ * If a token is not found in the merges or vocabulary, it will fall back to the individual byte.
+ * Each byte is wrapped as a special token like <0xF0> — these are part of the tokenizer’s extended vocabulary.
+ * This guarantees reversibility: every string can be tokenized and decoded back exactly.
  */
 public class MistralTokenizer implements Tokenizer {
     // general fields

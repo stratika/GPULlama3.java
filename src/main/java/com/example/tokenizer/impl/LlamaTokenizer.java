@@ -10,6 +10,21 @@ import java.util.regex.Pattern;
 import java.util.stream.Collectors;
 import java.util.stream.IntStream;
 
+/**
+ * GPT-2-style BPE tokenizer (even though it's called "llama") with an explicit merges list.
+ * <p>
+ * BPE (Byte Pair Encoding):
+ * A sub-word tokenization algorithm that iteratively merges the most frequent pairs of symbols in a corpus to build a vocabulary of common character sequences.
+ * <p>
+ * GPT-2-style tokenization:
+ * Applies BPE at the byte level, ensuring all UTF-8 inputs are representable and using tokens that preserve leading spaces (e.g., 'Ġthe').
+ * <p>
+ * Explicit merges list:
+ * A fixed sequence of learned merge rules that deterministically reconstructs the tokenizer’s vocabulary during inference without retraining.
+ * <p>
+ * Based on <a href="https://github.com/karpathy/minbpe">minbpe</a>, algorithmically follows along the
+ * <a href="https://github.com/openai/gpt-2/blob/master/src/encoder.py">GPT 2 tokenizer</a>
+ */
 public class LlamaTokenizer implements Tokenizer {
     // general fields
     private final Pattern compiledPattern;
