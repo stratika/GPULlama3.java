@@ -2,9 +2,9 @@ package com.example;
 
 import com.example.aot.AOT;
 import com.example.core.model.tensor.FloatTensor;
-import com.example.inference.CategoricalSampler;
-import com.example.inference.Sampler;
-import com.example.inference.ToppSampler;
+import com.example.inference.sampler.CategoricalSampler;
+import com.example.inference.sampler.Sampler;
+import com.example.inference.sampler.ToppSampler;
 import com.example.model.Model;
 import com.example.loader.weights.ModelLoader;
 import com.example.tornadovm.FloatArrayUtils;

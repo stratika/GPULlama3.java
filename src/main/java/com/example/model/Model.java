@@ -1,6 +1,6 @@
 package com.example.model;
 
-import com.example.inference.Sampler;
+import com.example.inference.sampler.Sampler;
 import com.example.Options;
 import com.example.loader.weights.ModelLoader.ModelType;
 import com.example.loader.weights.State;
