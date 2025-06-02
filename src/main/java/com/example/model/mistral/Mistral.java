@@ -1,6 +1,7 @@
 package com.example.model.mistral;
 
 import com.example.auxiliary.Parallel;
+import com.example.auxiliary.LastRunMetrics;
 import com.example.auxiliary.format.MistralChatFormat;
 import com.example.core.model.tensor.FloatTensor;
 import com.example.model.Configuration;
@@ -323,5 +324,7 @@ public record Mistral(MistralConfiguration configuration, Tokenizer tokenizer, W
             String responseText = tokenizer.decode(responseTokens);
             System.out.println(responseText);
         }
+
+        LastRunMetrics.printMetrics();
     }
 }

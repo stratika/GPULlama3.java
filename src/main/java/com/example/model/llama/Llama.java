@@ -1,7 +1,8 @@
 package com.example.model.llama;
 
-import com.example.auxiliary.Parallel;
+import com.example.auxiliary.LastRunMetrics;
 import com.example.auxiliary.format.LlamaChatFormat;
+import com.example.auxiliary.Parallel;
 import com.example.core.model.tensor.FloatTensor;
 import com.example.model.Configuration;
 import com.example.inference.sampler.Sampler;
@@ -480,7 +481,7 @@ public record Llama(LlamaConfiguration configuration, Tokenizer tokenizer, Weigh
 
                 // Optionally print performance metrics after each response
                 if (SHOW_PERF_INTERACTIVE) {
-                    Llama.LastRunMetrics.printMetrics();
+                    LastRunMetrics.printMetrics();
                 }
             }
         } finally {
@@ -538,42 +539,10 @@ public record Llama(LlamaConfiguration configuration, Tokenizer tokenizer, Weigh
             System.out.println(responseText);
         }
 
-        Llama.LastRunMetrics.printMetrics();
+        LastRunMetrics.printMetrics();
 
         if (tornadoVMPlan != null) {
             tornadoVMPlan.freeTornadoExecutionPlan();
-        }
-    }
-
-    /**
-     * Record to store metrics from the last model run.
-     * @param totalTokens The total number of tokens processed
-     * @param totalSeconds The total time in seconds
-     */
-    public record LastRunMetrics(int totalTokens, double totalSeconds) {
-        /**
-         * Singleton instance to store the latest metrics
-         */
-        private static LastRunMetrics latestMetrics;
-
-        /**
-         * Sets the metrics for the latest run
-         *
-         * @param tokens The total number of tokens processed
-         * @param seconds The total time in seconds
-         */
-        public static void setMetrics(int tokens, double seconds) {
-            latestMetrics = new LastRunMetrics(tokens, seconds);
-        }
-
-        /**
-         * Prints the metrics from the latest run to stderr
-         */
-        public static void printMetrics() {
-            if (latestMetrics != null) {
-                double tokensPerSecond = latestMetrics.totalTokens() / latestMetrics.totalSeconds();
-                System.err.printf("\n\nachieved tok/s: %.2f. Tokens: %d, seconds: %.2f\n", tokensPerSecond, latestMetrics.totalTokens(), latestMetrics.totalSeconds());
-            }
         }
     }
 
