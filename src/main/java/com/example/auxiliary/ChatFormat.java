@@ -1,4 +1,4 @@
-package com.example.aux;
+package com.example.auxiliary;
 
 import com.example.tokenizer.impl.Tokenizer;
 

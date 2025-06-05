@@ -1,7 +1,7 @@
 package com.example;
 
 import com.example.aot.AOT;
-import com.example.aux.ChatFormat;
+import com.example.auxiliary.ChatFormat;
 import com.example.core.model.tensor.FloatTensor;
 import com.example.inference.CategoricalSampler;
 import com.example.inference.Sampler;

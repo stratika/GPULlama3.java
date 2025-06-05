@@ -1,4 +1,4 @@
-package com.example.aux;
+package com.example.auxiliary;
 
 import java.util.function.IntConsumer;
 import java.util.function.LongConsumer;

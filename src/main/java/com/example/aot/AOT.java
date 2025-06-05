@@ -1,6 +1,6 @@
 package com.example.aot;
 
-import com.example.aux.Timer;
+import com.example.auxiliary.Timer;
 import com.example.core.model.GGUF;
 import com.example.core.model.tensor.GGMLTensorEntry;
 import com.example.inference.engine.impl.Llama;
