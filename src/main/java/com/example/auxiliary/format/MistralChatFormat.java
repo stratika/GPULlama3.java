@@ -23,7 +23,7 @@ public class MistralChatFormat implements ChatFormat {
 
     public MistralChatFormat(MistralTokenizer tokenizer) {
         this.tokenizer = tokenizer;
-        Map<String, Integer> specialTokens = this.tokenizer.getSpecialTokens();
+        Map<String, Integer> specialTokens = tokenizer.getSpecialTokens();
         this.unknownToken = specialTokens.get("<unk>");
         this.beginOfText = specialTokens.get("<s>");
         this.endOfText = specialTokens.get("</s>");
@@ -43,8 +43,25 @@ public class MistralChatFormat implements ChatFormat {
     @Override
     public int getBeginOfText() { return beginOfText; }
 
-    public Set<Integer> getStopTokens() {
-        return Set.of(endOfText);
+    @Override
+    public Set<Integer> getStopTokens() { return Set.of(endOfText); }
+
+    @Override
+    public List<Integer> encodeHeader(Message message) {
+        List<Integer> tokens = new ArrayList<>();
+        tokens.add(beginOfInstruction);
+        tokens.addAll(tokenizer.encodeAsList(message.role().name()));
+        tokens.add(endOfInstruction);
+        return tokens;
+    }
+
+    @Override
+    public List<Integer> encodeMessage(Message message) {
+        List<Integer> tokens = encodeHeader(message);
+        //tokens.add(beginOfInstruction);
+        tokens.addAll(tokenizer.encodeAsList(message.content().strip()));
+        tokens.add(endOfInstruction);
+        return tokens;
     }
 
     public List<Integer> encodeMessage(String userMessage, boolean addHeader, boolean addFooter) {

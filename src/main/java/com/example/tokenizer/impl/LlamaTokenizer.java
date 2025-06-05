@@ -50,6 +50,11 @@ public class LlamaTokenizer implements Tokenizer {
         return specialTokens.containsValue(tokenIndex);
     }
 
+    @Override
+    public boolean shouldDisplayToken(int token) {
+        return !isSpecialToken(token);
+    }
+
     public LlamaTokenizer(Vocabulary vocabulary, List<Pair<Integer, Integer>> merges, String regexPattern, Map<String, Integer> specialTokens) {
         this.vocabulary = vocabulary;
         this.compiledPattern = regexPattern != null ? Pattern.compile(regexPattern) : null;

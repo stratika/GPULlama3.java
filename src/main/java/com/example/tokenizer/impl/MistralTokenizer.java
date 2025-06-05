@@ -48,6 +48,12 @@ public class MistralTokenizer implements Tokenizer {
         return getTokenType(tokenIndex) != 1;
     }
 
+    @Override
+    public boolean shouldDisplayToken(int token) {
+        int tokenType = getTokenType(token);
+        return tokenType == 1 || tokenType == 6;
+    }
+
     public int getTokenType(int tokenIndex) {
         return tokenType[tokenIndex];
     }
