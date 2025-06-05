@@ -168,7 +168,7 @@ public final class ModelLoader {
 
             Weights weights = null;
             if (loadWeights) {
-                Map<String, GGMLTensorEntry> tensorEntries = GGUF.loadTensorsWithMapping(fileChannel, gguf.getTensorDataOffset(), gguf.getTensorInfos());
+                Map<String, GGMLTensorEntry> tensorEntries = GGUF.loadTensors(fileChannel, gguf.getTensorDataOffset(), gguf.getTensorInfos());
                 weights = loadWeights(tensorEntries, config);
             }
             return new Mistral(config, tokenizer, weights);

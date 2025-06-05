@@ -1,7 +1,7 @@
 package com.example.model;
 
-import com.example.aux.LastRunMetrics;
-import com.example.aux.format.ChatFormat;
+import com.example.auxiliary.LastRunMetrics;
+import com.example.auxiliary.format.ChatFormat;
 import com.example.inference.InferenceEngine;
 import com.example.inference.sampler.Sampler;
 import com.example.Options;
@@ -130,5 +130,60 @@ public interface Model {
             }
         }
     }
-    void runInstructOnce(Sampler sampler, Options options);
+
+    /**
+     * Model agnostic default implementation for instruct mode.
+     * @param sampler
+     * @param options
+     */
+    default void runInstructOnce(Sampler sampler, Options options) {
+        State state = createNewState();
+        ChatFormat chatFormat = ChatFormat.create(tokenizer());
+        TornadoVMMasterPlan tornadoVMPlan = null;
+
+        List<Integer> promptTokens = new ArrayList<>();
+        promptTokens.add(chatFormat.getBeginOfText());
+
+        if (options.systemPrompt() != null) {
+            promptTokens.addAll(chatFormat.encodeMessage(new ChatFormat.Message(ChatFormat.Role.SYSTEM, options.systemPrompt())));
+        }
+        promptTokens.addAll(chatFormat.encodeMessage(new ChatFormat.Message(ChatFormat.Role.USER, options.prompt())));
+        promptTokens.addAll(chatFormat.encodeHeader(new ChatFormat.Message(ChatFormat.Role.ASSISTANT, "")));
+
+        List<Integer> responseTokens;
+
+        IntConsumer tokenConsumer = token -> {
+            if (options.stream()) {
+                if (tokenizer().shouldDisplayToken(token)) {
+                    System.out.print(tokenizer().decode(List.of(token)));
+                }
+            }
+        };
+
+        Set<Integer> stopTokens = chatFormat.getStopTokens();
+
+        if (USE_TORNADOVM) {
+            tornadoVMPlan = TornadoVMMasterPlan.initializeTornadoVMPlan(state, this);
+            // Call generateTokensGPU without the token consumer parameter
+            responseTokens = InferenceEngine.generateTokensGPU(this, state, 0, promptTokens, stopTokens,
+                    options.maxTokens(), sampler, options.echo(), options.stream() ? tokenConsumer : null, tornadoVMPlan);
+        } else {
+            responseTokens = InferenceEngine.generateTokens(this, state, 0, promptTokens, stopTokens,
+                    options.maxTokens(), sampler, options.echo(), tokenConsumer);
+        }
+
+        if (!responseTokens.isEmpty() && stopTokens.contains(responseTokens.getLast())) {
+            responseTokens.removeLast();
+        }
+        if (!options.stream()) {
+            String responseText = tokenizer().decode(responseTokens);
+            System.out.println(responseText);
+        }
+
+        LastRunMetrics.printMetrics();
+
+        if (tornadoVMPlan != null) {
+            tornadoVMPlan.freeTornadoExecutionPlan();
+        }
+    }
 }

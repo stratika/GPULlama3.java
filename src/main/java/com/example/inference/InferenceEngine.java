@@ -1,6 +1,6 @@
 package com.example.inference;
 
-import com.example.aux.LastRunMetrics;
+import com.example.auxiliary.LastRunMetrics;
 import com.example.inference.sampler.Sampler;
 import com.example.loader.weights.State;
 import com.example.model.Configuration;
