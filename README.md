@@ -91,7 +91,10 @@ cd GPULlama3.java
 
 # Update the submodules to match the exact commit point recorded in this repository
 git submodule update --recursive
+```
 
+#### On Linux or macOS
+```bash
 # Enter the TornadoVM submodule directory
 cd external/tornadovm
 
@@ -110,9 +113,6 @@ source setvars.sh
 # Navigate back to the project root directory
 cd ../../
 
-# Make the llama-tornado script executable
-chmod +x llama-tornado
-
 # Source the project-specific environment paths -> this will ensure the correct paths are set for the project and the TornadoVM SDK
 # Expect to see: [INFO] Environment configured for Llama3 with TornadoVM at: /home/YOUR_PATH_TO_TORNADOVM
 source set_paths
@@ -123,6 +123,39 @@ make
 
 # Run the model (make sure you have downloaded the model file first -  see below)
 ./llama-tornado --gpu  --verbose-init --opencl --model beehive-llama-3.2-1b-instruct-fp16.gguf --prompt "tell me a joke"
+```
+
+#### On Windows
+```bash
+# Enter the TornadoVM submodule directory
+cd external/tornadovm
+
+# Optional: Create and activate a Python virtual environment if needed
+python -m venv .venv
+.venv\Scripts\activate.bat
+.\bin\windowsMicrosoftStudioTools2022.cmd
+
+# Install TornadoVM with a supported JDK 21 and select the backends (--backend opencl,ptx).
+# To see the compatible JDKs run: ./bin/tornadovm-installer --listJDKs
+# For example, to install with OpenJDK 21 and build the OpenCL backend, run: 
+python bin\tornadovm-installer --jdk jdk21 --backend opencl
+
+# Source the TornadoVM environment variables
+setvars.cmd
+
+# Navigate back to the project root directory
+cd ../../
+
+# Source the project-specific environment paths -> this will ensure the correct paths are set for the project and the TornadoVM SDK
+# Expect to see: [INFO] Environment configured for Llama3 with TornadoVM at: C:\Users\YOUR_PATH_TO_TORNADOVM
+set_paths.cmd
+
+# Build the project using Maven (skip tests for faster build)
+# mvn clean package -DskipTests or just make
+make
+
+# Run the model (make sure you have downloaded the model file first -  see below)
+python llama-tornado --gpu  --verbose-init --opencl --model beehive-llama-3.2-1b-instruct-fp16.gguf --prompt "tell me a joke"
 ```
 -----------
 
@@ -182,7 +215,7 @@ Run a model with a text prompt:
 #### GPU Execution (FP16 Model)
 Enable GPU acceleration with Q8_0 quantization:
 ```bash
-llama-tornado --gpu  --verbose-init --model beehive-llama-3.2-1b-instruct-fp16.gguf --prompt "tell me a joke"
+./llama-tornado --gpu  --verbose-init --model beehive-llama-3.2-1b-instruct-fp16.gguf --prompt "tell me a joke"
 ```
 
 -----------
