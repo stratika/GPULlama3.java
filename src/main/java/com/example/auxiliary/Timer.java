@@ -1,4 +1,4 @@
-package com.example.aux;
+package com.example.auxiliary;
 
 import java.util.concurrent.TimeUnit;
 

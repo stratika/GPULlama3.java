@@ -1,6 +1,6 @@
 package com.example.inference.engine.impl;
 
-import com.example.aux.Parallel;
+import com.example.auxiliary.Parallel;
 import com.example.core.model.tensor.FloatTensor;
 import com.example.inference.Sampler;
 import com.example.loader.weights.State;

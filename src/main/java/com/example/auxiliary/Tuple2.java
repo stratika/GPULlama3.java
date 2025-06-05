@@ -1,4 +1,4 @@
-package com.example.aux;
+package com.example.auxiliary;
 
 public class Tuple2<T, U> {
     private final T first;

@@ -1,6 +1,6 @@
 package com.example.core.model.tensor;
 
-import com.example.aux.Parallel;
+import com.example.auxiliary.Parallel;
 import com.example.core.model.GGMLType;
 import jdk.incubator.vector.FloatVector;
 import jdk.incubator.vector.VectorShape;

@@ -1,6 +1,6 @@
 package com.example.tornadovm;
 
-import com.example.aux.Tuple2;
+import com.example.auxiliary.Tuple2;
 import com.example.inference.engine.impl.Configuration;
 import com.example.inference.engine.impl.Llama;
 import com.example.loader.weights.State;

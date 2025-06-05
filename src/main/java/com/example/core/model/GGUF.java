@@ -1,6 +1,6 @@
 package com.example.core.model;
 
-import com.example.aux.Timer;
+import com.example.auxiliary.Timer;
 import com.example.core.model.tensor.FloatTensor;
 import com.example.core.model.tensor.GGMLTensorEntry;
 import com.example.core.types.MetadataValueType;

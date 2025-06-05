@@ -1,7 +1,7 @@
 package com.example.loader.weights;
 
 import com.example.LlamaApp;
-import com.example.aux.Timer;
+import com.example.auxiliary.Timer;
 import com.example.core.model.GGMLType;
 import com.example.core.model.GGUF;
 import com.example.core.model.tensor.F16FloatTensor;
