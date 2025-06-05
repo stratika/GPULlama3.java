@@ -227,6 +227,41 @@ class LlamaRunner:
             print(f"Error: {e}")
             return 1
 
+def load_env_from_script():
+    system = platform.system()
+
+    if system == "Windows":
+        # Call set_paths.cmd and capture output as environment
+        result = subprocess.run(
+            ["cmd.exe", "/c", "set_paths.cmd && set"],
+            capture_output=True, text=True, shell=False
+        )
+        if result.returncode != 0:
+            print("Failed to run set_paths.cmd")
+            sys.exit(1)
+
+        # Parse environment variables from output
+        for line in result.stdout.splitlines():
+            if '=' in line:
+                key, value = line.strip().split('=', 1)
+                os.environ[key] = value
+
+    elif system in ("Linux", "Darwin"):
+        # Source the set_paths file and capture env
+        command = ['bash', '-c', 'source ./set_paths && env']
+        result = subprocess.run(command, capture_output=True, text=True)
+        if result.returncode != 0:
+            print("Failed to source set_paths")
+            sys.exit(1)
+
+        for line in result.stdout.splitlines():
+            if '=' in line:
+                key, value = line.strip().split('=', 1)
+                os.environ[key] = value
+    else:
+        print(f"Unsupported OS: {system}")
+        sys.exit(1)
+
 def create_parser() -> argparse.ArgumentParser:
     """Create and configure the argument parser."""
     parser = argparse.ArgumentParser(
@@ -323,6 +358,7 @@ def create_parser() -> argparse.ArgumentParser:
 
 def main():
     """Main entry point."""
+    load_env_from_script()
     parser = create_parser()
     args = parser.parse_args()
 
