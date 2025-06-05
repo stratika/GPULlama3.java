@@ -14,7 +14,6 @@ clean:
 # Package the project without running tests
 package:
 	mvn package -DskipTests
-	. ./set_paths
 
 
 # Combined clean and package

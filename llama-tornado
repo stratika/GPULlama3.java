@@ -9,6 +9,7 @@ import os
 import subprocess
 import sys
 import time
+import platform
 from pathlib import Path
 from typing import List, Optional, Dict, Any
 from enum import Enum
@@ -44,6 +45,11 @@ class LlamaRunner:
                 print(f"Error: {name} path does not exist: {path}")
                 sys.exit(1)
 
+    @staticmethod
+    def module_path_colon_sep(paths: List[str]) -> str:
+        """Return OS-specific separator for Java module paths."""
+        return ";".join(paths) if platform.system() == "Windows" else ":".join(paths)
+
     def _build_base_command(self, args: argparse.Namespace) -> List[str]:
         """Build the base Java command with JVM options."""
         cmd = [
@@ -56,7 +62,7 @@ class LlamaRunner:
             "--enable-preview",
             f"-Djava.library.path={self.tornado_sdk}/lib",
             "-Djdk.module.showModuleResolution=false",
-            "--module-path", f".:{self.tornado_sdk}/share/java/tornado",
+            "--module-path", self.module_path_colon_sep([".", f"{self.tornado_sdk}/share/java/tornado"]),
         ]
 
         # TornadoVM configuration
@@ -221,6 +227,41 @@ class LlamaRunner:
             print(f"Error: {e}")
             return 1
 
+def load_env_from_script():
+    system = platform.system()
+
+    if system == "Windows":
+        # Call set_paths.cmd and capture output as environment
+        result = subprocess.run(
+            ["cmd.exe", "/c", "set_paths.cmd && set"],
+            capture_output=True, text=True, shell=False
+        )
+        if result.returncode != 0:
+            print("Failed to run set_paths.cmd")
+            sys.exit(1)
+
+        # Parse environment variables from output
+        for line in result.stdout.splitlines():
+            if '=' in line:
+                key, value = line.strip().split('=', 1)
+                os.environ[key] = value
+
+    elif system in ("Linux", "Darwin"):
+        # Source the set_paths file and capture env
+        command = ['bash', '-c', 'source ./set_paths && env']
+        result = subprocess.run(command, capture_output=True, text=True)
+        if result.returncode != 0:
+            print("Failed to source set_paths")
+            sys.exit(1)
+
+        for line in result.stdout.splitlines():
+            if '=' in line:
+                key, value = line.strip().split('=', 1)
+                os.environ[key] = value
+    else:
+        print(f"Unsupported OS: {system}")
+        sys.exit(1)
+
 def create_parser() -> argparse.ArgumentParser:
     """Create and configure the argument parser."""
     parser = argparse.ArgumentParser(
@@ -317,6 +358,7 @@ def create_parser() -> argparse.ArgumentParser:
 
 def main():
     """Main entry point."""
+    load_env_from_script()
     parser = create_parser()
     args = parser.parse_args()
 
