@@ -1,4 +1,4 @@
-package com.example.auxiliary.format;
+package com.example.model.format;
 
 import com.example.tokenizer.impl.LlamaTokenizer;
 import com.example.tokenizer.impl.MistralTokenizer;

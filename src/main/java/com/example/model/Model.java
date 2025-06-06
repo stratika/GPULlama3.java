@@ -1,7 +1,7 @@
 package com.example.model;
 
 import com.example.auxiliary.LastRunMetrics;
-import com.example.auxiliary.format.ChatFormat;
+import com.example.model.format.ChatFormat;
 import com.example.inference.InferenceEngine;
 import com.example.inference.sampler.Sampler;
 import com.example.Options;
