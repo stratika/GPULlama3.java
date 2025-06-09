@@ -66,7 +66,7 @@ public class TornadoVMMasterPlan {
         }
 
         // 2. Perform warmup with extra iterations to ensure JIT compilation is complete
-        tornadoVMPlan.executionPlan.withWarmUp(); // Increased warmup iterations
+        tornadoVMPlan.executionPlan.withPreCompilation(); // Force JIT compilation from Java to GPU code
 
         // Record time after warmup
         if (ENABLE_TORNADOVM_INIT_TIME) {
