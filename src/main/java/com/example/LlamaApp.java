@@ -106,12 +106,6 @@ public class LlamaApp {
         return sampler;
     }
 
-    // moved to model and became non-static
-    //static void runInteractive(Model model, Sampler sampler, Options options)
-
-    // moved to model and became non-static
-    //static void runInstructOnce(Model model, Sampler sampler, Options options)
-
     public static void main(String[] args) throws IOException {
         Options options = Options.parseOptions(args);
         Model model;

@@ -7,9 +7,6 @@ import com.example.loader.weights.Weights;
 import com.example.tokenizer.impl.MistralTokenizer;
 import com.example.tokenizer.impl.Tokenizer;
 
-/**
- * Llama class in mistral.java
- */
 public record Mistral(MistralConfiguration configuration, Tokenizer tokenizer, Weights weights) implements Model {
 
     /* For explicit use */
