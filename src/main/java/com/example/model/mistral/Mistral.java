@@ -1,9 +1,9 @@
 package com.example.model.mistral;
 
 import com.example.model.Model;
-import com.example.loader.weights.ModelLoader;
 import com.example.loader.weights.State;
 import com.example.loader.weights.Weights;
+import com.example.model.ModelType;
 import com.example.tokenizer.impl.MistralTokenizer;
 import com.example.tokenizer.impl.Tokenizer;
 
@@ -13,8 +13,8 @@ public record Mistral(MistralConfiguration configuration, Tokenizer tokenizer, W
     private MistralTokenizer getAsMistralTokenizer() { return (MistralTokenizer) tokenizer; }
 
     @Override
-    public ModelLoader.ModelType getModelType() {
-        return ModelLoader.ModelType.MISTRAL;
+    public ModelType getModelType() {
+        return ModelType.MISTRAL;
     }
 
     public State createNewState() {

@@ -12,6 +12,7 @@ import com.example.core.model.tensor.Q8_0FloatTensor;
 import com.example.core.types.Pair;
 import com.example.model.Configuration;
 import com.example.model.Model;
+import com.example.model.ModelType;
 import com.example.model.llama.LlamaConfiguration;
 import com.example.model.llama.Llama;
 import com.example.model.mistral.Mistral;
@@ -39,20 +40,12 @@ import java.util.function.IntFunction;
 import java.util.stream.Collectors;
 import java.util.stream.IntStream;
 
-import static com.example.loader.weights.ModelLoader.ModelType.LLAMA_3;
-
 public final class ModelLoader {
     private static final String TOKENIZER_LLAMA_3_MODEL = "gpt2";
     private static final String TOKENIZER_MISTRAL_MODEL = "llama";
 
     private static final String LLAMA_3_PATTERN = "(?i:'s|'t|'re|'ve|'m|'ll|'d)|[^\\r\\n\\p{L}\\p{N}]?\\p{L}+|\\p{N}{1,3}| ?[^\\s\\p{L}\\p{N}]+[\\r\\n]*|\\s*[\\r\\n]+|\\s+(?!\\S)|\\s+";
     private static final String MISTRAL_PATTERN = "\\S+|\\s+";
-
-    public enum ModelType {
-        LLAMA_3,
-        MISTRAL,
-        UNKNOWN
-    }
 
     private static ModelType detectModelType(Map<String, Object> metadata) {
         String name = (String) metadata.get("general.name");
@@ -65,7 +58,7 @@ public final class ModelLoader {
             if (lowerName.contains("mistral")) {
                 return ModelType.MISTRAL;
             } else if (lowerName.contains("llama")) {
-                return LLAMA_3;
+                return ModelType.LLAMA_3;
             }
         }
 
@@ -73,7 +66,7 @@ public final class ModelLoader {
         if (TOKENIZER_MISTRAL_MODEL.equals(tokenizerModel)) {
             return ModelType.MISTRAL;
         } else if (TOKENIZER_LLAMA_3_MODEL.equals(tokenizerModel)) {
-            return LLAMA_3;
+            return ModelType.LLAMA_3;
         }
 
         // Check by vocabulary size as fallback
@@ -81,7 +74,7 @@ public final class ModelLoader {
             if (vocabSize == 32768) {
                 return ModelType.MISTRAL;
             } else if (vocabSize == 128256) {
-                return LLAMA_3;
+                return ModelType.LLAMA_3;
             }
         }
 

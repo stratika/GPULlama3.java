@@ -1,9 +1,9 @@
 package com.example.model.llama;
 
 import com.example.model.Model;
-import com.example.loader.weights.ModelLoader;
 import com.example.loader.weights.State;
 import com.example.loader.weights.Weights;
+import com.example.model.ModelType;
 import com.example.tokenizer.impl.LlamaTokenizer;
 import com.example.tokenizer.impl.Tokenizer;
 
@@ -14,8 +14,8 @@ public record Llama(LlamaConfiguration configuration, Tokenizer tokenizer, Weigh
     private LlamaTokenizer getAsLlamaTokenizer() { return (LlamaTokenizer) tokenizer; }
 
     @Override
-    public ModelLoader.ModelType getModelType() {
-        return ModelLoader.ModelType.LLAMA_3;
+    public ModelType getModelType() {
+        return ModelType.LLAMA_3;
     }
 
     @Override
