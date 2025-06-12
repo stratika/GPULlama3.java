@@ -34,7 +34,7 @@ public record Options(Path modelPath, String prompt, String systemPrompt, String
         out.println("  --instruct                    run in instruct (once) mode, default mode");
         out.println("  --prompt, -p <string>         input prompt");
         out.println("  --system-prompt, -sp <string> (optional) system prompt (Llama models)");
-        out.println("  --suffix <string>             suffix for fill-in-the-middle request (Mistral models)");
+        out.println("  --suffix <string>             suffix for fill-in-the-middle request (Codestral)");
         out.println("  --temperature, -temp <float>  temperature in [0,inf], default 0.1");
         out.println("  --top-p <float>               p value in top-p (nucleus) sampling in [0,1] default 0.95");
         out.println("  --seed <long>                 random seed, default System.nanoTime()");
