@@ -5,6 +5,8 @@ import com.example.tokenizer.vocabulary.Vocabulary;
 import java.nio.charset.StandardCharsets;
 import java.util.*;
 import java.util.regex.Pattern;
+import java.util.stream.Collectors;
+import java.util.stream.IntStream;
 
 /**
  * TikToken-style BPE tokenizer with byte fallback.
@@ -23,6 +25,7 @@ import java.util.regex.Pattern;
  * This guarantees reversibility: every string can be tokenized and decoded back exactly.
  */
 public class MistralTokenizer implements Tokenizer {
+    private static final String MISTRAL_PATTERN = "\\S+|\\s+";
     // general fields
     private final Pattern compiledPattern;
     private final Vocabulary vocabulary;
@@ -58,11 +61,22 @@ public class MistralTokenizer implements Tokenizer {
         return tokenType[tokenIndex];
     }
 
-    public MistralTokenizer(Vocabulary vocabulary, String regexPattern, Map<String, Integer> specialTokens, int[] tokenType) {
+    public MistralTokenizer(Map<String, Object> metadata, Vocabulary vocabulary) {
+        // load from metadata
+        int[] tokenTypes = (int[]) metadata.get("tokenizer.ggml.token_type");
+        List<Integer> specialTokensList = IntStream.range(0, vocabulary.size()).filter(t -> tokenTypes[t] != 1 && tokenTypes[t] != 6).boxed().toList();
+        Map<String, Integer> specialTokens =
+                IntStream.range(0, specialTokensList.size())
+                        .boxed()
+                        .collect(Collectors.toMap(
+                                t -> vocabulary.get(t),
+                                t -> t)
+                        );
+        // init tokenizer object fields
         this.vocabulary = vocabulary;
-        this.compiledPattern = regexPattern != null ? Pattern.compile(regexPattern) : null;
+        this.compiledPattern = null;
         this.specialTokens = new HashMap<>(specialTokens);
-        this.tokenType = tokenType;
+        this.tokenType = tokenTypes;
         this.byte0 = vocabulary.getIndex("<0x00>").orElseThrow();
     }
 

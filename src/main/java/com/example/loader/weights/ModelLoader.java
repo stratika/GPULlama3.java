@@ -13,15 +13,7 @@ import com.example.core.types.Pair;
 import com.example.model.Configuration;
 import com.example.model.Model;
 import com.example.model.ModelType;
-import com.example.model.llama.LlamaConfiguration;
-import com.example.model.llama.Llama;
-import com.example.model.mistral.Mistral;
-import com.example.model.mistral.MistralConfiguration;
 import com.example.inference.operation.RoPE;
-import com.example.tokenizer.impl.LlamaTokenizer;
-import com.example.tokenizer.impl.MistralTokenizer;
-import com.example.tokenizer.impl.Tokenizer;
-import com.example.tokenizer.vocabulary.Vocabulary;
 import uk.ac.manchester.tornado.api.types.HalfFloat;
 import uk.ac.manchester.tornado.api.types.arrays.ByteArray;
 import uk.ac.manchester.tornado.api.types.arrays.FloatArray;
@@ -33,19 +25,12 @@ import java.nio.FloatBuffer;
 import java.nio.channels.FileChannel;
 import java.nio.file.Path;
 import java.nio.file.StandardOpenOption;
-import java.util.Arrays;
-import java.util.List;
 import java.util.Map;
 import java.util.function.IntFunction;
-import java.util.stream.Collectors;
-import java.util.stream.IntStream;
 
 public final class ModelLoader {
     private static final String TOKENIZER_LLAMA_3_MODEL = "gpt2";
     private static final String TOKENIZER_MISTRAL_MODEL = "llama";
-
-    private static final String LLAMA_3_PATTERN = "(?i:'s|'t|'re|'ve|'m|'ll|'d)|[^\\r\\n\\p{L}\\p{N}]?\\p{L}+|\\p{N}{1,3}| ?[^\\s\\p{L}\\p{N}]+[\\r\\n]*|\\s*[\\r\\n]+|\\s+(?!\\S)|\\s+";
-    private static final String MISTRAL_PATTERN = "\\S+|\\s+";
 
     private static ModelType detectModelType(Map<String, Object> metadata) {
         String name = (String) metadata.get("general.name");
@@ -230,37 +215,6 @@ public final class ModelLoader {
                 loadArrayOfQuantized(config.numberOfLayers(), i -> tensorEntries.get("blk." + i + ".ffn_down.weight")),
                 loadArrayOfQuantized(config.numberOfLayers(), i -> tensorEntries.get("blk." + i + ".ffn_up.weight")), toFloatBuffer(tensorEntries.get("output_norm.weight")),
                 FloatBuffer.wrap(ropeFreqs.first()), FloatBuffer.wrap(ropeFreqs.second()), loadQuantized(outputWeight), outputWeight.ggmlType());
-    }
-
-    private static Tokenizer createLlama3Tokenizer(Map<String, Object> metadata, Vocabulary vocabulary) {
-        String[] mergeLines = (String[]) metadata.get("tokenizer.ggml.merges");
-        List<Pair<Integer, Integer>> merges = Arrays.stream(mergeLines).map(line -> line.split(" "))
-                .map(parts -> new Pair<>(vocabulary.getIndex(parts[0]).orElseThrow(), vocabulary.getIndex(parts[1]).orElseThrow())).toList();
-
-        int allTokens = vocabulary.size();
-        int baseTokens = 128000; // assume all tokens after the base ones are special.
-        int reservedSpecialTokens = allTokens - baseTokens;
-        List<String> specialTokensList = Arrays.stream(vocabulary.tokens(), baseTokens, allTokens).toList();
-
-        assert specialTokensList.stream().allMatch(token -> vocabulary.getIndex(token).isPresent());
-
-        Map<String, Integer> specialTokens = IntStream.range(0, specialTokensList.size()).boxed().collect(Collectors.toMap(i -> specialTokensList.get(i), i -> baseTokens + i));
-
-        return new LlamaTokenizer(vocabulary, merges, LLAMA_3_PATTERN, specialTokens);
-
-    }
-
-    private static Tokenizer createMistralTokenizer(Map<String, Object> metadata, Vocabulary vocabulary) {
-        int[] tokenTypes = (int[]) metadata.get("tokenizer.ggml.token_type");
-        List<Integer> specialTokensList = IntStream.range(0, vocabulary.size()).filter(t -> tokenTypes[t] != 1 && tokenTypes[t] != 6).boxed().toList();
-        Map<String, Integer> specialTokens =
-                IntStream.range(0, specialTokensList.size())
-                        .boxed()
-                        .collect(Collectors.toMap(
-                                t -> vocabulary.get(t),
-                                t -> t)
-                        );
-        return new MistralTokenizer(vocabulary, null, specialTokens, tokenTypes);
     }
 
     public static FloatTensor loadQuantized(GGMLTensorEntry entry) {

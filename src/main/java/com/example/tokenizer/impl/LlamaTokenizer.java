@@ -26,6 +26,7 @@ import java.util.stream.IntStream;
  * <a href="https://github.com/openai/gpt-2/blob/master/src/encoder.py">GPT 2 tokenizer</a>
  */
 public class LlamaTokenizer implements Tokenizer {
+    private static final String LLAMA_3_PATTERN = "(?i:'s|'t|'re|'ve|'m|'ll|'d)|[^\\r\\n\\p{L}\\p{N}]?\\p{L}+|\\p{N}{1,3}| ?[^\\s\\p{L}\\p{N}]+[\\r\\n]*|\\s*[\\r\\n]+|\\s+(?!\\S)|\\s+";
     // general fields
     private final Pattern compiledPattern;
     private final Vocabulary vocabulary;
@@ -55,9 +56,23 @@ public class LlamaTokenizer implements Tokenizer {
         return !isSpecialToken(token);
     }
 
-    public LlamaTokenizer(Vocabulary vocabulary, List<Pair<Integer, Integer>> merges, String regexPattern, Map<String, Integer> specialTokens) {
+    public LlamaTokenizer(Map<String, Object> metadata, Vocabulary vocabulary) {
+        // load from metadata
+        String[] mergeLines = (String[]) metadata.get("tokenizer.ggml.merges");
+        List<Pair<Integer, Integer>> merges = Arrays.stream(mergeLines).map(line -> line.split(" "))
+                .map(parts -> new Pair<>(vocabulary.getIndex(parts[0]).orElseThrow(), vocabulary.getIndex(parts[1]).orElseThrow())).toList();
+        int allTokens = vocabulary.size();
+        int baseTokens = 128000; // assume all tokens after the base ones are special.
+        int reservedSpecialTokens = allTokens - baseTokens;
+        List<String> specialTokensList = Arrays.stream(vocabulary.tokens(), baseTokens, allTokens).toList();
+
+        assert specialTokensList.stream().allMatch(token -> vocabulary.getIndex(token).isPresent());
+
+        Map<String, Integer> specialTokens = IntStream.range(0, specialTokensList.size()).boxed().collect(Collectors.toMap(i -> specialTokensList.get(i), i -> baseTokens + i));
+
+        // init tokenizer object fields
         this.vocabulary = vocabulary;
-        this.compiledPattern = regexPattern != null ? Pattern.compile(regexPattern) : null;
+        this.compiledPattern = Pattern.compile(LLAMA_3_PATTERN);
         this.specialTokens = new HashMap<>(specialTokens);
         this.merges = new HashMap<>();
         for (Pair<Integer, Integer> pair : merges) {
