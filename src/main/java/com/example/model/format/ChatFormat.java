@@ -19,8 +19,11 @@ public interface ChatFormat {
     }
 
     List<Integer> encodeHeader(Message message);
+
     List<Integer> encodeMessage(Message message);
+
     int getBeginOfText();
+
     Set<Integer> getStopTokens();
 
     /**

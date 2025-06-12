@@ -61,6 +61,7 @@ public class MistralTokenizer implements Tokenizer {
         return tokenType[tokenIndex];
     }
 
+    // @formatter:off
     public MistralTokenizer(Map<String, Object> metadata, Vocabulary vocabulary) {
         // load from metadata
         int[] tokenTypes = (int[]) metadata.get("tokenizer.ggml.token_type");
@@ -79,6 +80,7 @@ public class MistralTokenizer implements Tokenizer {
         this.tokenType = tokenTypes;
         this.byte0 = vocabulary.getIndex("<0x00>").orElseThrow();
     }
+    // @formatter:on
 
     private List<Integer> encodeImpl(String text) {
 
@@ -103,7 +105,6 @@ public class MistralTokenizer implements Tokenizer {
                 }
             }
         }
-
 
         // merge the best consecutive pair each iteration, according the scores in vocab_scores
         while (true) {

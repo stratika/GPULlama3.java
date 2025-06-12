@@ -20,7 +20,9 @@ import static com.example.loader.weights.ModelLoader.loadWeights;
 public record Mistral(MistralConfiguration configuration, Tokenizer tokenizer, Weights weights) implements Model {
 
     /* For explicit use */
-    private MistralTokenizer getAsMistralTokenizer() { return (MistralTokenizer) tokenizer; }
+    private MistralTokenizer getAsMistralTokenizer() {
+        return (MistralTokenizer) tokenizer;
+    }
 
     @Override
     public ModelType getModelType() {
@@ -39,6 +41,7 @@ public record Mistral(MistralConfiguration configuration, Tokenizer tokenizer, W
         return state;
     }
 
+    // @formatter:off
     public static Mistral loadModel(FileChannel fileChannel, GGUF gguf, int contextLength, boolean loadWeights) {
         try (var ignored = Timer.log("Load Mistral model")) {
             Map<String, Object> metadata = gguf.getMetadata();
@@ -78,5 +81,6 @@ public record Mistral(MistralConfiguration configuration, Tokenizer tokenizer, W
             throw new RuntimeException(e);
         }
     }
+    // @formatter:on
 
 }

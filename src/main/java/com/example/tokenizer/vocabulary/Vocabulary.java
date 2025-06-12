@@ -6,10 +6,10 @@ import java.util.OptionalInt;
 import java.util.stream.Collectors;
 import java.util.stream.IntStream;
 
-
 public record Vocabulary(String[] tokens, float[] scores, Map<String, Integer> tokenToIndex) {
     private static final String TOKENIZER_LLAMA_3_MODEL = "gpt2";
 
+    // @formatter:off
     public Vocabulary(String[] vocabulary, float[] scores) {
         this(vocabulary, scores,
                 IntStream.range(0, vocabulary.length)
@@ -17,6 +17,7 @@ public record Vocabulary(String[] tokens, float[] scores, Map<String, Integer> t
                         .collect(Collectors.toMap(i -> vocabulary[i], i -> i))
         );
     }
+    // @formatter:on
 
     public String get(int tokenIndex) {
         return tokens[tokenIndex];
@@ -57,9 +58,7 @@ public record Vocabulary(String[] tokens, float[] scores, Map<String, Integer> t
         sb.append("Tokens: ").append(Arrays.toString(tokens)).append("\n");
         sb.append("Scores: ").append(Arrays.toString(scores)).append("\n");
         sb.append("Token to Index Map:\n");
-        tokenToIndex.forEach((token, index) ->
-                sb.append("  ").append(token).append(" -> ").append(index).append("\n")
-        );
+        tokenToIndex.forEach((token, index) -> sb.append("  ").append(token).append(" -> ").append(index).append("\n"));
         return sb.toString();
     }
 }

@@ -46,15 +46,8 @@ public final class InferenceEngine {
      * @param onTokenGenerated callback, if non-null, it's called every time a token is inferred e.g. it's not called when ingesting prompt tokens
      * @return list of generated/inferred tokens, including the stop token, if any e.g. does not include any token from the prompt
      */
-    public static List<Integer> generateTokens(Model model,
-                                        State state,
-                                        int startPosition,
-                                        List<Integer> promptTokens,
-                                        Set<Integer> stopTokens,
-                                        int maxTokens,
-                                        Sampler sampler,
-                                        boolean echo,
-                                        IntConsumer onTokenGenerated) {
+    public static List<Integer> generateTokens(Model model, State state, int startPosition, List<Integer> promptTokens, Set<Integer> stopTokens, int maxTokens, Sampler sampler, boolean echo,
+            IntConsumer onTokenGenerated) {
         // Start timing the whole process
         long startNanos = System.nanoTime();
         long inferenceStartNanos = 0;
@@ -129,16 +122,8 @@ public final class InferenceEngine {
         return generatedTokens;
     }
 
-    public static List<Integer> generateTokensGPU(Model model,
-                                           State state,
-                                           int startPosition,
-                                           List<Integer> promptTokens,
-                                           Set<Integer> stopTokens,
-                                           int maxTokens,
-                                           Sampler sampler,
-                                           boolean echo,
-                                           IntConsumer onTokenGenerated,
-                                           TornadoVMMasterPlan tornadoVMPlan) {
+    public static List<Integer> generateTokensGPU(Model model, State state, int startPosition, List<Integer> promptTokens, Set<Integer> stopTokens, int maxTokens, Sampler sampler, boolean echo,
+            IntConsumer onTokenGenerated, TornadoVMMasterPlan tornadoVMPlan) {
         // === Setup and Initialization ===
         long startNanos = System.nanoTime();
         long inferenceStartNanos = 0;

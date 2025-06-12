@@ -48,10 +48,10 @@ import java.util.List;
         private static final int LOCAL_WORK_GROUP_SIZE_ALLOC = 32;
         private static final int THREAD_SCALE_FOR_LOGITS = 8;
 
-    private final State state;
-    private final Configuration config;
-    private final Weights weights;
-    private final KernelContext context;
+        private final State state;
+        private final Configuration config;
+        private final Weights weights;
+        private final KernelContext context;
 
         /**
          * Constructs a TornadoVMLayerPlanner for the given Llama model.
@@ -432,7 +432,7 @@ import java.util.List;
             // Vocabulary worker configuration
             // OpenCL equivalent: clEnqueueNDRangeKernel(globalWorkSize=[config.vocabularySize,1,1], localWorkSize=[16,1,1])
             // CUDA equivalent: kernel<<<dim3((config.vocabularySize+15)/16,1,1), dim3(16,1,1)>>>
-            int vocabSizeRowMajor = config.vocabularySize() * LOCAL_WORK_GROUP_SIZE_ALLOC * THREAD_SCALE_FOR_LOGITS ;
+            int vocabSizeRowMajor = config.vocabularySize() * LOCAL_WORK_GROUP_SIZE_ALLOC * THREAD_SCALE_FOR_LOGITS;
             WorkerGrid vocabWorker = new WorkerGrid1D(vocabSizeRowMajor);
             vocabWorker.setLocalWork(LOCAL_WORK_GROUP_SIZE_ALLOC * THREAD_SCALE_FOR_LOGITS, 1, 1);
 

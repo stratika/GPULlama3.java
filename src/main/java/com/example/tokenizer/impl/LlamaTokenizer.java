@@ -240,15 +240,11 @@ public class LlamaTokenizer implements Tokenizer {
         }
 
         // return dict(zip(bs, cs))
-        return IntStream.range(0, bs.size())
-                .boxed()
-                .collect(Collectors.toMap(bs::get, cs::get));
+        return IntStream.range(0, bs.size()).boxed().collect(Collectors.toMap(bs::get, cs::get));
     }
 
     static final Map<Integer, Integer> BYTE_ENCODER = bytesToUnicode();
-    static final Map<Integer, Integer> BYTE_DECODER = BYTE_ENCODER.entrySet()
-            .stream()
-            .collect(Collectors.toMap(Map.Entry::getValue, Map.Entry::getKey));
+    static final Map<Integer, Integer> BYTE_DECODER = BYTE_ENCODER.entrySet().stream().collect(Collectors.toMap(Map.Entry::getValue, Map.Entry::getKey));
 
     public int[] encode(String text) {
         StringBuilder sb = new StringBuilder();

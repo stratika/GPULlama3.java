@@ -41,10 +41,14 @@ public class MistralChatFormat implements ChatFormat {
     }
 
     @Override
-    public int getBeginOfText() { return beginOfText; }
+    public int getBeginOfText() {
+        return beginOfText;
+    }
 
     @Override
-    public Set<Integer> getStopTokens() { return Set.of(endOfText); }
+    public Set<Integer> getStopTokens() {
+        return Set.of(endOfText);
+    }
 
     @Override
     public List<Integer> encodeHeader(Message message) {

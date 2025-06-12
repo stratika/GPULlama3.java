@@ -195,5 +195,4 @@ public final class InferenceCore {
         return tornadoVMMasterPlan.tornadoVMForwardExecuteLayered(position);
     }
 
-
 }

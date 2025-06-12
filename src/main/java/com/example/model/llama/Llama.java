@@ -21,7 +21,9 @@ public record Llama(LlamaConfiguration configuration, Tokenizer tokenizer, Weigh
     private static final int BATCH_SIZE = Integer.getInteger("llama.BatchSize", 16);
 
     /* For explicit use */
-    private LlamaTokenizer getAsLlamaTokenizer() { return (LlamaTokenizer) tokenizer; }
+    private LlamaTokenizer getAsLlamaTokenizer() {
+        return (LlamaTokenizer) tokenizer;
+    }
 
     @Override
     public ModelType getModelType() {
@@ -42,6 +44,7 @@ public record Llama(LlamaConfiguration configuration, Tokenizer tokenizer, Weigh
         return state;
     }
 
+    // @formatter:off
     public static Llama loadModel(FileChannel fileChannel, GGUF gguf, int contextLength, boolean loadWeights) {
         try (var ignored = Timer.log("Load LlaMa model")) {
             Map<String, Object> metadata = gguf.getMetadata();
@@ -75,6 +78,7 @@ public record Llama(LlamaConfiguration configuration, Tokenizer tokenizer, Weigh
             throw new RuntimeException(e);
         }
     }
+    // @formatter:on
 
 }
 

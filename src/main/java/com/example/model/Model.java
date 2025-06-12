@@ -21,12 +21,15 @@ import static com.example.LlamaApp.USE_TORNADOVM;
 
 public interface Model {
     Configuration configuration();
+
     Tokenizer tokenizer();
+
     Weights weights();
 
     ModelType getModelType();
 
     State createNewState();
+
     State createNewState(int batchsize);
 
     /**
@@ -85,14 +88,12 @@ public interface Model {
                 // Choose between GPU and CPU path based on configuration
                 if (USE_TORNADOVM) {
                     // GPU path using TornadoVM
-                    responseTokens = InferenceEngine.generateTokensGPU(this, state, startPosition,
-                            conversationTokens.subList(startPosition, conversationTokens.size()), stopTokens,
+                    responseTokens = InferenceEngine.generateTokensGPU(this, state, startPosition, conversationTokens.subList(startPosition, conversationTokens.size()), stopTokens,
                             options.maxTokens(), sampler, options.echo(), options.stream() ? tokenConsumer : null, tornadoVMPlan);
                 } else {
                     // CPU path
-                    responseTokens = InferenceEngine.generateTokens(this, state, startPosition,
-                            conversationTokens.subList(startPosition, conversationTokens.size()), stopTokens,
-                            options.maxTokens(), sampler, options.echo(), tokenConsumer);
+                    responseTokens = InferenceEngine.generateTokens(this, state, startPosition, conversationTokens.subList(startPosition, conversationTokens.size()), stopTokens, options.maxTokens(),
+                            sampler, options.echo(), tokenConsumer);
                 }
 
                 // Include stop token in the prompt history, but not in the response displayed to the user.
@@ -164,11 +165,10 @@ public interface Model {
         if (USE_TORNADOVM) {
             tornadoVMPlan = TornadoVMMasterPlan.initializeTornadoVMPlan(state, this);
             // Call generateTokensGPU without the token consumer parameter
-            responseTokens = InferenceEngine.generateTokensGPU(this, state, 0, promptTokens, stopTokens,
-                    options.maxTokens(), sampler, options.echo(), options.stream() ? tokenConsumer : null, tornadoVMPlan);
+            responseTokens = InferenceEngine.generateTokensGPU(this, state, 0, promptTokens, stopTokens, options.maxTokens(), sampler, options.echo(), options.stream() ? tokenConsumer : null,
+                    tornadoVMPlan);
         } else {
-            responseTokens = InferenceEngine.generateTokens(this, state, 0, promptTokens, stopTokens,
-                    options.maxTokens(), sampler, options.echo(), tokenConsumer);
+            responseTokens = InferenceEngine.generateTokens(this, state, 0, promptTokens, stopTokens, options.maxTokens(), sampler, options.echo(), tokenConsumer);
         }
 
         if (!responseTokens.isEmpty() && stopTokens.contains(responseTokens.getLast())) {

@@ -31,10 +31,14 @@ public class LlamaChatFormat implements ChatFormat {
     }
 
     @Override
-    public int getBeginOfText() { return beginOfText; }
+    public int getBeginOfText() {
+        return beginOfText;
+    }
 
     @Override
-    public Set<Integer> getStopTokens() { return stopTokens; }
+    public Set<Integer> getStopTokens() {
+        return stopTokens;
+    }
 
     @Override
     public List<Integer> encodeHeader(Message message) {
