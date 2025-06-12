@@ -57,7 +57,7 @@ public class LlamaChatFormat implements ChatFormat {
     public List<Integer> encodeDialogPrompt(boolean appendAssistantTurn, List<Message> dialog) {
         List<Integer> tokens = new ArrayList<>();
         tokens.add(beginOfText);
-        for (LlamaChatFormat.Message message : dialog) {
+        for (Message message : dialog) {
             tokens.addAll(encodeMessage(message));
         }
         if (appendAssistantTurn) {

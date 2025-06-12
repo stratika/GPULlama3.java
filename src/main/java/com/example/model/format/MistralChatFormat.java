@@ -58,23 +58,8 @@ public class MistralChatFormat implements ChatFormat {
     @Override
     public List<Integer> encodeMessage(Message message) {
         List<Integer> tokens = encodeHeader(message);
-        //tokens.add(beginOfInstruction);
         tokens.addAll(tokenizer.encodeAsList(message.content().strip()));
         tokens.add(endOfInstruction);
-        return tokens;
-    }
-
-    public List<Integer> encodeMessage(String userMessage, boolean addHeader, boolean addFooter) {
-        List<Integer> tokens = new ArrayList<>();
-        if (addHeader) {
-            tokens.add(this.beginOfInstruction);
-        }
-        if (userMessage != null) {
-            tokens.addAll(this.tokenizer.encodeAsList(userMessage.strip()));
-        }
-        if (addFooter) {
-            tokens.add(endOfInstruction);
-        }
         return tokens;
     }
 
