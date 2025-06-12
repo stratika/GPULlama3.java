@@ -46,7 +46,7 @@ public final class AOT {
             try (FileChannel fileChannel = FileChannel.open(path, StandardOpenOption.READ)) {
                 return new PartialModel(
                         path.getFileName().toString(),
-                        ModelLoader.loadLlamaModel(fileChannel, gguf, Options.DEFAULT_MAX_TOKENS, false),
+                        Llama.loadModel(fileChannel, gguf, Options.DEFAULT_MAX_TOKENS, false), // TODO: needs proper handling for AOT
                         gguf.getTensorDataOffset(),
                         gguf.getTensorInfos()
                 );

@@ -1,7 +1,6 @@
 package com.example.loader.weights;
 
 import com.example.LlamaApp;
-import com.example.auxiliary.Timer;
 import com.example.core.model.GGMLType;
 import com.example.core.model.GGUF;
 import com.example.core.model.tensor.F16FloatTensor;
@@ -70,89 +69,10 @@ public final class ModelLoader {
         // initial load of metadata from gguf file
         GGUF gguf = GGUF.loadModel(ggufPath);
         FileChannel fileChannel = FileChannel.open(ggufPath, StandardOpenOption.READ);
-
         // detect model type
         ModelType modelType = detectModelType(gguf.getMetadata());
-        System.out.println("Detected model type: " + modelType);
-
-        // load model (vocabulary, tokenizer, configuration, tensors, weights)
-        return switch (modelType) {
-            case LLAMA_3 -> loadLlamaModel(fileChannel, gguf, contextLength, loadWeights);
-            case MISTRAL -> loadMistralModel(fileChannel, gguf, contextLength, loadWeights);
-            default -> throw new UnsupportedOperationException("Unsupported model type: " + modelType);
-        };
-    }
-
-    public static Llama loadLlamaModel(FileChannel fileChannel, GGUF gguf, int contextLength, boolean loadWeights) throws IOException {
-        try (var ignored = Timer.log("Load LlaMa model")) {
-            Map<String, Object> metadata = gguf.getMetadata();
-
-            Vocabulary vocabulary = Vocabulary.loadLlamaVocabulary(metadata);
-            Tokenizer tokenizer = createLlama3Tokenizer(metadata, vocabulary);
-
-            LlamaConfiguration config = new LlamaConfiguration(
-                    (int) metadata.get("llama.embedding_length"),
-                    (int) metadata.get("llama.feed_forward_length"),
-                    (int) metadata.get("llama.block_count"),
-                    (int) metadata.get("llama.attention.head_count"),
-
-                    metadata.containsKey("llama.attention.head_count_kv") ?
-                            (int) metadata.get("llama.attention.head_count_kv") :
-                            (int) metadata.get("llama.attention.head_count"),
-
-                    vocabulary.size(),
-                    (int) metadata.get("llama.context_length"),
-                    (float) metadata.getOrDefault("llama.attention.layer_norm_rms_epsilon", 1e-5f),
-                    (float) metadata.getOrDefault("llama.rope.freq_base", 10000f)
-            ).withContextLength(contextLength);
-
-            Weights weights = null;
-            if (loadWeights) {
-                Map<String, GGMLTensorEntry> tensorEntries = GGUF.loadTensors(fileChannel, gguf.getTensorDataOffset(), gguf.getTensorInfos());
-                weights = loadWeights(tensorEntries, config);
-            }
-            return new Llama(config, tokenizer, weights);
-        }
-    }
-
-    public static Mistral loadMistralModel(FileChannel fileChannel, GGUF gguf, int contextLength, boolean loadWeights) {
-        try (var ignored = Timer.log("Load Mistral model")) {
-            Map<String, Object> metadata = gguf.getMetadata();
-
-            Vocabulary vocabulary = Vocabulary.loadMistralVocabulary(metadata);
-            Tokenizer tokenizer = createMistralTokenizer(metadata, vocabulary);
-
-            int modelContextLength = (int) metadata.get("llama.context_length");
-            if (contextLength < 0 || modelContextLength < contextLength) {
-                contextLength = modelContextLength;
-            }
-
-            MistralConfiguration config = new MistralConfiguration(
-                    (int) metadata.get("llama.embedding_length"),
-                    (int) metadata.get("llama.feed_forward_length"),
-                    (int) metadata.get("llama.block_count"),
-                    (int) metadata.get("llama.attention.head_count"),
-
-                    metadata.containsKey("llama.attention.head_count_kv")
-                            ? (int) metadata.get("llama.attention.head_count_kv")
-                            : (int) metadata.get("llama.attention.head_count"),
-
-                    vocabulary.size(),
-                    contextLength,
-                    false,
-                    (float) metadata.getOrDefault("llama.attention.layer_norm_rms_epsilon", 1e-5f),
-                    (float) metadata.getOrDefault("llama.rope.freq_base", 10000f)
-            );
-
-            Weights weights = null;
-            if (loadWeights) {
-                Map<String, GGMLTensorEntry> tensorEntries = GGUF.loadTensors(fileChannel, gguf.getTensorDataOffset(), gguf.getTensorInfos());
-                weights = loadWeights(tensorEntries, config);
-            }
-            return new Mistral(config, tokenizer, weights);
-        } catch (IOException e) {
-            throw new RuntimeException(e);
-        }
+        // model type-specific load
+        return modelType.loadModel(fileChannel, gguf, contextLength, loadWeights);
     }
 
     public static Weights loadWeights(Map<String, GGMLTensorEntry> tensorEntries, Configuration config) {
