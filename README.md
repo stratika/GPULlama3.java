@@ -12,7 +12,7 @@
 <img src="docs/java-tornado-gpu.jpg" width="100%">
 </td>
 <td style="vertical-align: middle; padding-left: 20px; border: none;">  
-<strong>Llama3</strong> models written in <strong>native Java</strong> automatically accelerated on GPUs with <strong>TornadoVM</strong>.
+<strong>Llama3</strong> models written in <strong>native Java</strong> automatically accelerated on GPUs with <a href="https://github.com/beehive-lab/TornadoVM" target="_blank"><strong>TornadoVM</strong></a>.
 This project allows you to run Llama3 inference efficiently, leveraging TornadoVM's parallel computing features for enhanced performance.
 
 <br><br>
