@@ -1,12 +1,12 @@
 package com.example.model;
 
+import com.example.Options;
 import com.example.auxiliary.LastRunMetrics;
-import com.example.model.format.ChatFormat;
 import com.example.inference.InferenceEngine;
 import com.example.inference.sampler.Sampler;
-import com.example.Options;
 import com.example.loader.weights.State;
 import com.example.loader.weights.Weights;
+import com.example.model.format.ChatFormat;
 import com.example.tokenizer.impl.Tokenizer;
 import com.example.tornadovm.TornadoVMMasterPlan;
 
