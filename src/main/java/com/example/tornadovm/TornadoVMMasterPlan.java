@@ -1,9 +1,9 @@
 package com.example.tornadovm;
 
 import com.example.auxiliary.Tuple2;
+import com.example.loader.weights.State;
 import com.example.model.Configuration;
 import com.example.model.Model;
-import com.example.loader.weights.State;
 import uk.ac.manchester.tornado.api.GridScheduler;
 import uk.ac.manchester.tornado.api.ImmutableTaskGraph;
 import uk.ac.manchester.tornado.api.TornadoExecutionPlan;
@@ -24,7 +24,9 @@ public class TornadoVMMasterPlan {
 
     public TornadoVMMasterPlan(State state, Model model, boolean isNvidia) {
         TornadoVMLayerPlanner tornadoVMLayerPlanner = new TornadoVMLayerPlanner(state, model);
-        Tuple2<List<ImmutableTaskGraph>, GridScheduler> tornadoVMPlan = isNvidia ? tornadoVMLayerPlanner.setupTornadoForwardPlanLayered() : tornadoVMLayerPlanner.setupTornadoForwardPlanLayeredNonNvidia();
+        Tuple2<List<ImmutableTaskGraph>, GridScheduler> tornadoVMPlan = isNvidia
+                ? tornadoVMLayerPlanner.setupTornadoForwardPlanLayered()
+                : tornadoVMLayerPlanner.setupTornadoForwardPlanLayeredNonNvidia();
         this.taskGraphs = tornadoVMPlan.getFirst();
         this.scheduler = tornadoVMPlan.getSecond();
         this.state = state;

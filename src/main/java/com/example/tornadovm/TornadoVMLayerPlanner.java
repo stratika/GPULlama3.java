@@ -41,7 +41,6 @@ import java.util.List;
      *
      * @see TaskGraph
      * @see GridScheduler
-     * @see Llama
      */
     // @formatter:on
     public class TornadoVMLayerPlanner {
