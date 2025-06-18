@@ -3,6 +3,8 @@
 ![TornadoVM](https://img.shields.io/badge/TornadoVM-enabled-green?style=for-the-badge&logo=apache)
 ![OpenCL](https://img.shields.io/badge/OpenCL-supported-blue?style=for-the-badge&logo=khronos)
 ![CUDA](https://img.shields.io/badge/CUDA/PTX-supported-76B900?style=for-the-badge&logo=nvidia)
+[![Docker OpenCL](https://img.shields.io/badge/Docker-OpenCL-2496ED?style=for-the-badge&logo=docker&logoColor=white)](https://hub.docker.com/r/beehivelab/gpullama3.java-nvidia-openjdk-opencl)
+[![Docker PTX](https://img.shields.io/badge/Docker-PTX-2496ED?style=for-the-badge&logo=docker&logoColor=white)](https://hub.docker.com/r/beehivelab/gpullama3.java-nvidia-openjdk-ptx)
 [![GPULlama3.java DeepWiki](https://deepwiki.com/badge.svg)](https://deepwiki.com/beehive-lab/GPULlama3.java)
 
 -----------
@@ -224,6 +226,32 @@ Enable GPU acceleration with Q8_0 quantization:
 ./llama-tornado --gpu  --verbose-init --model beehive-llama-3.2-1b-instruct-fp16.gguf --prompt "tell me a joke"
 ```
 
+-----------
+
+## 🐳 Docker
+
+You can run `GPULlama3.java` fully containerized with GPU acceleration enabled via **OpenCL** or **PTX** using pre-built Docker images:
+Full instructions and run examples are available at [https://github.com/beehive-lab/docker-gpullama3.java]().
+
+### 📦 Available Docker Images
+
+| Backend | Docker Image | Pull Command |
+|--------|---------------|---------------|
+| **OpenCL** | [`beehivelab/gpullama3.java-nvidia-openjdk-opencl`](https://hub.docker.com/r/beehivelab/gpullama3.java-nvidia-openjdk-opencl) | `docker pull beehivelab/gpullama3.java-nvidia-openjdk-opencl` |
+| **PTX (CUDA)** | [`beehivelab/gpullama3.java-nvidia-openjdk-ptx`](https://hub.docker.com/r/beehivelab/gpullama3.java-nvidia-openjdk-ptx) | `docker pull beehivelab/gpullama3.java-nvidia-openjdk-ptx` |
+
+#### Example (OpenCL)
+
+```bash
+docker run --rm -it --gpus all \
+  -v "$PWD":/data \
+  beehivelab/gpullama3.java-nvidia-openjdk-opencl \
+  /gpullama3/GPULlama3.java/llama-tornado \
+  --gpu --verbose-init \
+  --opencl \
+  --model /data/Llama-3.2-1B-Instruct.FP16.gguf \
+  --prompt "Tell me a joke"
+```
 -----------
 
 ## Troubleshooting GPU Memory Issues
