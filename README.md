@@ -231,7 +231,7 @@ Enable GPU acceleration with Q8_0 quantization:
 ## 🐳 Docker
 
 You can run `GPULlama3.java` fully containerized with GPU acceleration enabled via **OpenCL** or **PTX** using pre-built Docker images.
-Full instructions and run examples are available at [https://github.com/beehive-lab/docker-gpullama3.java]().
+More information as well as examples to run with the containers are available at [docker-gpullama3.java](https://github.com/beehive-lab/docker-gpullama3.java).
 
 ### 📦 Available Docker Images
 
