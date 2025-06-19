@@ -105,11 +105,12 @@ public class TornadoVMMasterPlan {
         String platformName = runtime.getBackend(0).getDefaultDevice().getPlatformName().toLowerCase(Locale.ROOT);
 
         boolean isNvidia = platformName.contains("nvidia");
-        boolean isMistral = model.getModelType() == ModelType.MISTRAL;
+        boolean isNotMistral = model.getModelType() != ModelType.MISTRAL;
 
-        return !isNvidia || isMistral;
+        boolean result = isNvidia && isNotMistral;
+
+        return result;
     }
-
 
     /**
      * Executes the forward pass of a LLaMA transformer model using TornadoVM acceleration.
