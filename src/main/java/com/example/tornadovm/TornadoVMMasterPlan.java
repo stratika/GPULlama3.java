@@ -100,7 +100,7 @@ public class TornadoVMMasterPlan {
      * @param model the model whose type may affect the scheduler decision
      * @return {@code true} if the NVIDIA-specific scheduler should be used; {@code false} otherwise
      */
-    public boolean shouldUseNvidiaScheduler(Model model) {
+    public static boolean shouldUseNvidiaScheduler(Model model) {
         TornadoRuntime runtime = TornadoRuntimeProvider.getTornadoRuntime();
         String platformName = runtime.getBackend(0).getDefaultDevice().getPlatformName().toLowerCase(Locale.ROOT);
 
