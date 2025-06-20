@@ -4,6 +4,7 @@ import com.example.auxiliary.Tuple2;
 import com.example.loader.weights.State;
 import com.example.model.Configuration;
 import com.example.model.Model;
+import com.example.model.ModelType;
 import uk.ac.manchester.tornado.api.GridScheduler;
 import uk.ac.manchester.tornado.api.ImmutableTaskGraph;
 import uk.ac.manchester.tornado.api.TornadoExecutionPlan;
@@ -12,6 +13,7 @@ import uk.ac.manchester.tornado.api.runtime.TornadoRuntimeProvider;
 import uk.ac.manchester.tornado.api.types.arrays.FloatArray;
 
 import java.util.List;
+import java.util.Locale;
 
 public class TornadoVMMasterPlan {
     private static final boolean ENABLE_TORNADOVM_INIT_TIME = Boolean.parseBoolean(System.getProperty("llama.EnableTimingForTornadoVMInit", "False"));
@@ -22,9 +24,9 @@ public class TornadoVMMasterPlan {
     public TornadoExecutionPlan executionPlan;
     List<ImmutableTaskGraph> taskGraphs;
 
-    public TornadoVMMasterPlan(State state, Model model, boolean isNvidia) {
+    public TornadoVMMasterPlan(State state, Model model) {
         TornadoVMLayerPlanner tornadoVMLayerPlanner = new TornadoVMLayerPlanner(state, model);
-        Tuple2<List<ImmutableTaskGraph>, GridScheduler> tornadoVMPlan = isNvidia
+        Tuple2<List<ImmutableTaskGraph>, GridScheduler> tornadoVMPlan = shouldUseNvidiaScheduler(model)
                 ? tornadoVMLayerPlanner.setupTornadoForwardPlanLayered()
                 : tornadoVMLayerPlanner.setupTornadoForwardPlanLayeredNonNvidia();
         this.taskGraphs = tornadoVMPlan.getFirst();
@@ -57,9 +59,7 @@ public class TornadoVMMasterPlan {
         }
 
         // 1. Pre-allocate the TornadoVM plan
-        TornadoRuntime coreRuntime = TornadoRuntimeProvider.getTornadoRuntime();
-        boolean isNvidia = coreRuntime.getBackend(0).getDefaultDevice().getPlatformName().toLowerCase().contains("nvidia");
-        TornadoVMMasterPlan tornadoVMPlan = new TornadoVMMasterPlan(state, model, isNvidia);
+        TornadoVMMasterPlan tornadoVMPlan = new TornadoVMMasterPlan(state, model);
 
         // Record time after plan creation
         if (ENABLE_TORNADOVM_INIT_TIME) {
@@ -87,6 +87,29 @@ public class TornadoVMMasterPlan {
         }
 
         return tornadoVMPlan;
+    }
+
+    /**
+     * Determines whether the NVIDIA-specific scheduler should be used based on the current
+     * hardware backend and the model type.
+     * <p>
+     * The scheduler is used only if the runtime is targeting an NVIDIA backend and the model
+     * is not of type {@code MISTRAL}. If either the hardware is not NVIDIA or the model is
+     * {@code MISTRAL}, the NVIDIA-specific scheduler should not be used.
+     *
+     * @param model the model whose type may affect the scheduler decision
+     * @return {@code true} if the NVIDIA-specific scheduler should be used; {@code false} otherwise
+     */
+    public static boolean shouldUseNvidiaScheduler(Model model) {
+        TornadoRuntime runtime = TornadoRuntimeProvider.getTornadoRuntime();
+        String platformName = runtime.getBackend(0).getDefaultDevice().getPlatformName().toLowerCase(Locale.ROOT);
+
+        boolean isNvidia = platformName.contains("nvidia");
+        boolean isNotMistral = model.getModelType() != ModelType.MISTRAL;
+
+        boolean result = isNvidia && isNotMistral;
+
+        return result;
     }
 
     /**
