@@ -67,7 +67,8 @@ public final class ModelLoader {
 
     public static Model loadModel(Path ggufPath, int contextLength, boolean loadWeights) throws IOException {
         // initial load of metadata from gguf file
-        GGUF gguf = GGUF.loadModel(ggufPath);
+        // will throw an IOException if the file does not exist, RuntimeException if there is another problem with loading the model
+        GGUF gguf = GGUF.loadModel(ggufPath); 
         FileChannel fileChannel = FileChannel.open(ggufPath, StandardOpenOption.READ);
         // detect model type
         ModelType modelType = detectModelType(gguf.getMetadata());

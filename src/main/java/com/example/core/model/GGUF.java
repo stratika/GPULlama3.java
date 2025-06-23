@@ -40,6 +40,16 @@ public final class GGUF {
             GGUF gguf = new GGUF();
             gguf.loadModelImpl(fileChannel);
             return gguf;
+        } catch {
+
+            IOException e -> {
+                throw new IOException("Failed to load GGUF model from " + modelPath, e);
+            } 
+            
+            catch (Exception e) {
+                throw new RuntimeException("Unexpected error while loading GGUF model from " + modelPath, e);
+            }
+
         }
     }
 
