@@ -8,8 +8,9 @@ import com.example.core.model.tensor.ArrayFloatTensor;
 import com.example.core.model.tensor.GGMLTensorEntry;
 import com.example.core.types.Pair;
 import com.example.inference.operation.RoPE;
-import com.example.inference.weights.standard.Qwen3StandardWeights;
 import com.example.inference.weights.Weights;
+import com.example.inference.weights.standard.Qwen3StandardWeights;
+import com.example.inference.weights.tornado.Qwen3TornadoWeights;
 import com.example.model.Configuration;
 import com.example.model.format.ChatFormat;
 import com.example.model.format.ChatFormat.ChatTokens;
@@ -18,6 +19,7 @@ import com.example.model.qwen3.Qwen3Configuration;
 import com.example.tokenizer.impl.Qwen3Tokenizer;
 import com.example.tokenizer.impl.Tokenizer;
 import com.example.tokenizer.vocabulary.Vocabulary;
+import uk.ac.manchester.tornado.api.types.arrays.FloatArray;
 
 import java.io.IOException;
 import java.nio.channels.FileChannel;
@@ -108,7 +110,26 @@ public class Qwen3ModelLoader extends ModelLoader {
     @Override
     public Weights createTornadoVMWeights(Map<String, GGMLTensorEntry> tensorEntries, Configuration config, Pair<float[], float[]> ropeFreqs, GGMLTensorEntry tokenEmbeddings,
             GGMLTensorEntry outputWeight) {
-        throw new UnsupportedOperationException("Not supported yet.");
+        //throw new UnsupportedOperationException("Not supported yet.");
+        return new Qwen3TornadoWeights(
+                loadTensorAsFloatArray(tokenEmbeddings),
+                loadArrayAsFloatArrayFromBuffer(config.numberOfLayers(), i -> tensorEntries.get("blk." + i + ".attn_norm.weight")),
+                loadArrayAsHalfFloatArray(config.numberOfLayers(), i -> tensorEntries.get("blk." + i + ".attn_q.weight")),
+                loadArrayAsHalfFloatArray(config.numberOfLayers(), i -> tensorEntries.get("blk." + i + ".attn_k.weight")),
+                loadArrayAsHalfFloatArray(config.numberOfLayers(), i -> tensorEntries.get("blk." + i + ".attn_v.weight")),
+                loadArrayAsHalfFloatArray(config.numberOfLayers(), i -> tensorEntries.get("blk." + i + ".attn_output.weight")),
+                loadArrayAsFloatArrayFromBuffer(config.numberOfLayers(), i -> tensorEntries.get("blk." + i + ".attn_k_norm.weight")),   // attnKNorm
+                loadArrayAsFloatArrayFromBuffer(config.numberOfLayers(), i -> tensorEntries.get("blk." + i + ".attn_q_norm.weight")),   // attnQNorm
+                loadArrayAsFloatArrayFromBuffer(config.numberOfLayers(), i -> tensorEntries.get("blk." + i + ".ffn_norm.weight")),
+                loadArrayAsHalfFloatArray(config.numberOfLayers(), i -> tensorEntries.get("blk." + i + ".ffn_gate.weight")),            // w1
+                loadArrayAsHalfFloatArray(config.numberOfLayers(), i -> tensorEntries.get("blk." + i + ".ffn_down.weight")),            // w2
+                loadArrayAsHalfFloatArray(config.numberOfLayers(), i -> tensorEntries.get("blk." + i + ".ffn_up.weight")),              // w3
+                floatBufferToFloatArray(tensorEntries.get("output_norm.weight")),
+                FloatArray.fromArray(ropeFreqs.first()),
+                FloatArray.fromArray(ropeFreqs.second()),
+                loadTensorAsHalfFloatArray(outputWeight),
+                outputWeight.ggmlType()
+        );
     }
 
     @Override
