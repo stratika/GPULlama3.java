@@ -51,10 +51,7 @@ public final class GGUF {
             gguf.loadModelImpl(fileChannel);
             return gguf;
         } catch (Exception e) {
-             {
-                throw new RuntimeException("Unexpected error while loading GGUF model from " + modelPath, e);
-            }
-
+            throw new RuntimeException("Unexpected error while loading GGUF model from " + modelPath, e);
         }
     }
 
