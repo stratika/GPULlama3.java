@@ -15,7 +15,7 @@
 </td>
 <td style="vertical-align: middle; padding-left: 20px; border: none;">  
 <strong>Llama3</strong> models written in <strong>native Java</strong> automatically accelerated on GPUs with <a href="https://github.com/beehive-lab/TornadoVM" target="_blank"><strong>TornadoVM</strong></a>.
-Runs Llama3 inference efficiently using TornadoVM's GPU acceleration
+Runs Llama3 inference efficiently using TornadoVM's GPU acceleration.
 <br><br>
 Currently, supports <strong>Llama3</strong> and <strong>Mistral</strong> models in the GGUF format.
 <br><br>
