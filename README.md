@@ -11,7 +11,7 @@
 <table style="border: none;">
 <tr style="border: none;">
 <td style="width: 40%; vertical-align: middle; border: none;">
-<img src="docs/java-tornado-gpu.jpg" width="100%">
+<img src="docs/ll.gif" >
 </td>
 <td style="vertical-align: middle; padding-left: 20px; border: none;">  
 <strong>Llama3</strong> models written in <strong>native Java</strong> automatically accelerated on GPUs with <a href="https://github.com/beehive-lab/TornadoVM" target="_blank"><strong>TornadoVM</strong></a>.
