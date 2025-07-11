@@ -29,6 +29,10 @@ public interface Model {
 
     ChatFormat chatFormat();
 
+    TornadoVMMasterPlan tornadoVMPlan();
+
+    void setTornadoVMPlan(TornadoVMMasterPlan plan);
+
     ModelType getModelType();
 
     State createNewState();

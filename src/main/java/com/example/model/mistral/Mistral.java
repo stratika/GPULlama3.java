@@ -6,7 +6,7 @@ import com.example.inference.sampler.Sampler;
 import com.example.inference.state.LlamaState;
 import com.example.inference.state.State;
 import com.example.inference.weights.Weights;
-import com.example.model.Model;
+import com.example.model.AbstractModel;
 import com.example.model.ModelType;
 import com.example.model.format.ChatFormat;
 import com.example.tokenizer.impl.MistralTokenizer;
@@ -16,11 +16,23 @@ import java.util.List;
 import java.util.Set;
 import java.util.function.IntConsumer;
 
-public record Mistral(MistralConfiguration configuration, Tokenizer tokenizer, Weights weights, ChatFormat chatFormat) implements Model {
+public class Mistral extends AbstractModel {
 
-    /* For explicit use */
-    private MistralTokenizer getAsMistralTokenizer() {
-        return (MistralTokenizer) tokenizer;
+    MistralConfiguration configuration;
+
+    public Mistral(MistralConfiguration configuration, Tokenizer tokenizer, Weights weights, ChatFormat chatFormat) {
+        super(tokenizer, weights, chatFormat, null);
+        this.configuration = configuration;
+    }
+
+    @Override
+    public MistralConfiguration configuration() {
+        return configuration;
+    }
+
+    @Override
+    public MistralTokenizer tokenizer() {
+        return (MistralTokenizer)tokenizer;
     }
 
     @Override

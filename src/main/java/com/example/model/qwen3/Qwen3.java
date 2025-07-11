@@ -6,20 +6,36 @@ import com.example.inference.sampler.Sampler;
 import com.example.inference.state.Qwen3State;
 import com.example.inference.state.State;
 import com.example.inference.weights.Weights;
-import com.example.model.Model;
+import com.example.model.AbstractModel;
 import com.example.model.ModelType;
 import com.example.model.format.ChatFormat;
+import com.example.tokenizer.impl.Qwen3Tokenizer;
 import com.example.tokenizer.impl.Tokenizer;
 
 import java.util.List;
 import java.util.Set;
 import java.util.function.IntConsumer;
 
-public record Qwen3(Qwen3Configuration configuration, Tokenizer tokenizer, Weights weights, ChatFormat chatFormat) implements Model {
+public class Qwen3 extends AbstractModel {
+
+    Qwen3Configuration configuration;
+
+    public Qwen3(Qwen3Configuration configuration, Tokenizer tokenizer, Weights weights, ChatFormat chatFormat) {
+        super(tokenizer, weights, chatFormat, null);
+        this.configuration = configuration;
+    }
+
+    public Qwen3Configuration configuration() {
+        return configuration;
+    }
 
     @Override
     public ModelType getModelType() {
         return ModelType.QWEN_3;
+    }
+
+    public Qwen3Tokenizer tokenizer() {
+        return (Qwen3Tokenizer) tokenizer;
     }
 
     @Override
