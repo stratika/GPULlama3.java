@@ -11,6 +11,7 @@ import com.example.model.ModelType;
 import com.example.model.format.ChatFormat;
 import com.example.tokenizer.impl.MistralTokenizer;
 import com.example.tokenizer.impl.Tokenizer;
+import com.example.tornadovm.TornadoVMMasterPlan;
 
 import java.util.List;
 import java.util.Set;
@@ -60,6 +61,12 @@ public class Mistral extends AbstractModel {
     @Override
     public List<Integer> generateTokens(State state, int startPosition, List<Integer> promptTokens, Set<Integer> stopTokens, int maxTokens, Sampler sampler, boolean echo, IntConsumer onTokenGenerated) {
         return InferenceEngine.generateTokensLlama(this, state, startPosition, promptTokens, stopTokens, maxTokens, sampler, echo, onTokenGenerated);
+    }
+
+    @Override
+    public List<Integer> generateTokensGPU(State state, int startPosition, List<Integer> promptTokens, Set<Integer> stopTokens, int maxTokens, Sampler sampler, boolean echo,
+            IntConsumer onTokenGenerated, TornadoVMMasterPlan tornadoVMPlan) {
+        return InferenceEngine.generateTokensGPU(this, state, startPosition, promptTokens, stopTokens, maxTokens, sampler, echo, onTokenGenerated, tornadoVMPlan);
     }
 
 }

@@ -1,6 +1,7 @@
 package com.example.tornadovm;
 
 import com.example.auxiliary.Tuple2;
+import com.example.inference.state.Qwen3State;
 import com.example.inference.state.State;
 import com.example.model.Configuration;
 import com.example.model.Model;
@@ -25,7 +26,7 @@ public class TornadoVMMasterPlan {
     List<ImmutableTaskGraph> taskGraphs;
 
     public TornadoVMMasterPlan(State state, Model model) {
-        TornadoVMLayerPlanner tornadoVMLayerPlanner = new TornadoVMLayerPlanner(state, model);
+        TornadoVMLayerPlanner tornadoVMLayerPlanner = createPlanner(state, model);
         Tuple2<List<ImmutableTaskGraph>, GridScheduler> tornadoVMPlan = shouldUseNvidiaScheduler(model)
                 ? tornadoVMLayerPlanner.setupTornadoForwardPlanLayered()
                 : tornadoVMLayerPlanner.setupTornadoForwardPlanLayeredNonNvidia();
@@ -86,7 +87,21 @@ public class TornadoVMMasterPlan {
             System.err.printf("Finished TornadoVM initialization...\n \n");
         }
 
+        model.setTornadoVMPlan(tornadoVMPlan);
+
         return tornadoVMPlan;
+    }
+
+    /**
+     * Dispatcher method to select the TornadoVMLayerPlanner for the model.
+     */
+    TornadoVMLayerPlanner createPlanner(State state, Model model) {
+        System.out.println("Creating TornadoVM layer planner : " + model.getModelType() );
+        return switch (model.getModelType()) {
+            case LLAMA_3, MISTRAL -> new TornadoVMLayerPlanner(state, model);
+            case QWEN_3 -> new Qwen3TornadoVMLayerPlanner((Qwen3State) state, model);
+            case UNKNOWN -> throw new UnsupportedOperationException("Unknown model type");
+        };
     }
 
     /**

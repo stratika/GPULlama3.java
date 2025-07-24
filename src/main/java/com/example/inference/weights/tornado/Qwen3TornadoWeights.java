@@ -7,9 +7,9 @@ import uk.ac.manchester.tornado.api.types.arrays.HalfFloatArray;
 public class Qwen3TornadoWeights extends TornadoWeights {
 
     //attnKNorm
-    FloatArray[] rms_att_KNormLayered;
+    public FloatArray[] rms_att_KNormLayered;
     //attnQNorm
-    FloatArray[] rms_att_QNormLayered;
+    public FloatArray[] rms_att_QNormLayered;
 
     public Qwen3TornadoWeights(FloatArray tokenEmbeddingTable, FloatArray[] rms_att_weightLayered,
             HalfFloatArray[] wqLayered, HalfFloatArray[] wkLayered, HalfFloatArray[] wvLayered, HalfFloatArray[] woLayered,

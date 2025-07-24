@@ -54,6 +54,9 @@ public interface Model {
      */
     List<Integer> generateTokens(State state, int startPosition, List<Integer> promptTokens, Set<Integer> stopTokens, int maxTokens, Sampler sampler, boolean echo, IntConsumer onTokenGenerated);
 
+    List<Integer> generateTokensGPU(State state, int startPosition, List<Integer> promptTokens, Set<Integer> stopTokens, int maxTokens, Sampler sampler, boolean echo,
+            IntConsumer onTokenGenerated, TornadoVMMasterPlan tornadoVMPlan);
+
     /**
      * Model agnostic default implementation for interactive mode.
      * @param sampler
@@ -113,7 +116,7 @@ public interface Model {
                 // Choose between GPU and CPU path based on configuration
                 if (USE_TORNADOVM) {
                     // GPU path using TornadoVM
-                    responseTokens = InferenceEngine.generateTokensGPU(this, state, startPosition, conversationTokens.subList(startPosition, conversationTokens.size()), stopTokens,
+                    responseTokens = generateTokensGPU(state, startPosition, conversationTokens.subList(startPosition, conversationTokens.size()), stopTokens,
                             options.maxTokens(), sampler, options.echo(), options.stream() ? tokenConsumer : null, tornadoVMPlan);
                 } else {
                     // CPU path
@@ -193,8 +196,9 @@ public interface Model {
         if (USE_TORNADOVM) {
             tornadoVMPlan = TornadoVMMasterPlan.initializeTornadoVMPlan(state, this);
             // Call generateTokensGPU without the token consumer parameter
-            responseTokens = InferenceEngine.generateTokensGPU(this, state, 0, promptTokens, stopTokens, options.maxTokens(), sampler, options.echo(), options.stream() ? tokenConsumer : null,
-                    tornadoVMPlan);
+            //responseTokens = InferenceEngine.generateTokensGPU(this, state, 0, promptTokens, stopTokens, options.maxTokens(), sampler, options.echo(), options.stream() ? tokenConsumer : null,
+            //        tornadoVMPlan);
+            responseTokens = generateTokensGPU(state, 0, promptTokens, stopTokens, options.maxTokens(), sampler, options.echo(), options.stream() ? tokenConsumer : null, tornadoVMPlan);
         } else {
             responseTokens = generateTokens(state, 0, promptTokens, stopTokens, options.maxTokens(), sampler, options.echo(), tokenConsumer);
         }

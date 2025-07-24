@@ -43,14 +43,14 @@ import java.util.List;
      * @see GridScheduler
      */
     // @formatter:on
-    public class TornadoVMLayerPlanner {
-        private static final int LOCAL_WORK_GROUP_SIZE_ALLOC = 32;
-        private static final int THREAD_SCALE_FOR_LOGITS = 8;
+    public class TornadoVMLayerPlanner<S extends State, C extends Configuration, W extends TornadoWeights> {
+        protected static final int LOCAL_WORK_GROUP_SIZE_ALLOC = 32;
+        protected static final int THREAD_SCALE_FOR_LOGITS = 8;
 
-        private final State state;
-        private final Configuration config;
-        private final TornadoWeights weights;
-        private final KernelContext context;
+        protected final S state;
+        protected final C config;
+        protected final W weights;
+        protected final KernelContext context;
 
         /**
          * Constructs a TornadoVMLayerPlanner for the given Llama model.
@@ -60,10 +60,10 @@ import java.util.List;
          * @param model
          *         The Llama model instance containing configuration and weights
          */
-        public TornadoVMLayerPlanner(State state, Model model) {
+        public TornadoVMLayerPlanner(S state, Model model) {
             this.state = state;
-            this.config = model.configuration();
-            this.weights = (TornadoWeights) model.weights();
+            this.config = (C) model.configuration();
+            this.weights = (W) model.weights();
             this.context = new KernelContext();
         }
 
@@ -181,7 +181,7 @@ import java.util.List;
          * @throws UnsupportedOperationException If weights.weightType is not Q8_0 or Q4_0
          */
         // @formatter:on
-        private TaskGraph configureQuantizedMatrixVectorFinalWeight(TaskGraph logits) {
+        protected TaskGraph configureQuantizedMatrixVectorFinalWeight(TaskGraph logits) {
             switch (weights.getWeightType()) {
                 case F16:
                 case Q8_0:
@@ -212,7 +212,7 @@ import java.util.List;
          *         Index of the current layer (0-based)
          * @return The configured task graph with appropriate data transfer operations
          */
-        private TaskGraph configureLayerDataTransfers(TaskGraph unifiedLayer, int layerIndex) {
+        protected TaskGraph configureLayerDataTransfers(TaskGraph unifiedLayer, int layerIndex) {
             // First layer: Transfer initial data to device (one-time transfer)
             if (layerIndex == 0) {
                 // Transfer all attention-related data: query, key, value matrices and their caches

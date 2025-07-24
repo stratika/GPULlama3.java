@@ -11,6 +11,7 @@ import com.example.model.ModelType;
 import com.example.model.format.ChatFormat;
 import com.example.tokenizer.impl.Qwen3Tokenizer;
 import com.example.tokenizer.impl.Tokenizer;
+import com.example.tornadovm.TornadoVMMasterPlan;
 
 import java.util.List;
 import java.util.Set;
@@ -54,12 +55,22 @@ public class Qwen3 extends AbstractModel {
 
     @Override
     public void forward(State state, int token, int position) {
-        InferenceCore.forwardJavaQwen3(this, state, token, position);
+        if (plan == null) {
+            InferenceCore.forwardJavaQwen3(this, state, token, position);
+        } else {
+            InferenceCore.forwardTornadoVM(this, state, token, position, tornadoVMPlan());
+        }
     }
 
     @Override
     public List<Integer> generateTokens(State state, int startPosition, List<Integer> promptTokens, Set<Integer> stopTokens, int maxTokens, Sampler sampler, boolean echo, IntConsumer onTokenGenerated) {
         return InferenceEngine.generateTokensQwen3(this, state, startPosition, promptTokens, stopTokens, maxTokens, sampler, echo, onTokenGenerated);
+    }
+
+    @Override
+    public List<Integer> generateTokensGPU(State state, int startPosition, List<Integer> promptTokens, Set<Integer> stopTokens, int maxTokens, Sampler sampler, boolean echo,
+            IntConsumer onTokenGenerated, TornadoVMMasterPlan tornadoVMPlan) {
+        return InferenceEngine.generateTokensGPUQwen3(this, state, startPosition, promptTokens, stopTokens, maxTokens, sampler, echo, onTokenGenerated, tornadoVMPlan);
     }
 
 }
