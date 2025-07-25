@@ -51,17 +51,17 @@ public class Qwen3TornadoVMLayerPlanner extends TornadoVMLayerPlanner<Qwen3State
                     context, state.wrapXb, state.wrapXb2, //
                     state.wrapQ, state.wrapK, state.wrapV, //
                     state.wrapKeyCache, state.wrapValueCache, //
-                    state.wrapAtt, state.wrapHb,
+                    state.wrapAtt, state.wrapHb);//,
                     // dbg buffers
-                    state.dbgQ, state.dbgKeyCache, state.dbgValueCache, state.dbgXb, state.dbgX); //
+                    //state.dbgQ, state.dbgKeyCache, state.dbgValueCache, state.dbgXb, state.dbgX); //
         } else {
             // Subsequent layers: Consume data already on device from previous layer
             unifiedLayer.consumeFromDevice(context, state.wrapXb, state.wrapXb2, //
                     state.wrapQ, state.wrapK, state.wrapV, //
                     state.wrapKeyCache, state.wrapValueCache, //
                     state.wrapAtt, state.wrapHb, //
-                    state.positionHolder, //
-                    state.dbgQ, state.dbgKeyCache, state.dbgValueCache, state.dbgXb, state.dbgX
+                    state.positionHolder //
+                    //state.dbgQ, state.dbgKeyCache, state.dbgValueCache, state.dbgXb, state.dbgX
             );
         }
         return unifiedLayer;
