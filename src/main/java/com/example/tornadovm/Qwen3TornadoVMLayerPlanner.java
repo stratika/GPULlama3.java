@@ -304,22 +304,20 @@ public class Qwen3TornadoVMLayerPlanner extends TornadoVMLayerPlanner<Qwen3State
 //                    state.positionHolder,
 //                    layerIndex);
 
-            unifiedLayer.task("parallel-attention", Qwen3Kernels::processHeadsParallel,
-                            state.wrapQ,
-                            state.wrapKeyCache,
-                            state.wrapValueCache,
-                            state.wrapXb,               // out
-                            config.numberOfHeads(),
-                            nEmbdHead,
-                            nEmbdHeadK,
-                            nEmbdHeadV,
-                            nEmbdGqa,
-                            gqa,
-                            config.vocabularySize(),
-                            state.positionHolder,
-                            state.wrapAtt,              // out
-                            layerIndex,
-                            config.contextLength());
+            unifiedLayer.task("parallel-attention",
+                    TransformerComputeKernelsLayered::processHeadsFlashAttention,
+                    context,
+                    state.wrapQ,
+                    state.wrapKeyCache,
+                    state.wrapValueCache,
+                    state.wrapXb,               // out
+                    config.numberOfHeads(),
+                    nEmbdHead,
+                    nEmbdGqa,
+                    gqa,
+                    state.positionHolder,
+                    layerIndex,
+                    config.contextLength());
 
 //            unifiedLayer.task("dbg_copy_out_x",
 //                    Qwen3Kernels::dbgCopy,
