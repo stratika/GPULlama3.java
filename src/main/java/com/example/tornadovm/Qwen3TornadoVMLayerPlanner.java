@@ -75,7 +75,6 @@ public class Qwen3TornadoVMLayerPlanner extends TornadoVMLayerPlanner<Qwen3State
         state.tempFFN.init(0.0f);
         state.tempLogits.init(0.0f);
         state.wrapLogits.init(0.0f);
-        state.tempKcur.init(0.0f);
 
 //        state.dbgQ.init(0.0f);
 //        state.dbgKeyCache.init(0.0f);
@@ -186,20 +185,20 @@ public class Qwen3TornadoVMLayerPlanner extends TornadoVMLayerPlanner<Qwen3State
             // Qcur = ggml_reshape_3d(ctx0, Qcur, n_embd_head, n_head,    n_tokens);
             //rmsnorm(state.q, state.q, weights.attnQNorm[curLayer], i * nEmbdHead, nEmbdHead, config.rmsNormEps());
             unifiedLayer
-                    .task("reductionsOneBlock_Qcur",
+                    .task("rmsnormReduction_Qcur",
                             Qwen3Kernels::rmsnormReductionWithOffset,
                             context,
                             state.tempQcur,         // output
                             state.wrapQ,            // input
                             state.localSize) // currently 128, should be variable of global nEmbHead
-                    .task("reductionFinalNormalization_Qcur",
+                    .task("rmsnormFinalNormalization_Qcur",
                             Qwen3Kernels::rmsnormFinalNormalizationWithParallelOffset,
                             context,
                             state.tempQcur,     // output
                             config.numberOfHeads(),
                             nEmbdHead,
                             config.rmsNormEps())
-                    .task("mapContext_Qcur",
+                    .task("rmsnormMapIndexInPlace_Qcur",
                             Qwen3Kernels::rmsnormMapIndexInPlaceWithParallelOffset,
                             context,
                             state.wrapQ,        // output
@@ -217,34 +216,28 @@ public class Qwen3TornadoVMLayerPlanner extends TornadoVMLayerPlanner<Qwen3State
 //            unifiedLayer.transferToHost(DataTransferMode.EVERY_EXECUTION, state.wrapK);
 //
             // Kcur = ggml_reshape_3d(ctx0, Kcur, n_embd_head, n_head_kv, n_tokens);
-            for (int i = 0; i < config.numberOfKeyValueHeads(); i++) {
-                //rmsnorm(state.k, state.k, weights.attnKNorm[curLayer], i * nEmbdHead, nEmbdHead, config.rmsNormEps());
-                int offset = i * nEmbdHead;
-                unifiedLayer.task("reductionsOneBlock" + "_Kcur_" + i ,
-                                Qwen3Kernels::reductionOneBlockWithLayerWithOffset,
-                                context,
-                                state.tempKcur,
-                                state.wrapK,
-                                offset,
-                                nEmbdHead,
-                                config.rmsNormEps(),
-                                state.localSize)
-                        // maybe in CPU ?
-                        .task("reductionFinalNormalization" + "_Kcur_" + i ,
-                                TransformerComputeKernelsLayered::reductionFinalNormalization,
-                                context,
-                                state.tempKcur,
-                                nEmbdHead,
-                                config.rmsNormEps())
-                        .task("mapContext" + "_Kcur_" + i,
-                                Qwen3Kernels::mapIndexInPlace,
-                                context,
-                                state.wrapK,
-                                weights.rms_att_KNormLayered[layerIndex],
-                                offset,
-                                nEmbdHead,
-                                state.tempKcur);
-            }
+            //rmsnorm(state.k, state.k, weights.attnKNorm[curLayer], i * nEmbdHead, nEmbdHead, config.rmsNormEps());
+            unifiedLayer
+                    .task("rmsnormReduction_Kcur",
+                            Qwen3Kernels::rmsnormReductionWithOffset,
+                            context,
+                            state.tempKcur,         // output
+                            state.wrapK,            // input
+                            state.localSize) // currently 128, should be variable of global nEmbHead
+                    .task("rmsnormFinalNormalization_Kcur",
+                            Qwen3Kernels::rmsnormFinalNormalizationWithParallelOffset,
+                            context,
+                            state.tempKcur,     // output
+                            config.numberOfKeyValueHeads(),
+                            nEmbdHead,
+                            config.rmsNormEps())
+                    .task("rmsnormMapIndexInPlace_Kcur",
+                            Qwen3Kernels::rmsnormMapIndexInPlaceWithParallelOffset,
+                            context,
+                            state.wrapK,        // output
+                            weights.rms_att_KNormLayered[layerIndex],
+                            nEmbdHead,
+                            state.tempKcur);
             // dbg copy out
             //unifiedLayer.transferToHost(DataTransferMode.EVERY_EXECUTION, state.wrapQ);
             //unifiedLayer.transferToHost(DataTransferMode.EVERY_EXECUTION, state.wrapK);
@@ -445,6 +438,7 @@ public class Qwen3TornadoVMLayerPlanner extends TornadoVMLayerPlanner<Qwen3State
         curWorker.setGlobalWork(nEmbdHead, 1, 1);  // Set global work size to total dimension
         curWorker.setLocalWork(128, 1, 1);         // Set local work size to 256 (standard efficient size)
 
+        // Qcur
         // config.numberOfHeads() = 16
         // nEmbdHead = 128
         // total = 2048
@@ -453,6 +447,16 @@ public class Qwen3TornadoVMLayerPlanner extends TornadoVMLayerPlanner<Qwen3State
 
         WorkerGrid qCurWorker2 = new WorkerGrid1D(config.numberOfHeads());
         qCurWorker2.setLocalWork(1, 1, 1);
+
+        // Kcur
+        // config.numberOfKeyValueHeads() = 8
+        // nEmbdHead = 128
+        // total = 1024
+        WorkerGrid kCurWorker = new WorkerGrid1D(config.numberOfKeyValueHeads() * nEmbdHead);
+        kCurWorker.setLocalWork(nEmbdHead, 1, 1);
+
+        WorkerGrid kCurWorker2 = new WorkerGrid1D(config.numberOfKeyValueHeads());
+        kCurWorker2.setLocalWork(1, 1, 1);
 
         int h = config.numberOfHeads();
         int ic = nEmbdHead / 2;
@@ -493,15 +497,15 @@ public class Qwen3TornadoVMLayerPlanner extends TornadoVMLayerPlanner<Qwen3State
             gridScheduler.addWorkerGrid("layer_" + i + ".kmatmul", matmulKVRowMajorWorker);
             gridScheduler.addWorkerGrid("layer_" + i + ".vmatmul", matmulKVRowMajorWorker);
 
-            gridScheduler.addWorkerGrid("layer_" + i + ".reductionsOneBlock_Qcur", qCurWorker);
-            gridScheduler.addWorkerGrid("layer_" + i + ".reductionFinalNormalization_Qcur", qCurWorker2);
-            gridScheduler.addWorkerGrid("layer_" + i + ".mapContext_Qcur", qCurWorker);
+            // Qcur
+            gridScheduler.addWorkerGrid("layer_" + i + ".rmsnormReduction_Qcur", qCurWorker);
+            gridScheduler.addWorkerGrid("layer_" + i + ".rmsnormFinalNormalization_Qcur", qCurWorker2);
+            gridScheduler.addWorkerGrid("layer_" + i + ".rmsnormMapIndexInPlace_Qcur", qCurWorker);
 
-            for (int j = 0; j < config.numberOfKeyValueHeads(); j++) {
-                gridScheduler.addWorkerGrid("layer_" + i + ".reductionsOneBlock" + "_Kcur_" + j, curWorker);
-                //gridScheduler.addWorkerGrid("layer_" + i + ".reductionFinalNormalization" + "_Kcur_" + j, curWorker);
-                gridScheduler.addWorkerGrid("layer_" + i + ".mapContext" + "_Kcur_" + j, curWorker);
-            }
+            // Kcur
+            gridScheduler.addWorkerGrid("layer_" + i + ".rmsnormReduction_Kcur", kCurWorker);
+            gridScheduler.addWorkerGrid("layer_" + i + ".rmsnormFinalNormalization_Kcur", kCurWorker2);
+            gridScheduler.addWorkerGrid("layer_" + i + ".rmsnormMapIndexInPlace_Kcur", kCurWorker);
 
             gridScheduler.addWorkerGrid("layer_" + i + ".ropeRotation", ropeWorker);
             gridScheduler.addWorkerGrid("layer_" + i + ".copyToCaches", copyToCachesWorker);

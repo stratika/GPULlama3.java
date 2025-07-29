@@ -32,7 +32,7 @@ public final class Qwen3State extends State {
         int nEmbdHead = qwen3config.numberOfHeads();
         this.kq = ArrayFloatTensor.allocate(config.numberOfHeads(), 32, 15);
         this.tempQcur = new FloatArray(nEmbdHead);
-        this.tempKcur = new FloatArray(1 + ((config.dim() + localSize-1) / localSize));
+        this.tempKcur = new FloatArray(nEmbdHead);
 
         // dbg buffers
         int nHeadKv = qwen3config.numberOfKeyValueHeads();
