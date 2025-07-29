@@ -296,8 +296,9 @@ public class Qwen3TornadoVMLayerPlanner extends TornadoVMLayerPlanner<Qwen3State
 //                    state.positionHolder,
 //                    layerIndex);
 
+            // global size = numberOfHeads * 8 = 16 * 8 = 128
             unifiedLayer.task("parallel-attention",
-                    TransformerComputeKernelsLayered::processHeadsFlashAttention,
+                    TransformerComputeKernelsLayered::processHeadsFlashAttentionOpt,
                     context,
                     state.wrapQ,
                     state.wrapKeyCache,
@@ -471,8 +472,8 @@ public class Qwen3TornadoVMLayerPlanner extends TornadoVMLayerPlanner<Qwen3State
         // Parallel attention worker configuration
         WorkerGrid parallelAttentionWorker = new WorkerGrid1D(config.numberOfHeads()); // qwen ok
         // the global group work size is numberOfHeads * localWorkGroupSize, where the localWorkGroupSize is currently 4
-        parallelAttentionWorker.setGlobalWork(config.numberOfHeads() * 8, 1, 1);
-        parallelAttentionWorker.setLocalWork(8, 1, 1); // Set local work size to 4 (for parallel attention)
+        parallelAttentionWorker.setGlobalWork(config.numberOfHeads() * 32, 1, 1);
+        parallelAttentionWorker.setLocalWork(32, 1, 1); // Set local work size to 4 (for parallel attention)
 
         int matmul1Global = config.dim() * LOCAL_WORK_GROUP_SIZE_ALLOC;
         WorkerGrid matmul1Worker = new WorkerGrid1D(matmul1Global);
