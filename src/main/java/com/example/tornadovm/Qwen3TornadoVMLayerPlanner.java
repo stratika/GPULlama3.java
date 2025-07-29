@@ -75,7 +75,6 @@ public class Qwen3TornadoVMLayerPlanner extends TornadoVMLayerPlanner<Qwen3State
         state.tempFFN.init(0.0f);
         state.tempLogits.init(0.0f);
         state.wrapLogits.init(0.0f);
-        state.tempQcur.init(0.0f);
         state.tempKcur.init(0.0f);
 
 //        state.dbgQ.init(0.0f);
@@ -185,28 +184,28 @@ public class Qwen3TornadoVMLayerPlanner extends TornadoVMLayerPlanner<Qwen3State
 //            unifiedLayer.transferToHost(DataTransferMode.EVERY_EXECUTION, state.wrapV);
 
             // Qcur = ggml_reshape_3d(ctx0, Qcur, n_embd_head, n_head,    n_tokens);
-            for (int i = 0; i < config.numberOfHeads(); i++) {
-                //rmsnorm(state.q, state.q, weights.attnQNorm[curLayer], i * nEmbdHead, nEmbdHead, config.rmsNormEps());
-                int offset = i * nEmbdHead;
-                unifiedLayer.task("reductionsOneBlock" + "_Qcur_" + i ,
-                                Qwen3Kernels::reductionOneBlockWithLayerWithOffset,
-                                context,
-                                state.tempQcur,         // output
-                                state.wrapQ,            // input
-                                offset, nEmbdHead,
-                                config.rmsNormEps(), state.localSize)
-                        .task("reductionFinalNormalization" + "_Qcur_" + i ,
-                                    TransformerComputeKernelsLayered::reductionFinalNormalization, context,
-                                    state.tempQcur,     // output
-                                    nEmbdHead,
-                                    config.rmsNormEps())
-                            .task("mapContext" + "_Qcur_" + i,
-                                    Qwen3Kernels::mapIndexInPlace, context,
-                                    state.wrapQ,        // output
-                                    weights.rms_att_QNormLayered[layerIndex],
-                                    offset, nEmbdHead,
-                                    state.tempQcur);
-            }
+            //rmsnorm(state.q, state.q, weights.attnQNorm[curLayer], i * nEmbdHead, nEmbdHead, config.rmsNormEps());
+            unifiedLayer
+                    .task("reductionsOneBlock_Qcur",
+                            Qwen3Kernels::rmsnormReductionWithOffset,
+                            context,
+                            state.tempQcur,         // output
+                            state.wrapQ,            // input
+                            state.localSize) // currently 128, should be variable of global nEmbHead
+                    .task("reductionFinalNormalization_Qcur",
+                            Qwen3Kernels::rmsnormFinalNormalizationWithParallelOffset,
+                            context,
+                            state.tempQcur,     // output
+                            config.numberOfHeads(),
+                            nEmbdHead,
+                            config.rmsNormEps())
+                    .task("mapContext_Qcur",
+                            Qwen3Kernels::rmsnormMapIndexInPlaceWithParallelOffset,
+                            context,
+                            state.wrapQ,        // output
+                            weights.rms_att_QNormLayered[layerIndex],
+                            nEmbdHead,
+                            state.tempQcur);
 
 //            unifiedLayer.task("dbg_copy_out_wrapQ",
 //                    Qwen3Kernels::dbgCopy,
@@ -446,6 +445,15 @@ public class Qwen3TornadoVMLayerPlanner extends TornadoVMLayerPlanner<Qwen3State
         curWorker.setGlobalWork(nEmbdHead, 1, 1);  // Set global work size to total dimension
         curWorker.setLocalWork(128, 1, 1);         // Set local work size to 256 (standard efficient size)
 
+        // config.numberOfHeads() = 16
+        // nEmbdHead = 128
+        // total = 2048
+        WorkerGrid qCurWorker = new WorkerGrid1D(config.numberOfHeads() * nEmbdHead);
+        qCurWorker.setLocalWork(nEmbdHead, 1, 1);
+
+        WorkerGrid qCurWorker2 = new WorkerGrid1D(config.numberOfHeads());
+        qCurWorker2.setLocalWork(1, 1, 1);
+
         int h = config.numberOfHeads();
         int ic = nEmbdHead / 2;
         WorkerGrid ropeWorker = new WorkerGrid2D(h, ic);
@@ -485,24 +493,10 @@ public class Qwen3TornadoVMLayerPlanner extends TornadoVMLayerPlanner<Qwen3State
             gridScheduler.addWorkerGrid("layer_" + i + ".kmatmul", matmulKVRowMajorWorker);
             gridScheduler.addWorkerGrid("layer_" + i + ".vmatmul", matmulKVRowMajorWorker);
 
-//            //int size = nEmbdHead;
-//            for (int j = 0; j < config.numberOfHeads(); j++) {
-////                int offset = j * nEmbdHead;
-////                WorkerGrid qRmsReductionWorker = new WorkerGrid1D(size);
-////                qRmsReductionWorker.setLocalWork(state.localSize, 1, 1);
-//                gridScheduler.addWorkerGrid("layer_" + i + ".reductionsOneBlock" + "_Qcur_" + j, curWorker);
-//                //gridScheduler.addWorkerGrid("layer_" + i + ".reductionFinalNormalization" + "_Qcur_" + j, curWorker);
-//                gridScheduler.addWorkerGrid("layer_" + i + ".mapContext" + "_Qcur_" + j, curWorker);
-//            }
-            // Create separate WorkerGrid for each head
-            for (int j = 0; j < config.numberOfHeads(); j++) {
-                WorkerGrid headWorker = new WorkerGrid1D(nEmbdHead);  // nEmbdHead = 128
-                headWorker.setGlobalWork(nEmbdHead, 1, 1);  // Set global work size to total dimension
-                headWorker.setLocalWork(128, 1, 1);
+            gridScheduler.addWorkerGrid("layer_" + i + ".reductionsOneBlock_Qcur", qCurWorker);
+            gridScheduler.addWorkerGrid("layer_" + i + ".reductionFinalNormalization_Qcur", qCurWorker2);
+            gridScheduler.addWorkerGrid("layer_" + i + ".mapContext_Qcur", qCurWorker);
 
-                gridScheduler.addWorkerGrid("layer_" + i + ".reductionsOneBlock" + "_Qcur_" + j, headWorker);
-                gridScheduler.addWorkerGrid("layer_" + i + ".mapContext" + "_Qcur_" + j, headWorker);
-            }
             for (int j = 0; j < config.numberOfKeyValueHeads(); j++) {
                 gridScheduler.addWorkerGrid("layer_" + i + ".reductionsOneBlock" + "_Kcur_" + j, curWorker);
                 //gridScheduler.addWorkerGrid("layer_" + i + ".reductionFinalNormalization" + "_Kcur_" + j, curWorker);

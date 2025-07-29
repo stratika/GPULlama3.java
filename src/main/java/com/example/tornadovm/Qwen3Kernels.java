@@ -19,6 +19,106 @@ public class Qwen3Kernels {
         //}
     }
 
+    public static void rmsnormReductionWithOffset(
+            KernelContext context,
+            FloatArray output,
+            FloatArray x,
+            int localMemSize) {
+
+        // global size: 0 - (config.numberOfHeads() * nEmbdHead)
+        // local size : 0 - nEmbdHead
+        int gid = context.globalIdx;
+        int lid = context.localIdx;
+        int groupId = context.groupIdx;
+        int groupSize = context.localGroupSizeX;
+
+        // Allocate local memory with the provided size
+        float[] localX = context.allocateFloatLocalArray(localMemSize);
+
+        // Load input value and compute square
+        //int globalReadIndex = gid + offset;
+        //if (gid < size && globalReadIndex < x.getSize()) {
+            localX[lid] = x.get(gid);
+            localX[lid] = localX[lid] * localX[lid];
+        //} else {
+        //    localX[lid] = 0.0f;
+        //}
+
+        // Perform parallel reduction within the work group
+        for (int stride = (groupSize / 2); stride > 0; stride /= 2) {
+            context.localBarrier();
+            if (lid < stride) {
+                localX[lid] += localX[lid + stride];
+            }
+        }
+
+        // Each workgroup stores its partial sum in a different location
+        if (lid == 0) {
+            // Store the partial sum from each workgroup
+            output.set(groupId, localX[0]);
+        }
+    }
+
+    // Second kernel - Combines partial sums and computes final normalization
+    public static void rmsnormFinalNormalizationWithParallelOffset(
+            KernelContext context,
+            FloatArray output, // size should be related to offsetIndex
+            int offsetIndex,   // = config.numberOfHeads()
+            int size,
+            float ermsNorm) {
+
+        int gid = context.globalIdx;
+
+        // Only the index threads need to perform this calculation
+        if (gid < offsetIndex) {
+            // Combine partial sums from all workgroups
+            float ss = 0.0f;
+            //for (int i = 1; i < output.getSize(); i++) {  // Fixed bounds to avoid out of bounds
+//            for (int i = 1; i < output.getSize(); i++) {  // Fixed bounds to avoid out of bounds
+//                ss += output.get(i);
+//            }
+            ss = output.get(gid);
+
+            ss /= size;
+            ss += ermsNorm;
+            ss = 1.0f / TornadoMath.sqrt(ss);
+            // in place
+            output.set(gid, ss);  // Store the final scale factor
+        }
+    }
+
+    public static void rmsnormMapIndexInPlaceWithParallelOffset(
+            KernelContext context,
+            FloatArray out,         // Q
+            FloatArray weights,
+            int size,
+            FloatArray ss           // tempQcur1
+    ) {
+
+        int gid = context.globalIdx; // 0 - size
+        //int index = offset + gid;
+        int groupId = context.groupIdx;
+
+        float finalss = ss.get(groupId);
+        //out.set(index, weights.get(index % size) * (finalss * x.get(index)));
+        //out.set(index, weights.get(index) * (finalss * x.get(index)));
+        //if (index < offset + size) {
+        if (gid < out.getSize()) { // TODO: check if redundant
+            float a = weights.get(gid % size);
+            float b = finalss * out.get(gid);
+            out.set(gid, a * b);
+        }
+
+        //old gid, index:
+        //        int gid = context.globalIdx; // 0 - size
+        //        int index = offset + gid;
+        //        context.globalBarrier();
+        //        // reset ss
+        //        if (gid < ss.getSize()) {
+        //            ss.set(gid, 0.0f);
+        //        }
+    }
+
     public static void reductionOneBlockWithLayerWithOffset(
             KernelContext context,
             FloatArray output,

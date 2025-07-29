@@ -28,12 +28,13 @@ public final class Qwen3State extends State {
     public Qwen3State(Configuration config, int batchsize) {
         super(config, batchsize);
         // Initialize Qwen3-specific field
+        Qwen3Configuration qwen3config = (Qwen3Configuration) config;
+        int nEmbdHead = qwen3config.numberOfHeads();
         this.kq = ArrayFloatTensor.allocate(config.numberOfHeads(), 32, 15);
-        this.tempQcur = new FloatArray(1 + ((config.dim() + localSize-1) / localSize));
+        this.tempQcur = new FloatArray(nEmbdHead);
         this.tempKcur = new FloatArray(1 + ((config.dim() + localSize-1) / localSize));
 
         // dbg buffers
-        Qwen3Configuration qwen3config = (Qwen3Configuration) config;
         int nHeadKv = qwen3config.numberOfKeyValueHeads();
         int nEmbdHeadK = qwen3config.numberOfHeadsKey();
         int nEmbdKGqa = nEmbdHeadK * nHeadKv;
