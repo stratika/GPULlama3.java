@@ -2,7 +2,6 @@ package com.example.tornadovm;
 
 import com.example.auxiliary.Tuple2;
 import com.example.inference.state.Qwen3State;
-import com.example.inference.state.State;
 import com.example.inference.weights.tornado.Qwen3TornadoWeights;
 import com.example.model.Model;
 import com.example.model.qwen3.Qwen3Configuration;
@@ -109,8 +108,6 @@ public class Qwen3TornadoVMLayerPlanner extends TornadoVMLayerPlanner<Qwen3State
                                     config.dim(),
                                     config.rmsNormEps(),
                                     state.localSize)
-                            //.task("reductionFinalNormalization" , TransformerComputeKernelsLayered::reductionFinalNormalization, context,
-                                    //state.temp, config.dim(), config.rmsNormEps())
                             .task("mapContext",
                                     TransformerComputeKernelsLayered::reductionOneBlock2WithLayer,
                                     context,
@@ -119,16 +116,9 @@ public class Qwen3TornadoVMLayerPlanner extends TornadoVMLayerPlanner<Qwen3State
                                     weights.rms_att_weightLayered[layerIndex],
                                     state.temp);
 
-            //unifiedLayer.transferToHost(DataTransferMode.EVERY_EXECUTION, state.wrapXb);
-
-//            // dbg copy out
-//            unifiedLayer.transferToHost(DataTransferMode.EVERY_EXECUTION, state.temp);
-//            unifiedLayer.transferToHost(DataTransferMode.EVERY_EXECUTION, state.wrapXb);
-
             int qDim0 = nEmbdHeadK * config.numberOfHeads();
             int kvDim0 = nEmbdGqa;
             int qkvDim1 = config.dim();
-            //qkvMatmuls = new TaskGraph("qkvMatmuls_layer_" + layerIndex);
             unifiedLayer.task("qmatmul",
                             TransformerComputeKernelsLayered::matrixVectorGeneric,
                             context,
@@ -157,11 +147,6 @@ public class Qwen3TornadoVMLayerPlanner extends TornadoVMLayerPlanner<Qwen3State
                             kvDim0,
                             LOCAL_WORK_GROUP_SIZE_ALLOC);
 
-            // dbg copy out
-//            unifiedLayer.transferToHost(DataTransferMode.EVERY_EXECUTION, state.wrapQ);
-//            unifiedLayer.transferToHost(DataTransferMode.EVERY_EXECUTION, state.wrapK);
-//            unifiedLayer.transferToHost(DataTransferMode.EVERY_EXECUTION, state.wrapV);
-
             // Qcur = ggml_reshape_3d(ctx0, Qcur, n_embd_head, n_head,    n_tokens);
             //rmsnorm(state.q, state.q, weights.attnQNorm[curLayer], i * nEmbdHead, nEmbdHead, config.rmsNormEps());
             unifiedLayer
@@ -173,13 +158,6 @@ public class Qwen3TornadoVMLayerPlanner extends TornadoVMLayerPlanner<Qwen3State
                             state.localSize,        // currently 128, should be variable of global nEmbHead
                             nEmbdHead,              // for normalization
                             config.rmsNormEps())    // for normalization
-//                    .task("rmsnormFinalNormalization_Qcur",
-//                            Qwen3Kernels::rmsnormFinalNormalizationWithParallelOffset,
-//                            context,
-//                            state.tempQcur,     // output
-//                            config.numberOfHeads(),
-//                            nEmbdHead,
-//                            config.rmsNormEps())
                     .task("rmsnormMapIndexInPlace_Qcur",
                             Qwen3Kernels::rmsnormMapIndexInPlaceWithParallelOffset,
                             context,
@@ -187,9 +165,7 @@ public class Qwen3TornadoVMLayerPlanner extends TornadoVMLayerPlanner<Qwen3State
                             weights.rms_att_QNormLayered[layerIndex],
                             nEmbdHead,
                             state.tempQcur);
-//            unifiedLayer.transferToHost(DataTransferMode.EVERY_EXECUTION, state.wrapQ);
-//            unifiedLayer.transferToHost(DataTransferMode.EVERY_EXECUTION, state.wrapK);
-//
+
             // Kcur = ggml_reshape_3d(ctx0, Kcur, n_embd_head, n_head_kv, n_tokens);
             //rmsnorm(state.k, state.k, weights.attnKNorm[curLayer], i * nEmbdHead, nEmbdHead, config.rmsNormEps());
             unifiedLayer
@@ -201,13 +177,6 @@ public class Qwen3TornadoVMLayerPlanner extends TornadoVMLayerPlanner<Qwen3State
                             state.localSize,        // currently 128, should be variable of global nEmbHead
                             nEmbdHead,              // for normalization
                             config.rmsNormEps())    // for normalization
-//                    .task("rmsnormFinalNormalization_Kcur",
-//                            Qwen3Kernels::rmsnormFinalNormalizationWithParallelOffset,
-//                            context,
-//                            state.tempKcur,     // output
-//                            config.numberOfKeyValueHeads(),
-//                            nEmbdHead,
-//                            config.rmsNormEps())
                     .task("rmsnormMapIndexInPlace_Kcur",
                             Qwen3Kernels::rmsnormMapIndexInPlaceWithParallelOffset,
                             context,
@@ -215,10 +184,6 @@ public class Qwen3TornadoVMLayerPlanner extends TornadoVMLayerPlanner<Qwen3State
                             weights.rms_att_KNormLayered[layerIndex],
                             nEmbdHead,
                             state.tempKcur);
-            // dbg copy out
-            //unifiedLayer.transferToHost(DataTransferMode.EVERY_EXECUTION, state.wrapQ);
-            //unifiedLayer.transferToHost(DataTransferMode.EVERY_EXECUTION, state.wrapK);
-            //unifiedLayer.transferToHost(DataTransferMode.EVERY_EXECUTION, state.wrapV);
 
             // rope rotation task graph
             unifiedLayer.task("ropeRotation",
@@ -229,10 +194,6 @@ public class Qwen3TornadoVMLayerPlanner extends TornadoVMLayerPlanner<Qwen3State
                             state.wrapK,            // out
                             config.numberOfKeyValueHeads(),
                             nEmbdHead);
-
-            // dbg copy out
-            //unifiedLayer.transferToHost(DataTransferMode.EVERY_EXECUTION, state.wrapQ);
-            //unifiedLayer.transferToHost(DataTransferMode.EVERY_EXECUTION, state.wrapK);
 
             unifiedLayer.task("copyToCaches",
                     TransformerComputeKernelsLayered::copyToCache,
@@ -245,7 +206,6 @@ public class Qwen3TornadoVMLayerPlanner extends TornadoVMLayerPlanner<Qwen3State
                     layerIndex,
                     config.contextLength());
 
-            // global size = numberOfHeads * 8 = 16 * 8 = 128
             unifiedLayer.task("parallel-attention",
                     TransformerComputeKernelsLayered::processHeadsFlashAttentionOpt,
                     context,
@@ -261,7 +221,6 @@ public class Qwen3TornadoVMLayerPlanner extends TornadoVMLayerPlanner<Qwen3State
                     layerIndex,
                     config.contextLength());
 
-            //unifiedLayer.transferToHost(DataTransferMode.EVERY_EXECUTION, state.wrapXb);
             unifiedLayer.task("matmul1", Qwen3Kernels::matrixVectorGenericWithResidual,
                     context,
                     state.wrapXb,                           // vector
@@ -271,7 +230,6 @@ public class Qwen3TornadoVMLayerPlanner extends TornadoVMLayerPlanner<Qwen3State
                     config.dim(),                           // dim0 = 1024
                     LOCAL_WORK_GROUP_SIZE_ALLOC);
 
-            //unifiedLayer.transferToHost(DataTransferMode.EVERY_EXECUTION, state.wrapX);
             unifiedLayer.task("reductionsOneBlockFFN", TransformerComputeKernelsLayered::reductionOneBlockWithLayer,
                             context, state.tempFFN, state.wrapX, config.dim(), config.rmsNormEps(), state.localSize)
                     .task("reductionFinalNormalizationFFN" , TransformerComputeKernelsLayered::reductionFinalNormalization, context, state.tempFFN,
@@ -283,7 +241,6 @@ public class Qwen3TornadoVMLayerPlanner extends TornadoVMLayerPlanner<Qwen3State
                             state.wrapXb,   state.wrapHb, weights.w1Layered[layerIndex], weights.w3Layered[layerIndex], config.dim(), config.hiddenDim(),  LOCAL_WORK_GROUP_SIZE_ALLOC)
                     .task("projectionTwo", TransformerComputeKernelsLayered::matrixVectorGenericWithResidual, context,
                             state.wrapHb, state.wrapX, weights.w2Layered[layerIndex], config.hiddenDim(), config.dim(),  LOCAL_WORK_GROUP_SIZE_ALLOC)
-                    //.transferToHost(DataTransferMode.EVERY_EXECUTION, state.wrapX)
                     .persistOnDevice(
                             state.wrapX
                     );
@@ -295,14 +252,12 @@ public class Qwen3TornadoVMLayerPlanner extends TornadoVMLayerPlanner<Qwen3State
                 .consumeFromDevice(lastUnifiedLayer.getTaskGraphName(),
                         state.wrapX
                 )
-                //.transferToDevice(DataTransferMode.EVERY_EXECUTION, state.wrapX)
                 .transferToDevice(DataTransferMode.EVERY_EXECUTION,
                         state.tempLogits,
                         state.wrapLogits
                 )
                 .transferToDevice(DataTransferMode.FIRST_EXECUTION,
                         context,
-                        //state.wrapLogits,
                         weights.wclsHalfFloat,
                         weights.rms_final_weight_as_floatArray
                 )
@@ -313,13 +268,8 @@ public class Qwen3TornadoVMLayerPlanner extends TornadoVMLayerPlanner<Qwen3State
                         config.dim(),
                         config.rmsNormEps(),
                         state.localSize)
-//                .transferToHost(DataTransferMode.EVERY_EXECUTION, state.tempLogits)
-//                .transferToHost(DataTransferMode.EVERY_EXECUTION, state.wrapX)
-//                .task("reductionFinalNormalizationLogits" , TransformerComputeKernelsLayered::reductionFinalNormalization, context, state.tempLogits,
-//                        config.dim(), config.rmsNormEps())
                 .task("mapContextLogits", TransformerComputeKernels::reductionOneBlock2WithLogits, context, state.wrapX,
                         weights.rms_final_weight_as_floatArray, state.tempLogits);
-                //.transferToHost(DataTransferMode.EVERY_EXECUTION, state.tempLogits);
         logits = configureQuantizedMatrixVectorFinalWeight(logits);
         logits.transferToHost(DataTransferMode.EVERY_EXECUTION, state.wrapLogits);
         taskGraphs.add(logits.snapshot());
@@ -357,24 +307,12 @@ public class Qwen3TornadoVMLayerPlanner extends TornadoVMLayerPlanner<Qwen3State
         curWorker.setLocalWork(128, 1, 1);         // Set local work size to 256 (standard efficient size)
 
         // Qcur
-        // config.numberOfHeads() = 16
-        // nEmbdHead = 128
-        // total = 2048
         WorkerGrid qCurWorker = new WorkerGrid1D(config.numberOfHeads() * nEmbdHead);
         qCurWorker.setLocalWork(nEmbdHead, 1, 1);
 
-//        WorkerGrid qCurWorker2 = new WorkerGrid1D(config.numberOfHeads());
-//        qCurWorker2.setLocalWork(1, 1, 1);
-
         // Kcur
-        // config.numberOfKeyValueHeads() = 8
-        // nEmbdHead = 128
-        // total = 1024
         WorkerGrid kCurWorker = new WorkerGrid1D(config.numberOfKeyValueHeads() * nEmbdHead);
         kCurWorker.setLocalWork(nEmbdHead, 1, 1);
-
-//        WorkerGrid kCurWorker2 = new WorkerGrid1D(config.numberOfKeyValueHeads());
-//        kCurWorker2.setLocalWork(1, 1, 1);
 
         int h = config.numberOfHeads();
         int ic = nEmbdHead / 2;
@@ -384,13 +322,12 @@ public class Qwen3TornadoVMLayerPlanner extends TornadoVMLayerPlanner<Qwen3State
 
         WorkerGrid copyToCachesWorker = new WorkerGrid1D(nEmbdGqa);
         copyToCachesWorker.setGlobalWork(nEmbdGqa, 1, 1);
-        copyToCachesWorker.setLocalWork(128, 1, 1); // Set local work size to 32 (for copying to caches)
+        copyToCachesWorker.setLocalWork(128, 1, 1);
 
         // Parallel attention worker configuration
-        WorkerGrid parallelAttentionWorker = new WorkerGrid1D(config.numberOfHeads()); // qwen ok
-        // the global group work size is numberOfHeads * localWorkGroupSize, where the localWorkGroupSize is currently 4
+        WorkerGrid parallelAttentionWorker = new WorkerGrid1D(config.numberOfHeads());
         parallelAttentionWorker.setGlobalWork(config.numberOfHeads() * 32, 1, 1);
-        parallelAttentionWorker.setLocalWork(32, 1, 1); // Set local work size to 4 (for parallel attention)
+        parallelAttentionWorker.setLocalWork(32, 1, 1);
 
         int matmul1Global = config.dim() * LOCAL_WORK_GROUP_SIZE_ALLOC;
         WorkerGrid matmul1Worker = new WorkerGrid1D(matmul1Global);
@@ -408,7 +345,6 @@ public class Qwen3TornadoVMLayerPlanner extends TornadoVMLayerPlanner<Qwen3State
         gridScheduler.addWorkerGrid("activationUpdate.updateX", singleWorker);
         for (int i = 0; i < config.numberOfLayers(); i++) {
             gridScheduler.addWorkerGrid("layer_" + i + ".reductionsOneBlock", rmsNormWorker);
-            //gridScheduler.addWorkerGrid("layer_" + i + ".reductionFinalNormalization", rmsNormWorker);
             gridScheduler.addWorkerGrid("layer_" + i + ".mapContext", rmsNormWorker);
 
             gridScheduler.addWorkerGrid("layer_" + i + ".qmatmul", matmulQRowMajorWorker);
@@ -417,12 +353,10 @@ public class Qwen3TornadoVMLayerPlanner extends TornadoVMLayerPlanner<Qwen3State
 
             // Qcur
             gridScheduler.addWorkerGrid("layer_" + i + ".rmsnormReduction_Qcur", qCurWorker);
-            //gridScheduler.addWorkerGrid("layer_" + i + ".rmsnormFinalNormalization_Qcur", qCurWorker2);
             gridScheduler.addWorkerGrid("layer_" + i + ".rmsnormMapIndexInPlace_Qcur", qCurWorker);
 
             // Kcur
             gridScheduler.addWorkerGrid("layer_" + i + ".rmsnormReduction_Kcur", kCurWorker);
-            //gridScheduler.addWorkerGrid("layer_" + i + ".rmsnormFinalNormalization_Kcur", kCurWorker2);
             gridScheduler.addWorkerGrid("layer_" + i + ".rmsnormMapIndexInPlace_Kcur", kCurWorker);
 
             gridScheduler.addWorkerGrid("layer_" + i + ".ropeRotation", ropeWorker);
@@ -430,7 +364,6 @@ public class Qwen3TornadoVMLayerPlanner extends TornadoVMLayerPlanner<Qwen3State
             gridScheduler.addWorkerGrid("layer_" + i + ".parallel-attention", parallelAttentionWorker);
             gridScheduler.addWorkerGrid("layer_" + i + ".matmul1", matmul1Worker);
             gridScheduler.addWorkerGrid("layer_" + i + ".reductionsOneBlockFFN", rmsNormWorker);
-            //gridScheduler.addWorkerGrid("layer_" + i + ".reductionFinalNormalizationFFN", rmsNormWorker);
             gridScheduler.addWorkerGrid("layer_" + i + ".mapContextFFN", rmsNormWorker);
             gridScheduler.addWorkerGrid("layer_" + i + ".fused_ffn_w1_w3", fusedFFNW1W3Worker);
             gridScheduler.addWorkerGrid("layer_" + i + ".projectionTwo", projectionTwoWorker);
