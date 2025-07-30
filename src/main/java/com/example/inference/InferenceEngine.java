@@ -136,7 +136,6 @@ public final class InferenceEngine {
             IntConsumer onTokenGenerated) {
         // Start timing the whole process
         long startNanos = System.nanoTime();
-        long startGen = 0;
         long inferenceStartNanos = 0;
 
         // Validate and adjust maxTokens if necessary
@@ -159,14 +158,7 @@ public final class InferenceEngine {
                 // We're still processing the prompt tokens
                 final int token = promptTokens.get(promptIndex);
 
-                //System.out.println("Token: " + token);
                 model.forward(state, token, position);
-
-//                System.out.println("Token = " + token + " -> state.logits = { " +
-//                        state.logits.getFloat(0) + ", " +
-//                        state.logits.getFloat(1) + ", " +
-//                        state.logits.getFloat(2) + ", " +
-//                        state.logits.getFloat(3) + " }");
 
                 promptIndex++;
                 if (promptIndex < promptTokens.size()) {
@@ -176,7 +168,6 @@ public final class InferenceEngine {
                     System.err.print(Tokenizer.replaceControlCharacters(model.tokenizer().decode(List.of(nextToken))));
                 }
                 // We have reached the last prompt token and computed the first response-token.
-                startGen = System.nanoTime();
                 position++; // The current logit belongs to the next position
             } else {
                 // Mark the start of actual generation (after prompt processing)
@@ -184,27 +175,11 @@ public final class InferenceEngine {
                     inferenceStartNanos = System.nanoTime();
                 }
 
-                //System.out.println("currentToken: " + currentToken);
                 model.forward(state, currentToken, position);
-
-//                System.out.println("currentToken = " + currentToken + " -> state.logits = { " +
-//                        state.logits.getFloat(0) + ", " +
-//                        state.logits.getFloat(1) + ", " +
-//                        state.logits.getFloat(2) + ", " +
-//                        state.logits.getFloat(3) + " }");
-
             }
-
-//            System.out.print("state.logits = { " +
-//                            state.logits.getFloat(0) + ", " +
-//                            state.logits.getFloat(1) + ", " +
-//                            state.logits.getFloat(2) + ", " +
-//                            state.logits.getFloat(3) + "}");
 
             // Sample the next token
             nextToken = sampler.sampleToken(state.logits);
-
-            //System.out.println(", nextToken: " + nextToken);
 
             // Output the token if echo is enabled
             if (echo) {
@@ -328,12 +303,10 @@ public final class InferenceEngine {
         return generatedTokens;
     }
 
-    // probably not needed TODO: check this when its working
     public static List<Integer> generateTokensGPUQwen3(Model model, State state, int startPosition, List<Integer> promptTokens, Set<Integer> stopTokens, int maxTokens, Sampler sampler, boolean echo,
             IntConsumer onTokenGenerated, TornadoVMMasterPlan tornadoVMPlan) {
         // Start timing the whole process
         long startNanos = System.nanoTime();
-        long startGen = 0;
         long inferenceStartNanos = 0;
 
         // Pre-validate the max tokens to avoid checking in the loop
@@ -369,12 +342,6 @@ public final class InferenceEngine {
                 //System.out.println("Token: " + token);
                 model.forward(state, token, position);
 
-//                System.out.println("Token = " + token + " -> state.wrapLogits = { " +
-//                        state.wrapLogits.get(0) + ", " +
-//                        state.wrapLogits.get(1) + ", " +
-//                        state.wrapLogits.get(2) + ", " +
-//                        state.wrapLogits.get(3) + " }");
-
                 promptIndex++;
                 if (promptIndex < promptTokens.size()) {
                     continue;
@@ -383,7 +350,6 @@ public final class InferenceEngine {
                     System.err.print(Tokenizer.replaceControlCharacters(model.tokenizer().decode(List.of(nextToken))));
                 }
                 // We have reached the last prompt token and computed the first response-token.
-                startGen = System.nanoTime();
                 position++; // The current logit belongs to the next position
             } else {
                 // Mark the start of actual generation (after prompt processing)
@@ -391,22 +357,11 @@ public final class InferenceEngine {
                     inferenceStartNanos = System.nanoTime();
                 }
 
-                //System.out.println("currentToken: " + currentToken);
                 model.forward(state, currentToken, position);
-
-//                System.out.println("currentToken = " + currentToken + " -> state.wrapLogits = { " +
-//                        state.wrapLogits.get(0) + ", " +
-//                        state.wrapLogits.get(1) + ", " +
-//                        state.wrapLogits.get(2) + ", " +
-//                        state.wrapLogits.get(3) + " }");
-
             }
-
 
             // Sample the next token
             nextToken = sampler.sampleToken(state.wrapLogits);
-
-            //System.out.println(", nextToken: "+ nextToken);
 
             // Output the token if echo is enabled
             if (echo) {
