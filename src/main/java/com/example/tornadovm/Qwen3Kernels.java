@@ -119,6 +119,49 @@ public class Qwen3Kernels {
         //        }
     }
 
+    /**
+     * RmsNorm with parallel offset:
+     *
+     * Optimized kernel that combines Step 1 (Reduction) and Step 2 (Normalization).
+     */
+    public static void rmsnormWithParallelOffset(
+            KernelContext context,
+            FloatArray output,
+            FloatArray x,
+            int localMemSize,
+            int size,
+            float ermsNorm) {
+
+        int gid = context.globalIdx;
+        int lid = context.localIdx;
+        int groupId = context.groupIdx;
+        int groupSize = context.localGroupSizeX;
+
+        // Allocate local memory with the provided size
+        float[] localX = context.allocateFloatLocalArray(localMemSize);
+
+        // Load input value and compute square
+        localX[lid] = x.get(gid);
+        localX[lid] = localX[lid] * localX[lid];
+
+        // Perform parallel reduction within the work group
+        for (int stride = (groupSize / 2); stride > 0; stride /= 2) {
+            context.localBarrier();
+            if (lid < stride) {
+                localX[lid] += localX[lid + stride];
+            }
+        }
+
+        // Each workgroup performs the normalization
+        if (lid == 0) {
+            // Store the partial sum from each workgroup
+            localX[0] /= size;
+            localX[0] += ermsNorm;
+            localX[0] = 1.0f / TornadoMath.sqrt(localX[0]);
+            output.set(groupId, localX[0]);
+        }
+    }
+
     public static void reductionOneBlockWithLayerWithOffset(
             KernelContext context,
             FloatArray output,
