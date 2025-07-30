@@ -85,15 +85,6 @@ public final class Qwen3State extends State {
         fields.tempFFN = new FloatArray(1 + ((config.dim() + localSize-1) / localSize));
         fields.tempLogits = new FloatArray(1 + ((config.dim() + localSize-1) / localSize));
 
-        System.out.println("nEmbdHeadK: " + nEmbdHeadK);
-        System.out.println("nEmbdHeadV: " + nEmbdHeadV);
-        System.out.println("nEmbdKGqa: " + nEmbdKGqa);
-        System.out.println("nEmbdVGqa: " + nEmbdVGqa);
-        System.out.println("nEmbdGqa: " + nEmbdGqa);
-        System.out.println("wrapK.getSize(): " + fields.wrapK.getSize());
-        System.out.println("wrapV.getSize(): " + fields.wrapV.getSize());
-        System.out.println("wrapV.getSize(): " + fields.wrapV.getSize());
-
         return fields;
     }
 }
