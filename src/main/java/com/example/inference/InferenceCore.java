@@ -176,9 +176,9 @@ public final class InferenceCore {
 
     public static FloatTensor forwardJavaQwen3(Model model, State state, int token, int position) {
         // a few convenience variables
-        final Qwen3Configuration config = (Qwen3Configuration) model.configuration();         // same
-        final Qwen3StandardWeights weights = (Qwen3StandardWeights) model.weights();                                              // same
-        int dim = config.dim();                                                               // same
+        final Qwen3Configuration config = (Qwen3Configuration) model.configuration();
+        final Qwen3StandardWeights weights = (Qwen3StandardWeights) model.weights();
+        int dim = config.dim();
         int nHeadKv = config.numberOfKeyValueHeads(); // n_head_kv = numberOfKeyValueHeads
         int nEmbdHeadK = config.numberOfHeadsKey(); // n_embd_head_k = n_embd / n_head; %s.attention.key_length
         int nEmbdHeadV = config.numberOfHeadsValue(); // n_embd_head_v = n_embd / n_head; %s.attention.value_length
@@ -212,7 +212,7 @@ public final class InferenceCore {
             }
 
             // RoPE relative positional encoding: complex-valued rotate q and k in each head
-            //for (int i = 0; i < config.numberOfHeads(); i += 2) {
+            // GPT-NeoX style RoPE, real/imaginary components are stored with a headSize/2 offset per head, instead of consecutive.
             for (int h = 0; h < config.numberOfHeads(); ++h) {
                 int rotn = h < config.numberOfKeyValueHeads() ? 2 : 1; // how many vectors? 2 = q & k, 1 = q only
                 int poffset = h * nEmbdHead;
@@ -237,39 +237,32 @@ public final class InferenceCore {
             state.v.copyTo(0, state.valueCache[curLayer], position * nEmbdGqa, nEmbdGqa);
 
             // multihead attention. iterate over all heads
-            // Process tokens one by one instead of in parallel
             Parallel.parallelFor(0, config.numberOfHeads(), h -> {
                 // get the query vector for this head
-                // float* q = s.q + h * headSize;
                 int qOffset = h * nEmbdHead;
                 // attention scores for this head
-                // float* att = s.att + h * config.seq_len;
                 int attOffset = h * config.contextLength();
 
                 // iterate over all timesteps, including the current one
                 for (int t = 0; t <= position; t++) {
                     // get the key vector for this head and at this timestep
-                    // float* k = s.key_cache + loff + t * dim + h * headSize;
                     int keyCacheOffset = /* loff + */ (t * nEmbdGqa + (h / gqa) * nEmbdHead);
                     // calculate the attention score as the dot product of q and k
                     float score = state.q.dot(qOffset, state.keyCache[curLayer], keyCacheOffset, nEmbdHeadK);
-                    //state.kq.setFloat(h + t, score);
                     score /= sqrtHeadSize;
                     // save the score to the attention buffer
                     state.att.setFloat(attOffset + t, score);
                 }
 
+                // softmax the scores to get attention weights, from 0..position inclusively
                 state.att.softmaxInPlace(attOffset, position + 1); // position + 0 + 1
 
                 // weighted sum of the values, store back into xb
-                // float* xb = s.xb + h * headSize;
                 int xbOffset = h * nEmbdHeadV;
-                // memset(xb, 0, headSize * sizeof(float));
                 state.xb.fillInPlace(xbOffset, nEmbdHeadV, 0f);
 
                 for (int t = 0; t <= position; t++) {
                     // get the value vector for this head and at this timestep
-                    // float* v = s.value_cache + loff + t * dim + h * headSize;C
                     int vOffset = /* loff + */ t * nEmbdGqa + (h / gqa) * nEmbdHeadV;
                     // get the attention weight for this timestep
                     float a = state.att.getFloat(attOffset + t);
@@ -306,8 +299,10 @@ public final class InferenceCore {
             state.x.addInPlace(state.xb);
         }
 
+        // final rmsnorm
         rmsnorm(state.x, state.x, weights.rms_final_weight, 0, dim, config.rmsNormEps());
 
+        // classifier into logits
         weights.wcls.matmul(state.x, state.logits, config.vocabularySize(), dim);
 
         return state.logits;
