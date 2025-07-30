@@ -51,9 +51,7 @@ public class Qwen3TornadoVMLayerPlanner extends TornadoVMLayerPlanner<Qwen3State
                     context, state.wrapXb, state.wrapXb2, //
                     state.wrapQ, state.wrapK, state.wrapV, //
                     state.wrapKeyCache, state.wrapValueCache, //
-                    state.wrapAtt, state.wrapHb);//,
-                    // dbg buffers
-                    //state.dbgQ, state.dbgKeyCache, state.dbgValueCache, state.dbgXb, state.dbgX); //
+                    state.wrapAtt, state.wrapHb);//
         } else {
             // Subsequent layers: Consume data already on device from previous layer
             unifiedLayer.consumeFromDevice(context, state.wrapXb, state.wrapXb2, //
@@ -61,7 +59,6 @@ public class Qwen3TornadoVMLayerPlanner extends TornadoVMLayerPlanner<Qwen3State
                     state.wrapKeyCache, state.wrapValueCache, //
                     state.wrapAtt, state.wrapHb, //
                     state.positionHolder //
-                    //state.dbgQ, state.dbgKeyCache, state.dbgValueCache, state.dbgXb, state.dbgX
             );
         }
         return unifiedLayer;
@@ -75,10 +72,6 @@ public class Qwen3TornadoVMLayerPlanner extends TornadoVMLayerPlanner<Qwen3State
         state.tempFFN.init(0.0f);
         state.tempLogits.init(0.0f);
         state.wrapLogits.init(0.0f);
-
-//        state.dbgQ.init(0.0f);
-//        state.dbgKeyCache.init(0.0f);
-//        state.dbgValueCache.init(0.0f);
 
         // @formatter:off
         TaskGraph activationUpdate = new TaskGraph("activationUpdate")
@@ -108,12 +101,6 @@ public class Qwen3TornadoVMLayerPlanner extends TornadoVMLayerPlanner<Qwen3State
                     weights.w3Layered[layerIndex]
             );
             unifiedLayer = configureLayerDataTransfers(unifiedLayer, layerIndex);
-//            unifiedLayer.task("dbg_copy_out_x",
-//                    Qwen3Kernels::dbgCopy,
-//                    state.wrapX,
-//                    state.dbgX,
-//                    state.positionHolder,
-//                    layerIndex);
             unifiedLayer.task("reductionsOneBlock",
                                     TransformerComputeKernelsLayered::reductionOneBlockWithLayer,
                                     context,
@@ -170,13 +157,6 @@ public class Qwen3TornadoVMLayerPlanner extends TornadoVMLayerPlanner<Qwen3State
                             kvDim0,
                             LOCAL_WORK_GROUP_SIZE_ALLOC);
 
-//            unifiedLayer.task("dbg_copy_out_wrapQ",
-//                    Qwen3Kernels::dbgCopy,
-//                    state.wrapQ,
-//                    state.dbgQ,
-//                    state.positionHolder,
-//                    layerIndex);
-
             // dbg copy out
 //            unifiedLayer.transferToHost(DataTransferMode.EVERY_EXECUTION, state.wrapQ);
 //            unifiedLayer.transferToHost(DataTransferMode.EVERY_EXECUTION, state.wrapK);
@@ -205,13 +185,6 @@ public class Qwen3TornadoVMLayerPlanner extends TornadoVMLayerPlanner<Qwen3State
                             weights.rms_att_QNormLayered[layerIndex],
                             nEmbdHead,
                             state.tempQcur);
-
-//            unifiedLayer.task("dbg_copy_out_wrapQ",
-//                    Qwen3Kernels::dbgCopy,
-//                    state.wrapQ,
-//                    state.dbgQ,
-//                    state.positionHolder,
-//                    layerIndex);
 //            unifiedLayer.transferToHost(DataTransferMode.EVERY_EXECUTION, state.wrapQ);
 //            unifiedLayer.transferToHost(DataTransferMode.EVERY_EXECUTION, state.wrapK);
 //
@@ -253,13 +226,6 @@ public class Qwen3TornadoVMLayerPlanner extends TornadoVMLayerPlanner<Qwen3State
                             config.numberOfKeyValueHeads(),
                             nEmbdHead);
 
-//            unifiedLayer.task("dbg_copy_out_wrapQ",
-//                    Qwen3Kernels::dbgCopy,
-//                    state.wrapQ,
-//                    state.dbgQ,
-//                    state.positionHolder,
-//                    layerIndex);
-
             // dbg copy out
             //unifiedLayer.transferToHost(DataTransferMode.EVERY_EXECUTION, state.wrapQ);
             //unifiedLayer.transferToHost(DataTransferMode.EVERY_EXECUTION, state.wrapK);
@@ -274,27 +240,6 @@ public class Qwen3TornadoVMLayerPlanner extends TornadoVMLayerPlanner<Qwen3State
                     nEmbdGqa,
                     layerIndex,
                     config.contextLength());
-
-//            unifiedLayer.task("dbg_copy_out_q",
-//                    Qwen3Kernels::dbgCopy,
-//                    state.wrapQ,
-//                    state.dbgQ,
-//                    state.positionHolder,
-//                    layerIndex);
-//
-//            unifiedLayer.task("dbg_copy_out_keyCache",
-//                    Qwen3Kernels::dbgCopy,
-//                    state.wrapKeyCache,
-//                    state.dbgKeyCache,
-//                    state.positionHolder,
-//                    layerIndex);
-//
-//            unifiedLayer.task("dbg_copy_out_ValueCache",
-//                    Qwen3Kernels::dbgCopy,
-//                    state.wrapValueCache,
-//                    state.dbgValueCache,
-//                    state.positionHolder,
-//                    layerIndex);
 
             // global size = numberOfHeads * 8 = 16 * 8 = 128
             unifiedLayer.task("parallel-attention",
@@ -312,20 +257,6 @@ public class Qwen3TornadoVMLayerPlanner extends TornadoVMLayerPlanner<Qwen3State
                     layerIndex,
                     config.contextLength());
 
-//            unifiedLayer.task("dbg_copy_out_x",
-//                    Qwen3Kernels::dbgCopy,
-//                    state.wrapX,
-//                    state.dbgX,
-//                    state.positionHolder,
-//                    layerIndex);
-//
-//            unifiedLayer.task("dbg_copy_out_xb",
-//                    Qwen3Kernels::dbgCopy,
-//                    state.wrapXb,
-//                    state.dbgXb,
-//                    state.positionHolder,
-//                    layerIndex);
-
             //unifiedLayer.transferToHost(DataTransferMode.EVERY_EXECUTION, state.wrapXb);
             unifiedLayer.task("matmul1", Qwen3Kernels::matrixVectorGenericWithResidual,
                     context,
@@ -336,13 +267,6 @@ public class Qwen3TornadoVMLayerPlanner extends TornadoVMLayerPlanner<Qwen3State
                     config.dim(),                           // dim0 = 1024
                     LOCAL_WORK_GROUP_SIZE_ALLOC);
 
-//            unifiedLayer.task("dbg_copy_out_x",
-//                    Qwen3Kernels::dbgCopy,
-//                    state.wrapX,
-//                    state.dbgX,
-//                    state.positionHolder,
-//                    layerIndex);
-
             //unifiedLayer.transferToHost(DataTransferMode.EVERY_EXECUTION, state.wrapX);
             unifiedLayer.task("reductionsOneBlockFFN", TransformerComputeKernelsLayered::reductionOneBlockWithLayer,
                             context, state.tempFFN, state.wrapX, config.dim(), config.rmsNormEps(), state.localSize)
@@ -351,22 +275,11 @@ public class Qwen3TornadoVMLayerPlanner extends TornadoVMLayerPlanner<Qwen3State
                     .task("mapContextFFN", TransformerComputeKernelsLayered::reductionOneBlock2WithLayer, context, state.wrapXb,
                             state.wrapX, weights.rms_ffn_weightLayered[layerIndex], state.tempFFN);
 
-//            unifiedLayer.task("dbg_copy_out_xb",
-//                    Qwen3Kernels::dbgCopy,
-//                    state.wrapXb,
-//                    state.dbgXb,
-//                    state.positionHolder,
-//                    layerIndex);
-
             unifiedLayer.task("fused_ffn_w1_w3", TransformerComputeKernelsLayered::fusedFeedForwardWithSiLUAndGLUActivation, context,
                             state.wrapXb,   state.wrapHb, weights.w1Layered[layerIndex], weights.w3Layered[layerIndex], config.dim(), config.hiddenDim(),  LOCAL_WORK_GROUP_SIZE_ALLOC)
                     .task("projectionTwo", TransformerComputeKernelsLayered::matrixVectorGenericWithResidual, context,
                             state.wrapHb, state.wrapX, weights.w2Layered[layerIndex], config.hiddenDim(), config.dim(),  LOCAL_WORK_GROUP_SIZE_ALLOC)
                     //.transferToHost(DataTransferMode.EVERY_EXECUTION, state.wrapX)
-                    // dbg copy out
-                    //.transferToHost(DataTransferMode.EVERY_EXECUTION, state.dbgQ, state.dbgKeyCache, state.dbgValueCache)
-                    //.transferToHost(DataTransferMode.EVERY_EXECUTION, state.dbgX)//, state.dbgXb)
-                    //.transferToHost(DataTransferMode.EVERY_EXECUTION, state.dbgValueCache)
                     .persistOnDevice(
                             state.wrapX
                     );

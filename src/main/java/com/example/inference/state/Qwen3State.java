@@ -18,13 +18,6 @@ public final class Qwen3State extends State {
     public FloatArray tempQcur;
     public FloatArray tempKcur;
 
-    // dbg buffer
-    public FloatArray dbgQ;
-    public FloatArray dbgKeyCache;
-    public FloatArray dbgValueCache;
-    public FloatArray dbgX;
-    public FloatArray dbgXb;
-
     public Qwen3State(Configuration config, int batchsize) {
         super(config, batchsize);
         // Initialize Qwen3-specific field
@@ -33,20 +26,6 @@ public final class Qwen3State extends State {
         this.kq = ArrayFloatTensor.allocate(config.numberOfHeads(), 32, 15);
         this.tempQcur = new FloatArray(nEmbdHead);
         this.tempKcur = new FloatArray(nEmbdHead);
-
-        // dbg buffers
-        int nHeadKv = qwen3config.numberOfKeyValueHeads();
-        int nEmbdHeadK = qwen3config.numberOfHeadsKey();
-        int nEmbdKGqa = nEmbdHeadK * nHeadKv;
-        int nEmbdHeadV = qwen3config.numberOfHeadsValue();
-        int nEmbdVGqa = nEmbdHeadV * nHeadKv;
-        int nEmbdGqa = nEmbdVGqa;
-
-        this.dbgQ = new FloatArray(nEmbdHeadK * qwen3config.numberOfHeads());
-        this.dbgKeyCache = new FloatArray(qwen3config.contextLength() * nEmbdGqa * qwen3config.numberOfLayers());
-        this.dbgValueCache = new FloatArray(qwen3config.contextLength() * nEmbdGqa * qwen3config.numberOfLayers());
-        this.dbgX = new FloatArray(config.dim());
-        this.dbgXb = new FloatArray(nEmbdHeadK * qwen3config.numberOfHeads());
     }
 
     @Override
