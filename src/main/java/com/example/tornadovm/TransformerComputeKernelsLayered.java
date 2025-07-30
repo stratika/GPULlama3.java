@@ -34,10 +34,10 @@ public class TransformerComputeKernelsLayered {
      * @param localMemSize Size of local memory allocation (must match work group size)
      */
     public static void reductionOneBlockWithLayer(KernelContext context, FloatArray output, FloatArray x, int size, float ermsNorm, int localMemSize) {
-        int gid = context.globalIdx; // 0-1024
-        int lid = context.localIdx;  // 0-256
-        int groupId = context.groupIdx; // 0-4
-        int groupSize = context.localGroupSizeX; // 256
+        int gid = context.globalIdx;
+        int lid = context.localIdx;
+        int groupId = context.groupIdx;
+        int groupSize = context.localGroupSizeX;
 
         // Allocate local memory with the provided size
         float[] localX = context.allocateFloatLocalArray(localMemSize);
@@ -115,8 +115,7 @@ public class TransformerComputeKernelsLayered {
      * @param layer Current transformer layer index
      * @param contextLength Maximum sequence length
      */
-    public static void copyToCache(FloatArray destKeyCache, FloatArray srcKey, FloatArray destValueCache, FloatArray srcValue,
-            IntArray positioNlayer, int kvDim, int layer, int contextLength) {
+    public static void copyToCache(FloatArray destKeyCache, FloatArray srcKey, FloatArray destValueCache, FloatArray srcValue, IntArray positioNlayer, int kvDim, int layer, int contextLength) {
 
         int position = positioNlayer.get(0);
         int loff = layer * contextLength * kvDim;
@@ -195,14 +194,8 @@ public class TransformerComputeKernelsLayered {
      * @param layer Current transformer layer
      * @param contextLength Maximum context length
      */
-    public static void processHeadsParallel(
-            FloatArray q,
-            FloatArray key_cache,
-            FloatArray value_cache,
-            FloatArray xb,
-            int nHeads, int headSize, int kvDim, int kvMul, int seqLen,
-            IntArray positionHolder,
-            FloatArray wrapAtt, int layer, int contextLength) {
+    public static void processHeadsParallel(FloatArray q, FloatArray key_cache, FloatArray value_cache, FloatArray xb, int nHeads, int headSize, int kvDim, int kvMul, int seqLen,
+            IntArray positionHolder, FloatArray wrapAtt, int layer, int contextLength) {
 
         int pos = positionHolder.get(0);
         int loff = layer * contextLength * kvDim;
@@ -663,8 +656,7 @@ public class TransformerComputeKernelsLayered {
      * @param d Output dimension
      * @param localWorkGroupSize Work group size
      */
-    public static void matrixVectorGenericWithResidual(KernelContext context, FloatArray x, FloatArray hb, HalfFloatArray w,
-            int n, int d, int localWorkGroupSize) {
+    public static void matrixVectorGenericWithResidual(KernelContext context, FloatArray x, FloatArray hb, HalfFloatArray w, int n, int d, int localWorkGroupSize) {
         // One row per workgroup (not per thread)
         int rowId = context.groupIdx;
         int localId = context.localIdx;
@@ -794,8 +786,8 @@ public class TransformerComputeKernelsLayered {
     }
 
     public static float matrixVectorRowMajorOptimized(KernelContext context, int localSize, FloatArray x, HalfFloatArray w, int n) {
-        int rowId = context.groupIdx; // 0-dim
-        int localId = context.localIdx; // 0-32
+        int rowId = context.groupIdx;
+        int localId = context.localIdx;
 
         // Allocate local memory for reduction
         float[] localSum = context.allocateFloatLocalArray(localSize);
