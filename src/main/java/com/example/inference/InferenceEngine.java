@@ -25,9 +25,10 @@ import java.util.function.IntConsumer;
  * <p>
  * It provides unified logic for the following methods:
  * <ul>
- *     <li>{@code generateTokensLlama} – for LLaMA and Mistral models running on CPU</li>
- *     <li>{@code generateTokensQwen3} – for Qwen3 models running on CPU</li>
- *     <li>{@code generateTokensGPU} – for models executed on GPU</li>
+ *     <li>{@link #generateTokensLlama}     – for LLaMA and Mistral models running on CPU</li>
+ *     <li>{@link #generateTokensGPULlama}  – for LLaMA and Mistral models executed on GPU</li>
+ *     <li>{@link #generateTokensQwen3}     – for Qwen3 models running on CPU</li>
+ *     <li>{@link #generateTokensGPUQwen3}  – for Qwen3 models executed on GPU</li>
  * </ul>
  * </p>
  */
@@ -213,7 +214,7 @@ public final class InferenceEngine {
         return generatedTokens;
     }
 
-    public static List<Integer> generateTokensGPU(Model model, State state, int startPosition, List<Integer> promptTokens, Set<Integer> stopTokens, int maxTokens, Sampler sampler, boolean echo,
+    public static List<Integer> generateTokensGPULlama(Model model, State state, int startPosition, List<Integer> promptTokens, Set<Integer> stopTokens, int maxTokens, Sampler sampler, boolean echo,
             IntConsumer onTokenGenerated, TornadoVMMasterPlan tornadoVMPlan) {
         // === Setup and Initialization ===
         long startNanos = System.nanoTime();
