@@ -96,7 +96,6 @@ public class TornadoVMMasterPlan {
      * Dispatcher method to select the TornadoVMLayerPlanner for the model.
      */
     TornadoVMLayerPlanner createPlanner(State state, Model model) {
-        System.out.println("Creating TornadoVM layer planner : " + model.getModelType() );
         return switch (model.getModelType()) {
             case LLAMA_3, MISTRAL -> new TornadoVMLayerPlanner(state, model);
             case QWEN_3 -> new Qwen3TornadoVMLayerPlanner((Qwen3State) state, model);

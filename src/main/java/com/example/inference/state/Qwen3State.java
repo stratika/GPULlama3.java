@@ -11,19 +11,16 @@ import java.util.stream.Stream;
 
 public final class Qwen3State extends State {
 
-    // Qwen3-specific field
-    public final FloatTensor kq;
-
-    // Qwen3 temporary buffer for intermediate calculations, size adjusted for local workgroup size.
+    // Qwen3 specific fields
+    // Temporary buffers for intermediate calculations.
     public FloatArray tempQcur;
     public FloatArray tempKcur;
 
     public Qwen3State(Configuration config, int batchsize) {
         super(config, batchsize);
-        // Initialize Qwen3-specific field
+        // Initialize Qwen3-specific fields
         Qwen3Configuration qwen3config = (Qwen3Configuration) config;
         int nEmbdHead = qwen3config.numberOfHeads();
-        this.kq = ArrayFloatTensor.allocate(config.numberOfHeads(), 32, 15);
         this.tempQcur = new FloatArray(nEmbdHead);
         this.tempKcur = new FloatArray(nEmbdHead);
     }
@@ -34,9 +31,7 @@ public final class Qwen3State extends State {
 
         Qwen3Configuration config = (Qwen3Configuration) configuration;
 
-        //localSize = 128;
-
-        // Qwen3-specific calculations
+        // Qwen3-specific sizes
         int nHeadKv = config.numberOfKeyValueHeads();
         int nEmbdHeadK = config.numberOfHeadsKey();
         int nEmbdKGqa = nEmbdHeadK * nHeadKv;
@@ -51,8 +46,8 @@ public final class Qwen3State extends State {
         fields.hb = ArrayFloatTensor.allocate(config.hiddenDim());
         fields.hb2 = ArrayFloatTensor.allocate(config.hiddenDim());
         fields.q = ArrayFloatTensor.allocate(nEmbdHeadK * config.numberOfHeads());
-        fields.k = ArrayFloatTensor.allocate(nEmbdKGqa);  // Different from Llama!
-        fields.v = ArrayFloatTensor.allocate(nEmbdKGqa);  // Different from Llama!
+        fields.k = ArrayFloatTensor.allocate(nEmbdKGqa);
+        fields.v = ArrayFloatTensor.allocate(nEmbdKGqa);
         fields.att = ArrayFloatTensor.allocate(config.numberOfHeads(), config.contextLength());
         fields.logits = ArrayFloatTensor.allocate(config.vocabularySize());
 
@@ -64,14 +59,14 @@ public final class Qwen3State extends State {
 
         // TornadoVM wrappers with Qwen3-specific sizes
         fields.wrapX = new FloatArray(config.dim());
-        fields.wrapXb = new FloatArray(nEmbdHeadK * config.numberOfHeads());  // Different from Llama!
+        fields.wrapXb = new FloatArray(nEmbdHeadK * config.numberOfHeads());
         fields.wrapXb2 = new FloatArray(config.dim());
         fields.wrapHb = new FloatArray(config.hiddenDim());
         fields.wrapHb2 = new FloatArray(config.hiddenDim());
         fields.wrapLogits = new FloatArray(config.vocabularySize());
-        fields.wrapQ = new FloatArray(nEmbdHeadK * config.numberOfHeads());   // Different from Llama!
-        fields.wrapK = new FloatArray(nEmbdKGqa);  // Different from Llama!
-        fields.wrapV = new FloatArray(nEmbdKGqa);  // Different from Llama!
+        fields.wrapQ = new FloatArray(nEmbdHeadK * config.numberOfHeads());
+        fields.wrapK = new FloatArray(nEmbdKGqa);
+        fields.wrapV = new FloatArray(nEmbdKGqa);
 
         fields.wrapKeyCache = new FloatArray(config.contextLength() * nEmbdGqa * config.numberOfLayers());
         fields.wrapValueCache = new FloatArray(config.contextLength() * nEmbdGqa * config.numberOfLayers());
