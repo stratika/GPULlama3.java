@@ -2,7 +2,6 @@ package com.example.model;
 
 import com.example.Options;
 import com.example.auxiliary.LastRunMetrics;
-import com.example.inference.InferenceEngine;
 import com.example.inference.sampler.Sampler;
 import com.example.inference.state.State;
 import com.example.inference.weights.Weights;
@@ -194,12 +193,12 @@ public interface Model {
         Set<Integer> stopTokens = chatFormat.getStopTokens();
 
         if (USE_TORNADOVM) {
+            // GPU path using TornadoVM
             tornadoVMPlan = TornadoVMMasterPlan.initializeTornadoVMPlan(state, this);
             // Call generateTokensGPU without the token consumer parameter
-            //responseTokens = InferenceEngine.generateTokensGPU(this, state, 0, promptTokens, stopTokens, options.maxTokens(), sampler, options.echo(), options.stream() ? tokenConsumer : null,
-            //        tornadoVMPlan);
             responseTokens = generateTokensGPU(state, 0, promptTokens, stopTokens, options.maxTokens(), sampler, options.echo(), options.stream() ? tokenConsumer : null, tornadoVMPlan);
         } else {
+            // CPU path
             responseTokens = generateTokens(state, 0, promptTokens, stopTokens, options.maxTokens(), sampler, options.echo(), tokenConsumer);
         }
 

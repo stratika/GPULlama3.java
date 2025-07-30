@@ -47,9 +47,7 @@ public class Qwen3ModelLoader extends ModelLoader {
                 contextLength = modelContextLength;
             }
 
-            //String modelName = ggufPath.getFileName().toString();
             Qwen3Configuration config = new Qwen3Configuration(
-                    //modelName,
                     (int) metadata.get("qwen3.embedding_length"),
                     (int) metadata.get("qwen3.feed_forward_length"),
                     (int) metadata.get("qwen3.block_count"),
@@ -110,7 +108,6 @@ public class Qwen3ModelLoader extends ModelLoader {
     @Override
     public Weights createTornadoVMWeights(Map<String, GGMLTensorEntry> tensorEntries, Configuration config, Pair<float[], float[]> ropeFreqs, GGMLTensorEntry tokenEmbeddings,
             GGMLTensorEntry outputWeight) {
-        //throw new UnsupportedOperationException("Not supported yet.");
         return new Qwen3TornadoWeights(
                 loadTensorAsFloatArray(tokenEmbeddings),
                 loadArrayAsFloatArrayFromBuffer(config.numberOfLayers(), i -> tensorEntries.get("blk." + i + ".attn_norm.weight")),
