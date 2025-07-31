@@ -15,6 +15,7 @@ public record LlamaConfiguration(int dim, int hiddenDim, int numberOfLayers, int
         throw new UnsupportedOperationException("Not supported for Llama.");
     }
 
+    /** Size of each attention head (derived from dim / numberOfHeads) */
     public int headSize() {
         return dim / numberOfHeads;
     }

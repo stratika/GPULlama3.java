@@ -34,7 +34,6 @@ public interface Configuration {
     /** Base value for RoPE (Rotary Position Embedding) calculations */
     float ropeTheta();
 
-    /** Size of each attention head (derived from dim / numberOfHeads) */
     int headSize();
 
     int kvDim();

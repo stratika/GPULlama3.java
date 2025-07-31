@@ -38,9 +38,9 @@ public abstract class ModelLoader {
     private static final String TOKENIZER_MISTRAL_MODEL = "llama";
 
     protected FileChannel fileChannel;
-    GGUF gguf;
-    int contextLength;
-    boolean loadWeights;
+    protected GGUF gguf;
+    protected int contextLength;
+    protected boolean loadWeights;
 
     public ModelLoader(FileChannel fileChannel, GGUF gguf, int contextLength, boolean loadWeights) {
         this.fileChannel = fileChannel;

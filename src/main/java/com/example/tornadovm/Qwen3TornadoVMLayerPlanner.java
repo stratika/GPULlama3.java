@@ -18,14 +18,13 @@ import java.util.List;
 
 public class Qwen3TornadoVMLayerPlanner extends TornadoVMLayerPlanner<Qwen3State, Qwen3Configuration, Qwen3TornadoWeights> {
 
-    int nHeadKv;
-    int nEmbdHeadK;
-    int nEmbdHeadV;
-    int nEmbdVGqa;
-    int nEmbdHead;
-    int nEmbdGqa;
-    int gqa;
-    float sqrtHeadSize;
+    private final int nHeadKv;
+    private final int nEmbdHeadK;
+    private final int nEmbdHeadV;
+    private final int nEmbdVGqa;
+    private final int nEmbdHead;
+    private final int nEmbdGqa;
+    private final int gqa;
 
     public Qwen3TornadoVMLayerPlanner(Qwen3State state, Model model) {
         super(state, model);
@@ -37,7 +36,6 @@ public class Qwen3TornadoVMLayerPlanner extends TornadoVMLayerPlanner<Qwen3State
         this.nEmbdHead = nEmbdHeadV;
         this.nEmbdGqa = nEmbdVGqa;
         this.gqa = config.numberOfHeads() / config.numberOfKeyValueHeads(); // integer multiplier of the kv sharing in multiquery
-        this.sqrtHeadSize = (float) Math.sqrt(nEmbdHead);
     }
 
     // @formatter:off
