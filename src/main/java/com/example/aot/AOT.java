@@ -3,11 +3,13 @@ package com.example.aot;
 import com.example.auxiliary.Timer;
 import com.example.core.model.GGUF;
 import com.example.core.model.tensor.GGMLTensorEntry;
+import com.example.model.loader.LlamaModelLoader;
 import com.example.model.Model;
 import com.example.Options;
+import com.example.model.format.LlamaChatFormat;
 import com.example.model.llama.Llama;
-import com.example.loader.weights.ModelLoader;
-import com.example.loader.weights.Weights;
+import com.example.inference.weights.Weights;
+import com.example.tokenizer.impl.LlamaTokenizer;
 
 import java.io.IOException;
 import java.nio.channels.FileChannel;
@@ -28,8 +30,10 @@ import java.util.Objects;
 public final class AOT {
     AOT.PartialModel preLoaded = AOT.PRELOADED_GGUF;
 
+    static LlamaModelLoader modelLoader;
 
-    record PartialModel(String modelFileName, Llama model, long tensorDataOffset, Map<String, GGUF.GGUFTensorInfo> tensorInfos) {}
+    record PartialModel(String modelFileName, Llama model, long tensorDataOffset, Map<String, GGUF.GGUFTensorInfo> tensorInfos) {
+    }
 
     private static final PartialModel PRELOADED_GGUF = preLoadGGUF(System.getProperty("llama.PreloadGGUF"));
 
@@ -44,12 +48,9 @@ public final class AOT {
             }
             GGUF gguf = GGUF.loadModel(path);
             try (FileChannel fileChannel = FileChannel.open(path, StandardOpenOption.READ)) {
-                return new PartialModel(
-                        path.getFileName().toString(),
-                        Llama.loadModel(fileChannel, gguf, Options.DEFAULT_MAX_TOKENS, false), // TODO: needs proper handling for AOT
-                        gguf.getTensorDataOffset(),
-                        gguf.getTensorInfos()
-                );
+                modelLoader = new LlamaModelLoader(fileChannel, gguf, Options.DEFAULT_MAX_TOKENS, false);
+                return new PartialModel(path.getFileName().toString(), modelLoader.loadModel(), // TODO: needs proper handling for AOT
+                        gguf.getTensorDataOffset(), gguf.getTensorInfos());
             }
         } catch (IOException e) {
             throw new RuntimeException(e);
@@ -73,12 +74,11 @@ public final class AOT {
             return null;
         }
         Llama baseModel = preLoaded.model();
-        try (var timer = Timer.log("Load tensors from pre-loaded model");
-                var fileChannel = FileChannel.open(modelPath, StandardOpenOption.READ)) {
+        try (var timer = Timer.log("Load tensors from pre-loaded model"); var fileChannel = FileChannel.open(modelPath, StandardOpenOption.READ)) {
             // Load only the tensors (mmap slices).
             Map<String, GGMLTensorEntry> tensorEntries = GGUF.loadTensors(fileChannel, preLoaded.tensorDataOffset(), preLoaded.tensorInfos());
-            Weights weights = ModelLoader.loadWeights(tensorEntries, baseModel.configuration());
-            return new Llama(baseModel.configuration().withContextLength(contextLength), baseModel.tokenizer(), weights);
+            Weights weights = modelLoader.loadWeights(tensorEntries, baseModel.configuration());
+            return new Llama(baseModel.configuration().withContextLength(contextLength), baseModel.tokenizer(), weights, new LlamaChatFormat((LlamaTokenizer) baseModel.tokenizer()));
         }
     }
 }

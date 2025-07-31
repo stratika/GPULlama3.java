@@ -1,27 +1,38 @@
 package com.example.model.llama;
 
-import com.example.auxiliary.Timer;
-import com.example.core.model.GGUF;
-import com.example.core.model.tensor.GGMLTensorEntry;
-import com.example.model.Model;
-import com.example.loader.weights.State;
-import com.example.loader.weights.Weights;
+import com.example.inference.InferenceCore;
+import com.example.inference.InferenceEngine;
+import com.example.inference.sampler.Sampler;
+import com.example.inference.state.LlamaState;
+import com.example.inference.state.State;
+import com.example.inference.weights.Weights;
+import com.example.model.AbstractModel;
 import com.example.model.ModelType;
+import com.example.model.format.ChatFormat;
 import com.example.tokenizer.impl.LlamaTokenizer;
 import com.example.tokenizer.impl.Tokenizer;
-import com.example.tokenizer.vocabulary.Vocabulary;
+import com.example.tornadovm.TornadoVMMasterPlan;
 
-import java.io.IOException;
-import java.nio.channels.FileChannel;
-import java.util.Map;
+import java.util.List;
+import java.util.Set;
+import java.util.function.IntConsumer;
 
-import static com.example.loader.weights.ModelLoader.loadWeights;
+public class Llama extends AbstractModel {
 
-public record Llama(LlamaConfiguration configuration, Tokenizer tokenizer, Weights weights) implements Model {
-    private static final int BATCH_SIZE = Integer.getInteger("llama.BatchSize", 16);
+    LlamaConfiguration configuration;
 
-    /* For explicit use */
-    private LlamaTokenizer getAsLlamaTokenizer() {
+    public Llama(LlamaConfiguration configuration, Tokenizer tokenizer, Weights weights, ChatFormat chatFormat) {
+        super(tokenizer, weights, chatFormat, null);
+        this.configuration = configuration;
+    }
+
+    @Override
+    public LlamaConfiguration configuration() {
+        return configuration;
+    }
+
+    @Override
+    public LlamaTokenizer tokenizer() {
         return (LlamaTokenizer) tokenizer;
     }
 
@@ -32,53 +43,33 @@ public record Llama(LlamaConfiguration configuration, Tokenizer tokenizer, Weigh
 
     @Override
     public State createNewState() {
-        State state = new State(configuration(), -1);
+        State state = new LlamaState(configuration(), -1);
         state.latestToken = tokenizer.getSpecialTokens().get("<|begin_of_text|>");
         return state;
     }
 
     @Override
     public State createNewState(int batchsize) {
-        State state = new State(configuration(), batchsize);
+        State state = new LlamaState(configuration(), batchsize);
         state.latestToken = tokenizer.getSpecialTokens().get("<|begin_of_text|>");
         return state;
     }
 
-    // @formatter:off
-    public static Llama loadModel(FileChannel fileChannel, GGUF gguf, int contextLength, boolean loadWeights) {
-        try (var ignored = Timer.log("Load LlaMa model")) {
-            Map<String, Object> metadata = gguf.getMetadata();
-
-            Vocabulary vocabulary = Vocabulary.loadLlamaVocabulary(metadata);
-            Tokenizer tokenizer = new LlamaTokenizer(metadata, vocabulary);
-
-            LlamaConfiguration config = new LlamaConfiguration(
-                    (int) metadata.get("llama.embedding_length"),
-                    (int) metadata.get("llama.feed_forward_length"),
-                    (int) metadata.get("llama.block_count"),
-                    (int) metadata.get("llama.attention.head_count"),
-
-                    metadata.containsKey("llama.attention.head_count_kv") ?
-                            (int) metadata.get("llama.attention.head_count_kv") :
-                            (int) metadata.get("llama.attention.head_count"),
-
-                    vocabulary.size(),
-                    (int) metadata.get("llama.context_length"),
-                    (float) metadata.getOrDefault("llama.attention.layer_norm_rms_epsilon", 1e-5f),
-                    (float) metadata.getOrDefault("llama.rope.freq_base", 10000f)
-            ).withContextLength(contextLength);
-
-            Weights weights = null;
-            if (loadWeights) {
-                Map<String, GGMLTensorEntry> tensorEntries = GGUF.loadTensors(fileChannel, gguf.getTensorDataOffset(), gguf.getTensorInfos());
-                weights = loadWeights(tensorEntries, config);
-            }
-            return new Llama(config, tokenizer, weights);
-        } catch (IOException e) {
-            throw new RuntimeException(e);
-        }
+    @Override
+    public void forward(State state, int token, int position) {
+        InferenceCore.forwardJava(this, state, token, position);
     }
-    // @formatter:on
 
+    @Override
+    public List<Integer> generateTokens(State state, int startPosition, List<Integer> promptTokens, Set<Integer> stopTokens, int maxTokens, Sampler sampler, boolean echo,
+            IntConsumer onTokenGenerated) {
+        return InferenceEngine.generateTokensLlama(this, state, startPosition, promptTokens, stopTokens, maxTokens, sampler, echo, onTokenGenerated);
+    }
+
+    @Override
+    public List<Integer> generateTokensGPU(State state, int startPosition, List<Integer> promptTokens, Set<Integer> stopTokens, int maxTokens, Sampler sampler, boolean echo,
+            IntConsumer onTokenGenerated, TornadoVMMasterPlan tornadoVMPlan) {
+        return InferenceEngine.generateTokensGPULlama(this, state, startPosition, promptTokens, stopTokens, maxTokens, sampler, echo, onTokenGenerated, tornadoVMPlan);
+    }
 }
 

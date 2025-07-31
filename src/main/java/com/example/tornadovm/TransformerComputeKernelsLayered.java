@@ -411,6 +411,177 @@ public class TransformerComputeKernelsLayered {
     }
 
     /**
+     * Same as processHeadsFlashAttention but with some optimizations
+     * that seem to lower attention's execution time, especially in larger models.
+     */
+    public static void processHeadsFlashAttentionOpt(KernelContext context, FloatArray q, FloatArray key_cache, FloatArray value_cache, FloatArray xb, int nHeads, int headSize, int kvDim, int kvMul,
+            IntArray positionHolder, int layer, int contextLength) {
+
+        // Thread and workgroup information
+        int tid = context.localIdx;
+        int h = context.groupIdx;  // Each workgroup processes one head
+        int localSize = context.localGroupSizeX;
+
+        // Early exit if this workgroup is beyond our head count
+        // This relies on the kernel being launched with nHeads workgroups.
+        if (h >= nHeads) {
+            return;
+        }
+
+        int pos = positionHolder.get(0);
+        int loff = layer * contextLength * kvDim;
+        int kvHeadIdx = h / kvMul;
+        int BLOCK_SIZE_C = 32;
+
+        // Allocate shared memory for tiled computation
+        float[] q_shared = context.allocateFloatLocalArray(headSize);
+        float[] k_tile = context.allocateFloatLocalArray(BLOCK_SIZE_C * headSize);
+        float[] v_tile = context.allocateFloatLocalArray(BLOCK_SIZE_C * headSize);
+        float[] s_tile = context.allocateFloatLocalArray(BLOCK_SIZE_C);
+        float[] shared_tile_max_holder = context.allocateFloatLocalArray(1); // FIX: For broadcasting tile max
+
+        // Thread-local accumulators for online softmax
+        float maxScore = Float.NEGATIVE_INFINITY;
+        float sumExp = 0.0f;
+
+        // Thread-local output accumulation
+        float[] output = new float[headSize];
+        for (int i = 0; i < headSize; i++) {
+            output[i] = 0.0f;
+        }
+
+        // Load query vector into shared memory
+        for (int i = tid; i < headSize; i += localSize) {
+            q_shared[i] = q.get(h * headSize + i);
+        }
+
+        context.localBarrier();
+
+        // Process sequence in tiles
+        for (int tileC = 0; tileC <= pos; tileC += BLOCK_SIZE_C) {
+            int tileEnd = Math.min(tileC + BLOCK_SIZE_C - 1, pos);
+
+            // Load key and value vectors for this tile
+            // Each thread loads a contiguous block of elements
+            int totalElements = (tileEnd - tileC + 1) * headSize;
+            int elementsPerThread = (totalElements + localSize - 1) / localSize;
+            int startElem = tid * elementsPerThread;
+            int endElem = Math.min(startElem + elementsPerThread, totalElements);
+
+            for (int globalElemIdx = startElem; globalElemIdx < endElem; globalElemIdx++) {
+                // Convert flat index to (sequence_pos, dimension)
+                int seqIdx = globalElemIdx / headSize;
+                int dimIdx = globalElemIdx % headSize;
+
+                int tIdxInSeq = tileC + seqIdx;
+                int tileMemOffset = seqIdx * headSize + dimIdx;
+
+                int kvCacheAbsolutePos = tIdxInSeq;
+                int kvOffset = loff + kvCacheAbsolutePos * kvDim + kvHeadIdx * headSize + dimIdx;
+
+                k_tile[tileMemOffset] = key_cache.get(kvOffset);
+                v_tile[tileMemOffset] = value_cache.get(kvOffset);
+            }
+
+            context.localBarrier();
+
+            // Compute attention scores for this tile
+            // Each thread computes one score for the tile
+            for (int tIdxInSeq = tileC + tid; tIdxInSeq <= tileEnd; tIdxInSeq += localSize) {
+                int score_idx_in_tile = tIdxInSeq - tileC; // 0, 1, 2, or 3 for this tile
+
+                float score = 0.0f;
+                for (int d = 0; d < headSize; d++) {
+                    score += q_shared[d] * k_tile[score_idx_in_tile * headSize + d];
+                }
+                score /= TornadoMath.sqrt(headSize);
+                s_tile[score_idx_in_tile] = score;
+            }
+
+            context.localBarrier();
+
+            // Allocate shared memory for reduction (needs to be power of 2)
+            int reductionSize = 1024; // Should be >= BLOCK_SIZE_C and power of 2
+            float[] reduction_shared = context.allocateFloatLocalArray(reductionSize);
+
+            // Step 1: Each thread finds max of its assigned subset
+            int itemsPerThread = (BLOCK_SIZE_C + localSize - 1) / localSize;
+            int startIdx = tid * itemsPerThread;
+            int endIdx = Math.min(startIdx + itemsPerThread, tileEnd - tileC + 1);
+
+            float threadLocalMax = Float.NEGATIVE_INFINITY;
+            for (int i = startIdx; i < endIdx; i++) {
+                if (s_tile[i] > threadLocalMax) {
+                    threadLocalMax = s_tile[i];
+                }
+            }
+
+            // Step 2: Store each thread's local max in shared memory
+            reduction_shared[tid] = threadLocalMax;
+            context.localBarrier();
+
+            // Step 3: Parallel reduction tree
+            for (int stride = localSize / 2; stride > 0; stride /= 2) {
+                if (tid < stride && tid + stride < localSize) {
+                    reduction_shared[tid] = Math.max(reduction_shared[tid], reduction_shared[tid + stride]);
+                }
+                context.localBarrier();
+            }
+
+            // Step 4: Thread 0 now has the final max
+            float currentTileMax = reduction_shared[0];
+
+            // Determine if we need to rescale previous results
+            float newMax = Math.max(maxScore, currentTileMax);
+            if (newMax != maxScore && maxScore != Float.NEGATIVE_INFINITY) {
+                float scale = TornadoMath.exp(maxScore - newMax);
+                sumExp *= scale;
+                for (int d = 0; d < headSize; d++) {
+                    output[d] *= scale;
+                }
+            }
+            maxScore = newMax;
+
+            // Process each key-value pair using original scores from s_tile
+            // All threads iterate over all scores in the current tile
+            for (int t_idx_in_s_tile = 0; t_idx_in_s_tile <= tileEnd - tileC; t_idx_in_s_tile++) {
+                // s_tile[t_idx_in_s_tile] now correctly refers to the original score
+                float expScore = TornadoMath.exp(s_tile[t_idx_in_s_tile] - maxScore);
+                sumExp += expScore;
+
+                for (int d = 0; d < headSize; d++) {
+                    output[d] += expScore * v_tile[t_idx_in_s_tile * headSize + d];
+                }
+            }
+            context.localBarrier(); // Ensure all threads finish with s_tile, k_tile, v_tile before next tile load
+        }
+
+        float normFactor = (sumExp > 0.0f) ? (1.0f / sumExp) : 0.0f;
+
+        int dimsPerThread = (headSize + localSize - 1) / localSize;
+        int startDim = tid * dimsPerThread;
+        int endDim = Math.min(startDim + dimsPerThread, headSize);
+        int baseOffset = h * headSize + startDim;
+
+        // Process 4 elements at a time when possible
+        int vectorEnd = startDim + ((endDim - startDim) & ~3); // Round down to multiple of 4
+
+        // Unrolled loop for better instruction-level parallelism
+        for (int d = startDim; d < vectorEnd; d += 4) {
+            int offset = d - startDim;
+            xb.set(baseOffset + offset, output[d] * normFactor);
+            xb.set(baseOffset + offset + 1, output[d + 1] * normFactor);
+            xb.set(baseOffset + offset + 2, output[d + 2] * normFactor);
+            xb.set(baseOffset + offset + 3, output[d + 3] * normFactor);
+        }
+
+        // Handle remaining elements (0-3 elements)
+        for (int d = vectorEnd; d < endDim; d++) {
+            xb.set(h * headSize + d, output[d] * normFactor);
+        }
+    }
+
+    /**
      * Performs optimized matrix-vector multiplication where each work group
      * processes one row of the matrix.
      *
@@ -445,23 +616,32 @@ public class TransformerComputeKernelsLayered {
         }
     }
 
-    public static void matrixVectorGeneric(KernelContext context, FloatArray x, FloatArray hb, HalfFloatArray w, int n, int d, int localWorkGroupSize) {
+    // @formatter:off
+    public static void matrixVectorGeneric(
+            KernelContext context,
+            FloatArray x,
+            FloatArray hb,                  // output
+            HalfFloatArray w,
+            int dim1,                       // inner loop
+            int dim0,                       // outer loop
+            int localWorkGroupSize) {
         // One row per workgroup (not per thread)
         int rowId = context.groupIdx;
         int localId = context.localIdx;
         int localSize = localWorkGroupSize;
 
         // Early exit if this workgroup is beyond our output dimension
-        if (rowId >= d) {
+        if (rowId >= dim0) {
             return;
         }
-        float sum = matrixVectorRowMajorOptimized(context, localSize, x, w, n);
+        float sum = matrixVectorRowMajorOptimized(context, localSize, x, w, dim1);
 
         // Thread 0 in each workgroup writes the final result
         if (localId == 0) {
             hb.set(rowId, sum);
         }
     }
+    // @formatter:on
 
     /**
      * Matrix-vector multiplication with residual connection.
