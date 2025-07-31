@@ -62,10 +62,11 @@ public interface Model {
      * @param options
      */
     default void runInteractive(Sampler sampler, Options options) {
-        State state = null;
+        // Even though might be expensive, create state here for smoother interaction later
+        State state = createNewState();
         List<Integer> conversationTokens = new ArrayList<>();
-
         ChatFormat chatFormat = chatFormat();
+        TornadoVMMasterPlan tornadoVMPlan = null;
 
         if (!getModelType().equals(ModelType.QWEN_3)) {
             conversationTokens.add(chatFormat.getBeginOfText());
@@ -79,7 +80,9 @@ public interface Model {
         Scanner in = new Scanner(System.in);
 
         // Initialize TornadoVM plan once at the beginning if GPU path is enabled
-        TornadoVMMasterPlan tornadoVMPlan = null;
+        if (USE_TORNADOVM && tornadoVMPlan == null) {
+            tornadoVMPlan = TornadoVMMasterPlan.initializeTornadoVMPlan(state, this);
+        }
 
         try {
             while (true) {
@@ -88,15 +91,6 @@ public interface Model {
                 String userText = in.nextLine();
                 if (List.of("quit", "exit").contains(userText)) {
                     break;
-                }
-                if (state == null) {
-                    // State allocation can take some time for large context sizes,
-                    // allocate the model state only after printing the user '>' prompt.
-                    state = createNewState();
-                }
-
-                if (USE_TORNADOVM && tornadoVMPlan == null) {
-                    tornadoVMPlan = TornadoVMMasterPlan.initializeTornadoVMPlan(state, this);
                 }
 
                 conversationTokens.addAll(chatFormat.encodeMessage(new ChatFormat.Message(ChatFormat.Role.USER, userText)));
@@ -177,6 +171,12 @@ public interface Model {
         if (options.systemPrompt() != null) {
             promptTokens.addAll(chatFormat.encodeMessage(new ChatFormat.Message(ChatFormat.Role.SYSTEM, options.systemPrompt())));
         }
+
+        // Initialize TornadoVM plan once at the beginning if GPU path is enabled
+        if (USE_TORNADOVM && tornadoVMPlan == null) {
+            tornadoVMPlan = TornadoVMMasterPlan.initializeTornadoVMPlan(state, this);
+        }
+
         promptTokens.addAll(chatFormat.encodeMessage(new ChatFormat.Message(ChatFormat.Role.USER, options.prompt())));
         promptTokens.addAll(chatFormat.encodeHeader(new ChatFormat.Message(ChatFormat.Role.ASSISTANT, "")));
 
@@ -194,7 +194,6 @@ public interface Model {
 
         if (USE_TORNADOVM) {
             // GPU path using TornadoVM
-            tornadoVMPlan = TornadoVMMasterPlan.initializeTornadoVMPlan(state, this);
             // Call generateTokensGPU without the token consumer parameter
             responseTokens = generateTokensGPU(state, 0, promptTokens, stopTokens, options.maxTokens(), sampler, options.echo(), options.stream() ? tokenConsumer : null, tornadoVMPlan);
         } else {
