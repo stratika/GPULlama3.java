@@ -17,7 +17,7 @@
 <strong>Llama3</strong> models written in <strong>native Java</strong> automatically accelerated on GPUs with <a href="https://github.com/beehive-lab/TornadoVM" target="_blank"><strong>TornadoVM</strong></a>.
 Runs Llama3 inference efficiently using TornadoVM's GPU acceleration.
 <br><br>
-Currently, supports <strong>Llama3</strong> and <strong>Mistral</strong> models in the GGUF format.
+Currently, supports <strong>Llama3</strong>, <strong>Mistral</strong> and, <strong>Qwen3</strong> models in the GGUF format.
 <br><br>
 Builds on <a href="https://github.com/mukel/llama3.java">Llama3.java</a> by <a href="https://github.com/mukel">Alfonso² Peterssen</a>.
 Previous integration of TornadoVM and Llama2 it can be found in <a href="https://github.com/mikepapadim/llama2.tornadovm.java">llama2.tornadovm</a>.
@@ -187,6 +187,7 @@ llama-tornado --gpu --model beehive-llama-3.2-1b-instruct-fp16.gguf --prompt "te
     -Dtornado.load.tornado.implementation=uk.ac.manchester.tornado.runtime.common.Tornado \
     -Dtornado.load.annotation.implementation=uk.ac.manchester.tornado.annotation.ASMClassVisitor \
     -Dtornado.load.annotation.parallel=uk.ac.manchester.tornado.api.annotations.Parallel \
+    -Dtornado.tvm.maxbytecodesize=65536 \
     -Duse.tornadovm=true \
     -Dtornado.threadInfo=false \
     -Dtornado.debug=false \
@@ -237,6 +238,12 @@ Download `FP16` quantized `Llama-3` .gguf files from:
 Download `FP16` quantized `Mistral` .gguf files from:
 - https://huggingface.co/collections/beehive-lab/mistral-gpullama3java-684afabb206136d2e9cd47e0
 
+Download `FP16` quantized `Qwen3` .gguf files from:
+- https://huggingface.co/ggml-org/Qwen3-0.6B-GGUF
+- https://huggingface.co/ggml-org/Qwen3-1.7B-GGUF
+- https://huggingface.co/ggml-org/Qwen3-4B-GGUF
+- https://huggingface.co/ggml-org/Qwen3-8B-GGUF
+
 Please be gentle with [huggingface.co](https://huggingface.co) servers:
 
 **Note** FP16 models are first-class citizens for the current version.
@@ -252,6 +259,18 @@ wget https://huggingface.co/beehive-lab/Llama-3.2-8B-Instruct-GGUF-FP16/resolve/
 
 # Mistral (7B) - FP16
 wget https://huggingface.co/MaziyarPanahi/Mistral-7B-Instruct-v0.3-GGUF/resolve/main/Mistral-7B-Instruct-v0.3.fp16.gguf
+
+# Qwen3 (0.6B) - FP16
+wget https://huggingface.co/ggml-org/Qwen3-0.6B-GGUF/resolve/main/Qwen3-0.6B-f16.gguf
+
+# Qwen3 (1.7B) - FP16
+wget https://huggingface.co/ggml-org/Qwen3-0.6B-GGUF/resolve/main/Qwen3-1.7B-f16.gguf
+
+# Qwen3 (4B) - FP16
+wget https://huggingface.co/ggml-org/Qwen3-0.6B-GGUF/resolve/main/Qwen3-4B-f16.gguf
+
+# Qwen3 (8B) - FP16
+wget https://huggingface.co/ggml-org/Qwen3-0.6B-GGUF/resolve/main/Qwen3-8B-f16.gguf
 ```
 
 **[Experimental]** you can download the Q8 and Q4 used in the original implementation of Llama3.java, but for now are going to be dequanted to FP16 for TornadoVM support:
