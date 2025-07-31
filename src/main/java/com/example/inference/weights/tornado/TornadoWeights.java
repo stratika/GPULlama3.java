@@ -5,6 +5,11 @@ import com.example.inference.weights.Weights;
 import uk.ac.manchester.tornado.api.types.arrays.FloatArray;
 import uk.ac.manchester.tornado.api.types.arrays.HalfFloatArray;
 
+//@formatter:off
+/**
+ * Base class that represents the Tornado weight format used for Java-based GPU acceleration.
+ * This abstract class provides the foundation for defining model-specific weights in the TornadoVM.
+ */
 public abstract class TornadoWeights implements Weights {
 
     public FloatArray[] rms_att_weightLayered;          // (layer, dim) rmsnorm weights
@@ -58,11 +63,11 @@ public abstract class TornadoWeights implements Weights {
         this.wclsHalfFloat = wclsByteArray;
         this.weightType = weightType;
     }
+    //@formatter:on
 
     @Override
     public GGMLType getWeightType() {
         return weightType;
     }
-
 
 }

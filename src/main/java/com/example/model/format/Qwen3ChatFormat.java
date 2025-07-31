@@ -31,7 +31,6 @@ public class Qwen3ChatFormat implements ChatFormat {
     protected final int fimMiddle;
 
     public Qwen3ChatFormat(Qwen3Tokenizer tokenizer, ChatTokens chatTokens) {
-        //super(tokenizer, "", chatTokens.tStartHeader(), chatTokens.tEndHeader(), chatTokens.tEndOfTurn(), chatTokens.tEndOfText(), "", chatTokens.tEndOfTextFim());
         this.tokenizer = tokenizer;
         this.chatTokens = chatTokens;
         Map<String, Integer> specialTokens = tokenizer.getSpecialTokens();
@@ -95,9 +94,7 @@ public class Qwen3ChatFormat implements ChatFormat {
     public List<Integer> encodeMessage(Message message) {
         List<Integer> tokens = this.encodeHeader(message);
         tokens.addAll(this.tokenizer.encodeAsList(message.content().strip()));
-        boolean isFim = Role.FIM_PREFIX.equals(message.role())
-                || Role.FIM_SUFFIX.equals(message.role())
-                || Role.FIM_MIDDLE.equals(message.role());
+        boolean isFim = Role.FIM_PREFIX.equals(message.role()) || Role.FIM_SUFFIX.equals(message.role()) || Role.FIM_MIDDLE.equals(message.role());
         if (imEnd != -1 && !isFim) {
             tokens.add(imEnd);
         }

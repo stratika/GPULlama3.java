@@ -33,6 +33,7 @@ public class Qwen3ModelLoader extends ModelLoader {
         super(fileChannel, gguf, contextLength, loadWeights);
     }
 
+    // @formatter:off
     @Override
     public Qwen3 loadModel() {
         try (var ignored = Timer.log("Load Qwen3 model")) {
@@ -80,7 +81,9 @@ public class Qwen3ModelLoader extends ModelLoader {
             throw new RuntimeException(e);
         }
     }
+    // @formatter:on
 
+    // @formatter:off
     @Override
     public Weights loadWeights(Map<String, GGMLTensorEntry> tensorEntries, Configuration config) {
         Pair<float[], float[]> ropeFreqs = RoPE.precomputeFreqsCis(
@@ -104,7 +107,9 @@ public class Qwen3ModelLoader extends ModelLoader {
             return createStandardWeights(tensorEntries, config, ropeFreqs, tokenEmbeddings, outputWeight);
         }
     }
+    // @formatter:on
 
+    // @formatter:off
     @Override
     public Weights createTornadoVMWeights(Map<String, GGMLTensorEntry> tensorEntries, Configuration config, Pair<float[], float[]> ropeFreqs, GGMLTensorEntry tokenEmbeddings,
             GGMLTensorEntry outputWeight) {
@@ -128,7 +133,9 @@ public class Qwen3ModelLoader extends ModelLoader {
                 outputWeight.ggmlType()
         );
     }
+    // @formatter:on
 
+    // @formatter:off
     @Override
     public Weights createStandardWeights(Map<String, GGMLTensorEntry> tensorEntries,
                                          Configuration config,
@@ -161,4 +168,5 @@ public class Qwen3ModelLoader extends ModelLoader {
                 null
         );
     }
+    // @formatter:on
 }

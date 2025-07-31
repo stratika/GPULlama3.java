@@ -8,6 +8,16 @@ import uk.ac.manchester.tornado.api.types.arrays.IntArray;
 
 import java.util.stream.Stream;
 
+/**
+ * Represents the state of the Llama model during inference.
+ * This class extends {@link State} to include model-specific functionalities
+ * and configurations tailored for the Llama model.
+ *
+ * <p><b>Note 1:</b> LlamaState contains additional fields for TornadoVM wrappers
+ * to enable GPU-accelerated processing of the model.</p>
+ *
+ * <p><b>Note 2:</b> This state implementation is also used for the Mistral model.</p>
+ */
 public final class LlamaState extends State {
 
     public LlamaState(Configuration config, int batchsize) {
@@ -56,9 +66,9 @@ public final class LlamaState extends State {
         fields.positionHolder = new IntArray(1);
 
         // Temporary arrays
-        fields.temp = new FloatArray(1 + ((config.dim() + localSize-1) / localSize));
-        fields.tempFFN = new FloatArray(1 + ((config.dim() + localSize-1) / localSize));
-        fields.tempLogits = new FloatArray(1 + ((config.dim() + localSize-1) / localSize));
+        fields.temp = new FloatArray(1 + ((config.dim() + localSize - 1) / localSize));
+        fields.tempFFN = new FloatArray(1 + ((config.dim() + localSize - 1) / localSize));
+        fields.tempLogits = new FloatArray(1 + ((config.dim() + localSize - 1) / localSize));
 
         return fields;
     }

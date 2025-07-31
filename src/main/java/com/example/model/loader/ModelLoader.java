@@ -89,7 +89,7 @@ public abstract class ModelLoader {
 
     public static Model loadModel(Path ggufPath, int contextLength, boolean loadWeights) throws IOException {
         // initial load of metadata from gguf file
-        GGUF gguf = GGUF.loadModel(ggufPath); 
+        GGUF gguf = GGUF.loadModel(ggufPath);
         FileChannel fileChannel = FileChannel.open(ggufPath, StandardOpenOption.READ);
         // detect model type
         ModelType modelType = detectModelType(gguf.getMetadata());
@@ -97,6 +97,7 @@ public abstract class ModelLoader {
         return modelType.loadModel(fileChannel, gguf, contextLength, loadWeights);
     }
 
+    //@formatter:off
     public Weights loadWeights(Map<String, GGMLTensorEntry> tensorEntries, Configuration config) {
         boolean ropeScaling = tensorEntries.containsKey("rope_freqs");
         RopeConfig ropeConfig = new RopeConfig(8.0f,         // scaleFactor
@@ -126,6 +127,7 @@ public abstract class ModelLoader {
             return createStandardWeights(tensorEntries, config, ropeFreqs, tokenEmbeddings, outputWeight);
         }
     }
+    //@formatter:on
 
     public Weights createTornadoVMWeights(Map<String, GGMLTensorEntry> tensorEntries, Configuration config, Pair<float[], float[]> ropeFreqs, GGMLTensorEntry tokenEmbeddings,
             GGMLTensorEntry outputWeight) {
@@ -144,6 +146,7 @@ public abstract class ModelLoader {
         };
     }
 
+    //@formatter:off
     /**
      * Creates weights in standard format only
      */
@@ -166,6 +169,7 @@ public abstract class ModelLoader {
                 loadQuantized(outputWeight),
                 outputWeight.ggmlType());
     }
+    //@formatter:on
 
     public static FloatTensor loadQuantized(GGMLTensorEntry entry) {
         GGMLType ggmlType = entry.ggmlType();

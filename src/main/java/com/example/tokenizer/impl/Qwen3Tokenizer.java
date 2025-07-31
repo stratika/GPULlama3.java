@@ -64,6 +64,7 @@ public class Qwen3Tokenizer implements Tokenizer {
         return tokenTypes[tokenIndex];
     }
 
+    // @formatter:off
     public Qwen3Tokenizer(Map<String, Object> metadata, Vocabulary vocabulary, boolean isDeepSeekR1DistillQwen) {
         int[] tokenTypes = (int[]) metadata.get("tokenizer.ggml.token_type");
         String[] mergeLines = (String[]) metadata.get("tokenizer.ggml.merges");
@@ -105,6 +106,7 @@ public class Qwen3Tokenizer implements Tokenizer {
             this.merges.put(pair, mergeIndex);
         }
     }
+    // @formatter:on
 
     private int[] encodeImpl(String text) {
         return encode(text, Set.of()).stream().mapToInt(i -> i).toArray();
@@ -186,6 +188,7 @@ public class Qwen3Tokenizer implements Tokenizer {
         return newids;
     }
 
+    // @formatter:off
     /**
      * Returns list of utf-8 byte and a corresponding list of unicode strings.
      * The reversible bpe codes work on unicode strings.
@@ -216,11 +219,10 @@ public class Qwen3Tokenizer implements Tokenizer {
                 .boxed()
                 .collect(Collectors.toMap(bs::get, cs::get));
     }
+    // @formatter:on
 
     static final Map<Integer, Integer> BYTE_ENCODER = bytesToUnicode();
-    static final Map<Integer, Integer> BYTE_DECODER = BYTE_ENCODER.entrySet()
-            .stream()
-            .collect(Collectors.toMap(Map.Entry::getValue, Map.Entry::getKey));
+    static final Map<Integer, Integer> BYTE_DECODER = BYTE_ENCODER.entrySet().stream().collect(Collectors.toMap(Map.Entry::getValue, Map.Entry::getKey));
 
     public int[] encode(String text) {
         StringBuilder sb = new StringBuilder();
@@ -231,6 +233,7 @@ public class Qwen3Tokenizer implements Tokenizer {
         return encodeImpl(sb.toString());
     }
 
+    // @formatter:off
     @Override
     public List<Integer> encode(String text, Set<String> allowedSpecial) {
         // decode the user desire w.r.t. handling of special tokens
@@ -266,6 +269,7 @@ public class Qwen3Tokenizer implements Tokenizer {
         }
         return ids;
     }
+    // @formatter:on
 
     @Override
     public List<Integer> encodeAsList(String text) {

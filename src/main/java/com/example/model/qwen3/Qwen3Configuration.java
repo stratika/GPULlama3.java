@@ -2,6 +2,7 @@ package com.example.model.qwen3;
 
 import com.example.model.Configuration;
 
+// @formatter:off
 public record Qwen3Configuration(int dim,
                                  int hiddenDim,
                                  int numberOfLayers,

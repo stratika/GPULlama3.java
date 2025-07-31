@@ -13,7 +13,8 @@ public interface ChatFormat {
         throw new UnsupportedOperationException("ChatFormat for Llama and Mistral does not support chatTokens");
     }
 
-    public record ChatTokens(String tStartHeader, String tEndHeader, String tEndOfTurn, String tEndOfText, String tEndOfTextFim) { }
+    public record ChatTokens(String tStartHeader, String tEndHeader, String tEndOfTurn, String tEndOfText, String tEndOfTextFim) {
+    }
 
     static ChatFormat create(Object tokenizer, ChatTokens chatTokens) {
         if (tokenizer instanceof LlamaTokenizer llamaTokenizer) {

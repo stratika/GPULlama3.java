@@ -32,8 +32,8 @@ public final class AOT {
 
     static LlamaModelLoader modelLoader;
 
-
-    record PartialModel(String modelFileName, Llama model, long tensorDataOffset, Map<String, GGUF.GGUFTensorInfo> tensorInfos) {}
+    record PartialModel(String modelFileName, Llama model, long tensorDataOffset, Map<String, GGUF.GGUFTensorInfo> tensorInfos) {
+    }
 
     private static final PartialModel PRELOADED_GGUF = preLoadGGUF(System.getProperty("llama.PreloadGGUF"));
 
@@ -49,12 +49,8 @@ public final class AOT {
             GGUF gguf = GGUF.loadModel(path);
             try (FileChannel fileChannel = FileChannel.open(path, StandardOpenOption.READ)) {
                 modelLoader = new LlamaModelLoader(fileChannel, gguf, Options.DEFAULT_MAX_TOKENS, false);
-                return new PartialModel(
-                        path.getFileName().toString(),
-                        modelLoader.loadModel(), // TODO: needs proper handling for AOT
-                        gguf.getTensorDataOffset(),
-                        gguf.getTensorInfos()
-                );
+                return new PartialModel(path.getFileName().toString(), modelLoader.loadModel(), // TODO: needs proper handling for AOT
+                        gguf.getTensorDataOffset(), gguf.getTensorInfos());
             }
         } catch (IOException e) {
             throw new RuntimeException(e);
@@ -78,8 +74,7 @@ public final class AOT {
             return null;
         }
         Llama baseModel = preLoaded.model();
-        try (var timer = Timer.log("Load tensors from pre-loaded model");
-                var fileChannel = FileChannel.open(modelPath, StandardOpenOption.READ)) {
+        try (var timer = Timer.log("Load tensors from pre-loaded model"); var fileChannel = FileChannel.open(modelPath, StandardOpenOption.READ)) {
             // Load only the tensors (mmap slices).
             Map<String, GGMLTensorEntry> tensorEntries = GGUF.loadTensors(fileChannel, preLoaded.tensorDataOffset(), preLoaded.tensorInfos());
             Weights weights = modelLoader.loadWeights(tensorEntries, baseModel.configuration());

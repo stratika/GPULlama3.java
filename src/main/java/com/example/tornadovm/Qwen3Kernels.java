@@ -4,9 +4,9 @@ import uk.ac.manchester.tornado.api.KernelContext;
 import uk.ac.manchester.tornado.api.annotations.Parallel;
 import uk.ac.manchester.tornado.api.math.TornadoMath;
 import uk.ac.manchester.tornado.api.types.arrays.FloatArray;
-import uk.ac.manchester.tornado.api.types.arrays.HalfFloatArray;
 import uk.ac.manchester.tornado.api.types.arrays.IntArray;
 
+// @formatter:off
 public class Qwen3Kernels {
 
     /**
@@ -17,9 +17,9 @@ public class Qwen3Kernels {
      * @param dstBuffer the tmp buffer.
      */
     public static void dbgCopy(FloatArray srcBuffer, FloatArray dstBuffer) {
-            for (@Parallel int i = 0; i < srcBuffer.getSize(); i++) {
-                dstBuffer.set(i, srcBuffer.get(i));
-            }
+        for (@Parallel int i = 0; i < srcBuffer.getSize(); i++) {
+            dstBuffer.set(i, srcBuffer.get(i));
+        }
     }
 
     /**
@@ -29,11 +29,7 @@ public class Qwen3Kernels {
      * Step 1: Reduction.
      * This kernel implements rmsnorm in offset range in parallel for qCur and Kcur rmsnorm calculations.
      */
-    public static void rmsnormReductionWithParallelOffset(
-            KernelContext context,
-            FloatArray output,
-            FloatArray x,
-            int localMemSize) {
+    public static void rmsnormReductionWithParallelOffset(KernelContext context, FloatArray output, FloatArray x, int localMemSize) {
 
         int gid = context.globalIdx;
         int lid = context.localIdx;
@@ -156,12 +152,14 @@ public class Qwen3Kernels {
         }
     }
 
-    public static void ropeRotation(KernelContext context,
+    public static void ropeRotation(
+            KernelContext context,
             IntArray position,
             FloatArray q,
             FloatArray k,
             int numberOfKeyValueHeads,
             int nEmbdHead) {
+
         int h = context.globalIdx;
         int ic = context.globalIdy;
 
@@ -172,7 +170,7 @@ public class Qwen3Kernels {
         // Compute RoPE frequencies for Qwen3
         float theta = 1000000.0f;
         int i = ic * 2; // match i in precompute (see RoPE.precomputeFreqsCis)
-        float freq = 1.0f / TornadoMath.pow(theta, (float)i / (float)nEmbdHead);
+        float freq = 1.0f / TornadoMath.pow(theta, (float) i / (float) nEmbdHead);
 
         float val = position.get(0) * freq;
         float fcr = TornadoMath.cos(val);
@@ -214,9 +212,7 @@ public class Qwen3Kernels {
         for (@Parallel int h = 0; h < nHeads; h++) {
             // Process each head in parallel
             //noinspection ExternalInspection
-            processHeadTornado(q, key_cache, value_cache, xb,
-                    h,
-                    nEmbdHead, /* headSize */
+            processHeadTornado(q, key_cache, value_cache, xb, h, nEmbdHead, /* headSize */
                     nEmbdHeadK, /* headSize in line 255 */
                     nEmbdHeadV, /* headSize in lines: 266, 268, 273 */
                     nEmbdGqa, /* kvDim */
@@ -297,3 +293,4 @@ public class Qwen3Kernels {
     }
 
 }
+// @formatter:on

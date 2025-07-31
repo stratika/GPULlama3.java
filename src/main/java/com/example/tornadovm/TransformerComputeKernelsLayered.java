@@ -531,7 +531,6 @@ public class TransformerComputeKernelsLayered {
             // Step 4: Thread 0 now has the final max
             float currentTileMax = reduction_shared[0];
 
-
             // Determine if we need to rescale previous results
             float newMax = Math.max(maxScore, currentTileMax);
             if (newMax != maxScore && maxScore != Float.NEGATIVE_INFINITY) {
@@ -570,7 +569,7 @@ public class TransformerComputeKernelsLayered {
         // Unrolled loop for better instruction-level parallelism
         for (int d = startDim; d < vectorEnd; d += 4) {
             int offset = d - startDim;
-            xb.set(baseOffset + offset,     output[d]     * normFactor);
+            xb.set(baseOffset + offset, output[d] * normFactor);
             xb.set(baseOffset + offset + 1, output[d + 1] * normFactor);
             xb.set(baseOffset + offset + 2, output[d + 2] * normFactor);
             xb.set(baseOffset + offset + 3, output[d + 3] * normFactor);
@@ -617,6 +616,7 @@ public class TransformerComputeKernelsLayered {
         }
     }
 
+    // @formatter:off
     public static void matrixVectorGeneric(
             KernelContext context,
             FloatArray x,
@@ -626,9 +626,9 @@ public class TransformerComputeKernelsLayered {
             int dim0,                       // outer loop
             int localWorkGroupSize) {
         // One row per workgroup (not per thread)
-        int rowId = context.groupIdx;       // 0 - (nEmbdHeadK * config.numberOfHeads())
-        int localId = context.localIdx;     // 0 - 32
-        int localSize = localWorkGroupSize; // 32
+        int rowId = context.groupIdx;
+        int localId = context.localIdx;
+        int localSize = localWorkGroupSize;
 
         // Early exit if this workgroup is beyond our output dimension
         if (rowId >= dim0) {
@@ -641,6 +641,7 @@ public class TransformerComputeKernelsLayered {
             hb.set(rowId, sum);
         }
     }
+    // @formatter:on
 
     /**
      * Matrix-vector multiplication with residual connection.

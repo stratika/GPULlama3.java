@@ -4,6 +4,11 @@ import com.example.core.model.GGMLType;
 import com.example.core.model.tensor.FloatTensor;
 import com.example.inference.weights.Weights;
 
+/**
+ * Base class that represents the standard weight format used for Java-based CPU inference.
+ * This abstract class provides the foundation for defining model-specific
+ * weights in the StandardWeights format.
+ */
 public abstract class StandardWeights implements Weights {
     // token embedding table
     public final FloatTensor token_embedding_table; // (vocab_size, dim)
@@ -14,8 +19,6 @@ public abstract class StandardWeights implements Weights {
     public final FloatTensor[] wk; // (layer, n_kv_heads, head_size)
     public final FloatTensor[] wv; // (layer, n_kv_heads * head_size)
     public final FloatTensor[] wo; // (layer, n_heads * head_size, dim)
-    //public final FloatTensor[] attnKNorm; // qwen3
-    //public final FloatTensor[] attnQNorm; // qwen3
     public final FloatTensor[] rms_ffn_weight; // (layer, dim)
 
     // weights for ffn
@@ -33,41 +36,27 @@ public abstract class StandardWeights implements Weights {
     // (optional) classifier weights for the logits, on the last layer
     protected final GGMLType weightType;
 
+    //@formatter:off
     /**
      * Constructor for standard (non-TornadoVM) mode
      *
-     * @param token_embedding_table
-     *         Token embeddings matrix
-     * @param rms_att_weight
-     *         RMSNorm weights for attention layers
-     * @param wq
-     *         Query weight matrices
-     * @param wk
-     *         Key weight matrices
-     * @param wv
-     *         Value weight matrices
-     * @param wo
-     *         Output projection matrices
-     * @param rms_ffn_weight
-     *         RMSNorm weights for FFN layers
-     * @param w1
-     *         First FFN weight matrices
-     * @param w2
-     *         Second FFN weight matrices
-     * @param w3
-     *         Third FFN weight matrices (gate)
-     * @param rms_final_weight
-     *         Final layer normalization weights
-     * @param freq_cis_real
-     *         RoPE cosine components
-     * @param freq_cis_imag
-     *         RoPE sine components
-     * @param wcls
-     *         Classifier weights for output logits
+     * @param token_embedding_table Token embeddings matrix
+     * @param rms_att_weight        RMSNorm weights for attention layers
+     * @param wq                    Query weight matrices
+     * @param wk                    Key weight matrices
+     * @param wv                    Value weight matrices
+     * @param wo                    Output projection matrices
+     * @param rms_ffn_weight        RMSNorm weights for FFN layers
+     * @param w1                    First FFN weight matrices
+     * @param w2                    Second FFN weight matrices
+     * @param w3                    Third FFN weight matrices (gate)
+     * @param rms_final_weight      Final layer normalization weights
+     * @param freq_cis_real         RoPE cosine components
+     * @param freq_cis_imag         RoPE sine components
+     * @param wcls                  Classifier weights for output logits
      */
     protected StandardWeights(FloatTensor token_embedding_table, FloatTensor[] rms_att_weight,
             FloatTensor[] wq, FloatTensor[] wk, FloatTensor[] wv, FloatTensor[] wo,
-            //FloatTensor[] attnKNorm, FloatTensor[] attnQNorm,
             FloatTensor[] rms_ffn_weight,
             FloatTensor[] w1, FloatTensor[] w2, FloatTensor[] w3,
             FloatTensor rms_final_weight,
@@ -92,4 +81,5 @@ public abstract class StandardWeights implements Weights {
         this.freq_cis_imag = freq_cis_imag;
         this.weightType = weightType;
     }
+    //@formatter:on
 }

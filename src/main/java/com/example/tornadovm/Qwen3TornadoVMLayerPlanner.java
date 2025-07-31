@@ -40,6 +40,7 @@ public class Qwen3TornadoVMLayerPlanner extends TornadoVMLayerPlanner<Qwen3State
         this.sqrtHeadSize = (float) Math.sqrt(nEmbdHead);
     }
 
+    // @formatter:off
     @Override
     protected TaskGraph configureLayerDataTransfers(TaskGraph unifiedLayer, int layerIndex) {
         if (layerIndex == 0) {
@@ -62,7 +63,9 @@ public class Qwen3TornadoVMLayerPlanner extends TornadoVMLayerPlanner<Qwen3State
         }
         return unifiedLayer;
     }
+    // @formatter:on
 
+    // @formatter:off
     @Override
     public Tuple2<List<ImmutableTaskGraph>, GridScheduler> setupTornadoForwardPlanLayered() {
         List<ImmutableTaskGraph> taskGraphs = new ArrayList<>();
@@ -72,7 +75,6 @@ public class Qwen3TornadoVMLayerPlanner extends TornadoVMLayerPlanner<Qwen3State
         state.tempLogits.init(0.0f);
         state.wrapLogits.init(0.0f);
 
-        // @formatter:off
         TaskGraph activationUpdate = new TaskGraph("activationUpdate")
                 .transferToDevice(DataTransferMode.EVERY_EXECUTION, state.wrapX)
                 .task("updateX", TransformerComputeKernels::emptyTaskToForceCopyIn, state.wrapX)
@@ -147,8 +149,7 @@ public class Qwen3TornadoVMLayerPlanner extends TornadoVMLayerPlanner<Qwen3State
                             kvDim0,
                             LOCAL_WORK_GROUP_SIZE_ALLOC);
 
-            // Qcur = ggml_reshape_3d(ctx0, Qcur, n_embd_head, n_head,    n_tokens);
-            //rmsnorm(state.q, state.q, weights.attnQNorm[curLayer], i * nEmbdHead, nEmbdHead, config.rmsNormEps());
+            // Qcur rmsnorm
             unifiedLayer
                     .task("rmsnormReduction_Qcur",
                             Qwen3Kernels::rmsnormWithParallelOffset,
@@ -166,8 +167,7 @@ public class Qwen3TornadoVMLayerPlanner extends TornadoVMLayerPlanner<Qwen3State
                             nEmbdHead,
                             state.tempQcur);
 
-            // Kcur = ggml_reshape_3d(ctx0, Kcur, n_embd_head, n_head_kv, n_tokens);
-            //rmsnorm(state.k, state.k, weights.attnKNorm[curLayer], i * nEmbdHead, nEmbdHead, config.rmsNormEps());
+            // Kcur rmsnorm
             unifiedLayer
                     .task("rmsnormReduction_Kcur",
                             Qwen3Kernels::rmsnormWithParallelOffset,
@@ -277,6 +277,7 @@ public class Qwen3TornadoVMLayerPlanner extends TornadoVMLayerPlanner<Qwen3State
         return new Tuple2<>(taskGraphs, setupQwen3GridSchedulersLayeredNonNvidia());
 
     }
+    // @formatter:on
 
     @Override
     public Tuple2<List<ImmutableTaskGraph>, GridScheduler> setupTornadoForwardPlanLayeredNonNvidia() {

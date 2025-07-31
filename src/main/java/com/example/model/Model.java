@@ -53,8 +53,8 @@ public interface Model {
      */
     List<Integer> generateTokens(State state, int startPosition, List<Integer> promptTokens, Set<Integer> stopTokens, int maxTokens, Sampler sampler, boolean echo, IntConsumer onTokenGenerated);
 
-    List<Integer> generateTokensGPU(State state, int startPosition, List<Integer> promptTokens, Set<Integer> stopTokens, int maxTokens, Sampler sampler, boolean echo,
-            IntConsumer onTokenGenerated, TornadoVMMasterPlan tornadoVMPlan);
+    List<Integer> generateTokensGPU(State state, int startPosition, List<Integer> promptTokens, Set<Integer> stopTokens, int maxTokens, Sampler sampler, boolean echo, IntConsumer onTokenGenerated,
+            TornadoVMMasterPlan tornadoVMPlan);
 
     /**
      * Model agnostic default implementation for interactive mode.
@@ -109,12 +109,12 @@ public interface Model {
                 // Choose between GPU and CPU path based on configuration
                 if (USE_TORNADOVM) {
                     // GPU path using TornadoVM
-                    responseTokens = generateTokensGPU(state, startPosition, conversationTokens.subList(startPosition, conversationTokens.size()), stopTokens,
-                            options.maxTokens(), sampler, options.echo(), options.stream() ? tokenConsumer : null, tornadoVMPlan);
+                    responseTokens = generateTokensGPU(state, startPosition, conversationTokens.subList(startPosition, conversationTokens.size()), stopTokens, options.maxTokens(), sampler,
+                            options.echo(), options.stream() ? tokenConsumer : null, tornadoVMPlan);
                 } else {
                     // CPU path
-                    responseTokens = generateTokens(state, startPosition, conversationTokens.subList(startPosition, conversationTokens.size()), stopTokens, options.maxTokens(),
-                            sampler, options.echo(), tokenConsumer);
+                    responseTokens = generateTokens(state, startPosition, conversationTokens.subList(startPosition, conversationTokens.size()), stopTokens, options.maxTokens(), sampler,
+                            options.echo(), tokenConsumer);
                 }
 
                 // Include stop token in the prompt history, but not in the response displayed to the user.

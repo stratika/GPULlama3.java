@@ -6,9 +6,23 @@ import uk.ac.manchester.tornado.api.types.arrays.FloatArray;
 import uk.ac.manchester.tornado.api.types.arrays.IntArray;
 
 /**
- * Base class for State
+ * Represents the base state structure used during LLM inference.
+ * This class provides a common foundation for handling state-related data and functionalities
+ * that can be extended by model-specific implementations.
+ *
+ * <p><b>Key Responsibilities:</b></p>
+ * <ul>
+ *   <li>Defines core structures to store and access model state data required for computation.</li>
+ *   <li>Can be extended by model-specific state classes (e.g., {@link LlamaState}, {@link Qwen3State}).</li>
+ * </ul>
+ *
+ * <p><b>Usage:</b> Extend `State` to implement model-specific state configurations
+ * while reusing the common structure and functionality provided by this class.</p>
+ *
+ * <p><b>Note:</b> This class is designed to be generic and does not include any
+ * model-specific behavior or fields. Those should be implemented in subclasses.</p>
  */
-public abstract class State{
+public abstract class State {
 
     // current wave of activations
     public final FloatTensor x;         // activation at current time stamp (dim,)

@@ -9,6 +9,15 @@ import uk.ac.manchester.tornado.api.types.arrays.IntArray;
 
 import java.util.stream.Stream;
 
+/**
+ * Represents the state of the Qwen3 model during inference.
+ * This class extends {@link State} to include model-specific functionalities
+ * and configurations tailored for the Qwen3 model.
+ *
+ * <p><b>Note 1:</b> Qwen3State contains additional fields for TornadoVM wrappers
+ * to enable GPU-accelerated processing of the model.</p>
+ *
+ */
 public final class Qwen3State extends State {
 
     // Qwen3 specific fields
@@ -52,10 +61,8 @@ public final class Qwen3State extends State {
         fields.logits = ArrayFloatTensor.allocate(config.vocabularySize());
 
         // Key-value cache with Qwen3 dimensions
-        fields.keyCache = Stream.generate(() -> ArrayFloatTensor.allocate(config.contextLength(), nEmbdGqa))
-                .limit(config.numberOfLayers()).toArray(FloatTensor[]::new);
-        fields.valueCache = Stream.generate(() -> ArrayFloatTensor.allocate(config.contextLength(), nEmbdGqa))
-                .limit(config.numberOfLayers()).toArray(FloatTensor[]::new);
+        fields.keyCache = Stream.generate(() -> ArrayFloatTensor.allocate(config.contextLength(), nEmbdGqa)).limit(config.numberOfLayers()).toArray(FloatTensor[]::new);
+        fields.valueCache = Stream.generate(() -> ArrayFloatTensor.allocate(config.contextLength(), nEmbdGqa)).limit(config.numberOfLayers()).toArray(FloatTensor[]::new);
 
         // TornadoVM wrappers with Qwen3-specific sizes
         fields.wrapX = new FloatArray(config.dim());
@@ -76,9 +83,9 @@ public final class Qwen3State extends State {
         fields.positionHolder = new IntArray(1);
 
         // Temporary arrays
-        fields.temp = new FloatArray(1 + ((config.dim() + localSize-1) / localSize));
-        fields.tempFFN = new FloatArray(1 + ((config.dim() + localSize-1) / localSize));
-        fields.tempLogits = new FloatArray(1 + ((config.dim() + localSize-1) / localSize));
+        fields.temp = new FloatArray(1 + ((config.dim() + localSize - 1) / localSize));
+        fields.tempFFN = new FloatArray(1 + ((config.dim() + localSize - 1) / localSize));
+        fields.tempLogits = new FloatArray(1 + ((config.dim() + localSize - 1) / localSize));
 
         return fields;
     }
