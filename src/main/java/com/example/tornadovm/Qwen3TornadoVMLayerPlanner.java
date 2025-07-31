@@ -221,7 +221,7 @@ public class Qwen3TornadoVMLayerPlanner extends TornadoVMLayerPlanner<Qwen3State
                     layerIndex,
                     config.contextLength());
 
-            unifiedLayer.task("matmul1", Qwen3Kernels::matrixVectorGenericWithResidual,
+            unifiedLayer.task("matmul1", TransformerComputeKernelsLayered::matrixVectorGenericWithResidual,
                     context,
                     state.wrapXb,                           // vector
                     state.wrapX,                            // out, should be [1024]
