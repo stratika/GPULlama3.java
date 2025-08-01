@@ -77,7 +77,7 @@ public class Phi3TornadoVMLayerPlanner extends TornadoVMLayerPlanner<Phi3State, 
                     .task("copyV", TransformerComputeKernelsLayered::copyTo,
                             state.wrapQkv, config.dim() + config.headSize() * config.numberOfKeyValueHeads(),
                             state.wrapV, 0, config.headSize() * config.numberOfKeyValueHeads())
-                    .task("rope", TransformerComputeKernelsLayered::ropeRotation,context,
+                    .task("rope", TransformerComputeKernelsLayered::ropeRotationPhi3,context,
                             state.positionHolder, state.wrapQ, state.wrapK, config.kvDim(),
                             config.headSize())
                     .task("copyToCaches", TransformerComputeKernelsLayered::copyToCache,

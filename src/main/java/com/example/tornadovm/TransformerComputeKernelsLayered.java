@@ -187,28 +187,78 @@ public class TransformerComputeKernelsLayered {
 
     }
 
+    public static void ropeRotationPhi3(KernelContext context, IntArray positionHolder, FloatArray sq, FloatArray sk, int kv_dim, int head_size) {
+        int idx = context.globalIdx;
+
+        // For Phi3, we process pairs with offset of head_size/2
+        int dimHalf = head_size / 2;
+
+        // Each thread processes one dimension pair
+        if (idx >= dimHalf)
+            return;
+
+        int position = positionHolder.get(0);
+
+        // Calculate frequency for this dimension
+        float freq = 1.0f / TornadoMath.pow(10000.0f, (float) (idx * 2) / (float) head_size);
+        float val = position * freq;
+        float fcr = TornadoMath.cos(val);
+        float fci = TornadoMath.sin(val);
+
+        // Process all heads
+        int totalDim = sq.getSize();
+        for (int base = 0; base < totalDim; base += head_size) {
+            // Skip if we're beyond the bounds
+            if (base + idx >= totalDim || base + idx + dimHalf >= totalDim)
+                break;
+
+            // Rotate query
+            float v0 = sq.get(base + idx);
+            float v1 = sq.get(base + idx + dimHalf);
+            sq.set(base + idx, v0 * fcr - v1 * fci);
+            sq.set(base + idx + dimHalf, v0 * fci + v1 * fcr);
+
+            // Rotate key if within kv_dim
+            if (base < kv_dim && base + idx < sk.getSize() && base + idx + dimHalf < sk.getSize()) {
+                float k0 = sk.get(base + idx);
+                float k1 = sk.get(base + idx + dimHalf);
+                sk.set(base + idx, k0 * fcr - k1 * fci);
+                sk.set(base + idx + dimHalf, k0 * fci + k1 * fcr);
+            }
+        }
+    }
+
     /**
-     * Orchestrates parallel multi-head attention computation across all heads.
-     * Each head processes attention independently in parallel.
+     * Orchestrates parallel multi-head attention computation across all heads. Each head processes attention independently in parallel.
      *
-     * Attention computation:
-     * 1. Compute attention scores (Q·K)
-     * 2. Apply softmax for attention weights
-     * 3. Compute weighted sum of values (attention·V)
+     * Attention computation: 1. Compute attention scores (Q·K) 2. Apply softmax for attention weights 3. Compute weighted sum of values (attention·V)
      *
-     * @param q Query vectors for all heads
-     * @param key_cache Cached key vectors
-     * @param value_cache Cached value vectors
-     * @param xb Output buffer for attention results
-     * @param nHeads Number of attention heads
-     * @param headSize Dimension of each head
-     * @param kvDim Total key/value dimension
-     * @param kvMul Key/value head multiplier for grouped-query attention
-     * @param seqLen Current sequence length
-     * @param positionHolder Array containing position and layer info
-     * @param wrapAtt Buffer for attention weights
-     * @param layer Current transformer layer
-     * @param contextLength Maximum context length
+     * @param q
+     *         Query vectors for all heads
+     * @param key_cache
+     *         Cached key vectors
+     * @param value_cache
+     *         Cached value vectors
+     * @param xb
+     *         Output buffer for attention results
+     * @param nHeads
+     *         Number of attention heads
+     * @param headSize
+     *         Dimension of each head
+     * @param kvDim
+     *         Total key/value dimension
+     * @param kvMul
+     *         Key/value head multiplier for grouped-query attention
+     * @param seqLen
+     *         Current sequence length
+     * @param positionHolder
+     *         Array containing position and layer info
+     * @param wrapAtt
+     *         Buffer for attention weights
+     * @param layer
+     *         Current transformer layer
+     * @param contextLength
+     *         Maximum context length
      */
     public static void processHeadsParallel(FloatArray q, FloatArray key_cache, FloatArray value_cache, FloatArray xb, int nHeads, int headSize, int kvDim, int kvMul, int seqLen,
             IntArray positionHolder, FloatArray wrapAtt, int layer, int contextLength) {
@@ -224,25 +274,32 @@ public class TransformerComputeKernelsLayered {
     }
 
     /**
-     * Computes attention for a single head.
-     * Implements scaled dot-product attention with softmax normalization.
+     * Computes attention for a single head. Implements scaled dot-product attention with softmax normalization.
      *
-     * Steps:
-     * 1. Compute attention scores: Q·K / sqrt(head_size)
-     * 2. Apply softmax (with max subtraction for numerical stability)
-     * 3. Compute weighted sum of values
+     * Steps: 1. Compute attention scores: Q·K / sqrt(head_size) 2. Apply softmax (with max subtraction for numerical stability) 3. Compute weighted sum of values
      *
-     * @param allQ All query vectors
-     * @param key_cache Cached keys
-     * @param value_cache Cached values
-     * @param allXb Output buffer
-     * @param h Head index to process
-     * @param headSize Dimension per head
-     * @param kvDim Key/value dimension
-     * @param kvMul Key multiplier for grouped attention
-     * @param loff Layer offset in cache
-     * @param pos Current position
-     * @param wrapAtt Attention weights buffer
+     * @param allQ
+     *         All query vectors
+     * @param key_cache
+     *         Cached keys
+     * @param value_cache
+     *         Cached values
+     * @param allXb
+     *         Output buffer
+     * @param h
+     *         Head index to process
+     * @param headSize
+     *         Dimension per head
+     * @param kvDim
+     *         Key/value dimension
+     * @param kvMul
+     *         Key multiplier for grouped attention
+     * @param loff
+     *         Layer offset in cache
+     * @param pos
+     *         Current position
+     * @param wrapAtt
+     *         Attention weights buffer
      */
     private static void processHeadTornado(FloatArray allQ, FloatArray key_cache, FloatArray value_cache, FloatArray allXb, int h, int headSize, int kvDim, int kvMul, long loff, int pos,
             FloatArray wrapAtt) {
@@ -427,8 +484,7 @@ public class TransformerComputeKernelsLayered {
     }
 
     /**
-     * Same as processHeadsFlashAttention but with some optimizations
-     * that seem to lower attention's execution time, especially in larger models.
+     * Same as processHeadsFlashAttention but with some optimizations that seem to lower attention's execution time, especially in larger models.
      */
     public static void processHeadsFlashAttentionOpt(KernelContext context, FloatArray q, FloatArray key_cache, FloatArray value_cache, FloatArray xb, int nHeads, int headSize, int kvDim, int kvMul,
             IntArray positionHolder, int layer, int contextLength) {
@@ -598,21 +654,24 @@ public class TransformerComputeKernelsLayered {
     }
 
     /**
-     * Performs optimized matrix-vector multiplication where each work group
-     * processes one row of the matrix.
+     * Performs optimized matrix-vector multiplication where each work group processes one row of the matrix.
      *
-     * Algorithm:
-     * 1. Each work group handles one output dimension
-     * 2. Threads in work group compute partial dot products
-     * 3. Parallel reduction yields final row result
+     * Algorithm: 1. Each work group handles one output dimension 2. Threads in work group compute partial dot products 3. Parallel reduction yields final row result
      *
-     * @param context Kernel execution context
-     * @param x Input vector
-     * @param hb Output vector
-     * @param w Weight matrix (row-major)
-     * @param n Input dimension
-     * @param d Output dimension
-     * @param localWorkGroupSize Number of threads per work group
+     * @param context
+     *         Kernel execution context
+     * @param x
+     *         Input vector
+     * @param hb
+     *         Output vector
+     * @param w
+     *         Weight matrix (row-major)
+     * @param n
+     *         Input dimension
+     * @param d
+     *         Output dimension
+     * @param localWorkGroupSize
+     *         Number of threads per work group
      */
     public static void matrixVectorGeneric(KernelContext context, FloatArray x, FloatArray hb, FloatArray w, int n, int d, int localWorkGroupSize) {
         // One row per workgroup (not per thread)
