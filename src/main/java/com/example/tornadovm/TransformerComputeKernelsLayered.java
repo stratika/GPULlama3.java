@@ -127,6 +127,22 @@ public class TransformerComputeKernelsLayered {
         }
     }
 
+
+    public static void copyTo(FloatArray src, int srcOffset, FloatArray dest, int destOffset, int size) {
+        // Generic copy: src[srcOffset:srcOffset+size] -> dest[destOffset:destOffset+size]
+        for (@Parallel int i = 0; i < size; i++) {
+            dest.set(destOffset + i, src.get(srcOffset + i));
+        }
+    }
+
+    public static void copyChunk(FloatArray in, FloatArray out, int dim1In, int dim1Out, int nChunks, int chunkNo) {
+        final int startOffsetInDim1 = chunkNo * dim1Out;
+
+        for (@Parallel int i = 0; i < dim1Out; i++) {
+            out.set(i, in.get(startOffsetInDim1 + i));
+        }
+    }
+
     /**
      * Applies Rotary Position Encoding (RoPE) to query and key vectors.
      * RoPE rotates pairs of dimensions based on their position in the sequence,
@@ -833,6 +849,23 @@ public class TransformerComputeKernelsLayered {
             ss += ermsNorm;
             ss = 1.0f / TornadoMath.sqrt(ss);
             output.set(0, ss);  // Store the final scale factor
+        }
+    }
+
+    public static void siluInPlace(FloatArray array, int size) {
+        // SiLU activation: silu(x) = x * sigmoid(x) = x / (1 + exp(-x))
+        for (@Parallel int i = 0; i < size; i++) {
+            float x = array.get(i);
+            float silu = x / (1.0f +  TornadoMath.exp(-x));
+            array.set(i, silu);
+        }
+    }
+
+    public static void multiplyInPlace(FloatArray arrayA, FloatArray arrayB, int size) {
+        // Element-wise multiplication: arrayA[i] = arrayA[i] * arrayB[i]
+        for (@Parallel int i = 0; i < size; i++) {
+            float result = arrayA.get(i) * arrayB.get(i);
+            arrayA.set(i, result);
         }
     }
 }
