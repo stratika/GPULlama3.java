@@ -7,7 +7,6 @@ import java.util.stream.Collectors;
 import java.util.stream.IntStream;
 
 public record Vocabulary(String[] tokens, float[] scores, Map<String, Integer> tokenToIndex) {
-    private static final String TOKENIZER_LLAMA_3_MODEL = "gpt2";
 
     // @formatter:off
     public Vocabulary(String[] vocabulary, float[] scores) {
