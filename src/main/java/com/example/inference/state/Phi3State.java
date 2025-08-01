@@ -17,6 +17,10 @@ public class Phi3State extends State {
     public FloatTensor hbG; // Gate states buffer
     public FloatTensor hbU; // Up states buffer
 
+    public FloatArray wrapQkv; // TornadoVM wrapper for QKV buffer
+    public FloatArray wrapHbG; // TornadoVM wrapper for gate states
+    public FloatArray wrapHbU; // TornadoVM wrapper for up states
+
     public Phi3State(Configuration config, int batchsize) {
         super(config, batchsize);
 
@@ -30,6 +34,11 @@ public class Phi3State extends State {
         // FFN gate and up state buffers
         this.hbG = ArrayFloatTensor.allocate(phi3Config.hiddenDim());
         this.hbU = ArrayFloatTensor.allocate(phi3Config.hiddenDim());
+
+        // TornadoVM wrappers for GPU acceleration
+        this.wrapQkv = new FloatArray(opSize);
+        this.wrapHbG = new FloatArray(phi3Config.hiddenDim());
+        this.wrapHbU = new FloatArray(phi3Config.hiddenDim());
     }
 
     @Override

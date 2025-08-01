@@ -372,7 +372,6 @@ public final class InferenceCore {
             int curLayer = l;
 
             // multihead attention. iterate over all heads
-            final int idxLayer = l;
             Parallel.parallelFor(0, config.numberOfHeads(), h -> {
                 // get the query vector for this head
                 // float* q = s.q + h * headSize;
