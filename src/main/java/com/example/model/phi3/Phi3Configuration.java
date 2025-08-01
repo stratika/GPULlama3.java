@@ -4,35 +4,41 @@ import com.example.model.Configuration;
 
 // @formatter:off
 public record Phi3Configuration(int dim,
-                                    int hiddenDim,
-                                    int numberOfLayers,
-                                    int numberOfHeads,
-                                    int numberOfKeyValueHeads,
-                                    int numberOfHeadsKey,
-                                    int numberOfHeadsValue,
-                                    int vocabularySize,
-                                    int contextLengthModel,
-                                    int contextLength,
-                                    boolean sharedWeights,
-                                    float rmsNormEps,
-                                    float ropeTheta) implements Configuration {
+                                int hiddenDim,
+                                int numberOfLayers,
+                                int numberOfHeads,
+                                int numberOfKeyValueHeads,
+                                int vocabularySize,
+                                int contextLength,
+                                float rmsNormEps,
+                                float ropeTheta) implements Configuration {
+
+    @Override
+    public int numberOfHeadsKey() {
+        // For Phi3, key heads are the same as key-value heads
+        return numberOfKeyValueHeads;
+    }
+
     @Override
     public int headSize() {
-        throw new UnsupportedOperationException("Not supported for Phi3.");
+        // Calculate head size from dim and numberOfHeads
+        return dim / numberOfHeads;
     }
 
     @Override
     public int kvDim() {
-        throw new UnsupportedOperationException("Not supported for Phi3.");
+        // Calculate key-value dimension
+        return (dim * numberOfKeyValueHeads) / numberOfHeads;
     }
 
     @Override
     public int kvMul() {
-        throw new UnsupportedOperationException("Not supported for Phi3.");
+        // Calculate key-value multiplier for multi-query attention
+        return numberOfHeads / numberOfKeyValueHeads;
     }
 
     @Override
     public int contextLengthModel() {
-        return contextLengthModel;
+        return contextLength;
     }
 }

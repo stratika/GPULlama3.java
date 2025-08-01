@@ -4,10 +4,10 @@ import com.example.inference.InferenceCore;
 import com.example.inference.InferenceEngine;
 import com.example.inference.sampler.Sampler;
 import com.example.inference.state.Phi3State;
-import com.example.inference.state.Qwen3State;
 import com.example.inference.state.State;
 import com.example.inference.weights.Weights;
 import com.example.model.AbstractModel;
+import com.example.model.Model;
 import com.example.model.ModelType;
 import com.example.model.format.ChatFormat;
 import com.example.tokenizer.impl.Phi3Tokenizer;
@@ -22,7 +22,7 @@ public class Phi3 extends AbstractModel {
 
     Phi3Configuration configuration;
 
-    protected Phi3(Phi3Configuration configuration, Tokenizer tokenizer, Weights weights, ChatFormat chatFormat) {
+    public Phi3(Phi3Configuration configuration, Tokenizer tokenizer, Weights weights, ChatFormat chatFormat) {
         super(tokenizer, weights, chatFormat, null);
         this.configuration = configuration;
     }
@@ -49,7 +49,7 @@ public class Phi3 extends AbstractModel {
 
     @Override
     public State createNewState(int batchsize) {
-        State state = new Qwen3State(configuration(), batchsize);
+        State state = new Phi3State(configuration(), batchsize);
         state.latestToken = tokenizer.getSpecialTokens().get(chatFormat.chatTokens().tStartHeader());
         return state;
     }
@@ -57,7 +57,7 @@ public class Phi3 extends AbstractModel {
     @Override
     public void forward(State state, int token, int position) {
         if (plan == null) {
-            InferenceCore.forwardJavaPhi3(this, state, token, position);
+            InferenceCore.forwardJavaPhi3( this, (Phi3State) state, token, position);
         } else {
             InferenceCore.forwardTornadoVM(this, state, token, position, tornadoVMPlan());
         }
@@ -66,7 +66,7 @@ public class Phi3 extends AbstractModel {
     @Override
     public List<Integer> generateTokens(State state, int startPosition, List<Integer> promptTokens, Set<Integer> stopTokens, int maxTokens, Sampler sampler, boolean echo,
             IntConsumer onTokenGenerated) {
-        return InferenceEngine.generateTokensPhi3(this, state, startPosition, promptTokens, stopTokens, maxTokens, sampler, echo, onTokenGenerated);
+        return InferenceEngine.generateTokensQwen3(this, state, startPosition, promptTokens, stopTokens, maxTokens, sampler, echo, onTokenGenerated);
     }
 
     @Override
