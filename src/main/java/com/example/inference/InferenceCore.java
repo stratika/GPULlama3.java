@@ -308,6 +308,10 @@ public final class InferenceCore {
         return state.logits;
     }
 
+    public static FloatTensor forwardJavaPhi3(Model model, State state, int token, int position) {
+        return null; // Placeholder for QPhi3 implementation
+    }
+
     /**
      * Performs the initial embedding lookup and triggers the TornadoVM accelerated forward pass for an LLM token.
      *

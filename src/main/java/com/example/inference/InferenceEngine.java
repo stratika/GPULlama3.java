@@ -214,6 +214,11 @@ public final class InferenceEngine {
         return generatedTokens;
     }
 
+    public static List<Integer> generateTokensPhi3(Model model, State state, int startPosition, List<Integer> promptTokens, Set<Integer> stopTokens, int maxTokens, Sampler sampler, boolean echo,
+            IntConsumer onTokenGenerated) {
+        return null;
+    }
+
     public static List<Integer> generateTokensGPULlama(Model model, State state, int startPosition, List<Integer> promptTokens, Set<Integer> stopTokens, int maxTokens, Sampler sampler, boolean echo,
             IntConsumer onTokenGenerated, TornadoVMMasterPlan tornadoVMPlan) {
         // === Setup and Initialization ===
@@ -394,5 +399,10 @@ public final class InferenceEngine {
         LastRunMetrics.setMetrics(totalTokens, totalTimeSeconds);
 
         return generatedTokens;
+    }
+
+    public static List<Integer> generateTokensGPUPhi3(Model model, State state, int startPosition, List<Integer> promptTokens, Set<Integer> stopTokens, int maxTokens, Sampler sampler, boolean echo,
+            IntConsumer onTokenGenerated, TornadoVMMasterPlan tornadoVMPlan) {
+        return null;
     }
 }
