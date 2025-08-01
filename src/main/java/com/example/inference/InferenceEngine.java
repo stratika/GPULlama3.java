@@ -452,74 +452,149 @@ public final class InferenceEngine {
         return generatedTokens;
     }
 
+//    public static List<Integer> generateTokensGPUPhi3(Model model, State state, int startPosition, List<Integer> promptTokens, Set<Integer> stopTokens, int maxTokens, Sampler sampler, boolean echo,
+//            IntConsumer onTokenGenerated, TornadoVMMasterPlan tornadoVMPlan) {
+//        // === Setup and Initialization ===
+//        long startNanos = System.nanoTime();
+//        long inferenceStartNanos = 0;
+//
+//        // Pre-validate the max tokens to avoid checking in the loop
+//        int actualMaxTokens = Math.min(maxTokens > 0 ? maxTokens : model.configuration().contextLength(), model.configuration().contextLength());
+//
+//        // Preallocate with expected capacity to avoid resizing
+//        List<Integer> generatedTokens = new ArrayList<>(Math.min(256, actualMaxTokens - promptTokens.size())); // Conservative estimate
+//
+//        // === Token Generation Loop ===
+//        int currentToken = state.latestToken;
+//        int nextToken;
+//        int promptIndex = 0;
+//        int pos = startPosition;
+//
+//        // Use more efficient direct array access for prompt tokens if possible
+//        int[] promptTokenArray = null;
+//        if (promptTokens instanceof ArrayList) {
+//            // Try to extract the underlying array for faster access
+//            try {
+//                // This is a performance optimization that may not work on all JVMs
+//                promptTokenArray = promptTokens.stream().mapToInt(Integer::intValue).toArray();
+//            } catch (Exception e) {
+//                // Fall back to list access
+//            }
+//        }
+//
+//        // Main generation loop
+//        while (pos < actualMaxTokens) {
+//            // GPU Forward Pass - No conditional check since we know we're using GPU
+//            //System.out.println("currentToken: " + currentToken);
+//            FloatArray logits = InferenceCore.forwardTornadoVM(model, state, currentToken, pos, tornadoVMPlan);
+//
+//            // Process prompt tokens if still remaining
+//            if (promptIndex < promptTokens.size()) {
+//                // Get next prompt token (using array access if available)
+//                nextToken = promptTokenArray != null ? promptTokenArray[promptIndex++] : promptTokens.get(promptIndex++);
+//
+//                if (echo) {
+//                    // Decode and output token
+//                    System.err.print(Tokenizer.replaceControlCharacters(model.tokenizer().decode(List.of(nextToken))));
+//                }
+//            } else {
+//                // Mark first inference token
+//                if (inferenceStartNanos == 0) {
+//                    inferenceStartNanos = System.nanoTime();
+//                }
+//
+//                // Sample next token - use GPU sampling if available
+//                nextToken = sampler.sampleToken(logits);
+//
+//                // Add token consumer support
+//                if (onTokenGenerated != null) {
+//                    onTokenGenerated.accept(nextToken);
+//                }
+//
+//                // Output if needed
+//                if (echo && onTokenGenerated == null) {
+//                    System.err.print(Tokenizer.replaceControlCharacters(model.tokenizer().decode(List.of(nextToken))));
+//                }
+//
+//                // Store token
+//                generatedTokens.add(nextToken);
+//
+//                // Check stop condition
+//                if (stopTokens.contains(nextToken)) {
+//                    break;
+//                }
+//            }
+//
+//            // Update for next iteration
+//            currentToken = nextToken;
+//            state.latestToken = currentToken;
+//            pos++;
+//        }
+//
+//        // === Performance Metrics ===
+//        long endNanos = System.nanoTime();
+//        double totalSeconds = (endNanos - startNanos) / 1_000_000_000.0;
+//        int totalTokens = promptIndex + generatedTokens.size();
+//
+//        // Set metrics for tokens achieved
+//        LastRunMetrics.setMetrics(totalTokens, totalSeconds);
+//
+//        return generatedTokens;    }
+
     public static List<Integer> generateTokensGPUPhi3(Model model, State state, int startPosition, List<Integer> promptTokens, Set<Integer> stopTokens, int maxTokens, Sampler sampler, boolean echo,
             IntConsumer onTokenGenerated, TornadoVMMasterPlan tornadoVMPlan) {
-        // === Setup and Initialization ===
+        // Start timing the whole process
         long startNanos = System.nanoTime();
         long inferenceStartNanos = 0;
 
-        // Pre-validate the max tokens to avoid checking in the loop
-        int actualMaxTokens = Math.min(maxTokens > 0 ? maxTokens : model.configuration().contextLength(), model.configuration().contextLength());
+        // Validate and adjust maxTokens if necessary
+        if (maxTokens < 0 || model.configuration().contextLength() < maxTokens) {
+            maxTokens = model.configuration().contextLength();
+        }
 
-        // Preallocate with expected capacity to avoid resizing
-        List<Integer> generatedTokens = new ArrayList<>(Math.min(256, actualMaxTokens - promptTokens.size())); // Conservative estimate
+        // Storage for generated tokens
+        List<Integer> generatedTokens = new ArrayList<>();
 
-        // === Token Generation Loop ===
+        // Initialize token variables
         int currentToken = state.latestToken;
         int nextToken;
         int promptIndex = 0;
         int pos = startPosition;
 
-        // Use more efficient direct array access for prompt tokens if possible
-        int[] promptTokenArray = null;
-        if (promptTokens instanceof ArrayList) {
-            // Try to extract the underlying array for faster access
-            try {
-                // This is a performance optimization that may not work on all JVMs
-                promptTokenArray = promptTokens.stream().mapToInt(Integer::intValue).toArray();
-            } catch (Exception e) {
-                // Fall back to list access
-            }
-        }
-
-        // Main generation loop
-        while (pos < actualMaxTokens) {
-            // GPU Forward Pass - No conditional check since we know we're using GPU
-            //System.out.println("currentToken: " + currentToken);
+        while (pos < maxTokens) {
+            // GPU Forward Pass
             FloatArray logits = InferenceCore.forwardTornadoVM(model, state, currentToken, pos, tornadoVMPlan);
 
-            // Process prompt tokens if still remaining
+            // Handle token processing
             if (promptIndex < promptTokens.size()) {
-                // Get next prompt token (using array access if available)
-                nextToken = promptTokenArray != null ? promptTokenArray[promptIndex++] : promptTokens.get(promptIndex++);
-
+                // We're still processing the prompt tokens
+                nextToken = promptTokens.get(promptIndex++);
                 if (echo) {
-                    // Decode and output token
                     System.err.print(Tokenizer.replaceControlCharacters(model.tokenizer().decode(List.of(nextToken))));
                 }
             } else {
-                // Mark first inference token
+                // Mark the start of actual generation (after prompt processing)
                 if (inferenceStartNanos == 0) {
                     inferenceStartNanos = System.nanoTime();
                 }
 
-                // Sample next token - use GPU sampling if available
+                // Sample the next token
                 nextToken = sampler.sampleToken(logits);
 
-                // Add token consumer support
+                // Output the token if echo is enabled
+                if (echo) {
+                    System.err.print(Tokenizer.replaceControlCharacters(model.tokenizer().decode(List.of(nextToken))));
+                }
+
+                // Track the generated token
+                generatedTokens.add(nextToken);
+
+                // Notify via callback if provided
                 if (onTokenGenerated != null) {
                     onTokenGenerated.accept(nextToken);
                 }
 
-                // Output if needed
-                if (echo && onTokenGenerated == null) {
-                    System.err.print(Tokenizer.replaceControlCharacters(model.tokenizer().decode(List.of(nextToken))));
-                }
-
-                // Store token
-                generatedTokens.add(nextToken);
-
-                // Check stop condition
+                // Check for stop condition
                 if (stopTokens.contains(nextToken)) {
                     break;
                 }
@@ -531,14 +606,13 @@ public final class InferenceEngine {
             pos++;
         }
 
-        // === Performance Metrics ===
+        // Calculate and print performance metrics
         long endNanos = System.nanoTime();
-        double totalSeconds = (endNanos - startNanos) / 1_000_000_000.0;
+        double totalTimeSeconds = (endNanos - startNanos) / 1_000_000_000.0;
         int totalTokens = promptIndex + generatedTokens.size();
 
-        // Set metrics for tokens achieved
-        LastRunMetrics.setMetrics(totalTokens, totalSeconds);
+        LastRunMetrics.setMetrics(totalTokens, totalTimeSeconds);
 
-        return generatedTokens;    }
-
+        return generatedTokens;
+    }
 }
