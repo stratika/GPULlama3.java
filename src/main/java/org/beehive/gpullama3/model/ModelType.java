@@ -4,6 +4,7 @@ import org.beehive.gpullama3.core.model.GGUF;
 import org.beehive.gpullama3.model.loader.LlamaModelLoader;
 import org.beehive.gpullama3.model.loader.MistralModelLoader;
 import org.beehive.gpullama3.model.loader.Phi3ModelLoader;
+import org.beehive.gpullama3.model.loader.Qwen2ModelLoader;
 import org.beehive.gpullama3.model.loader.Qwen3ModelLoader;
 
 import java.nio.channels.FileChannel;
@@ -32,6 +33,13 @@ public enum ModelType {
         @Override
         public Model loadModel(FileChannel fileChannel, GGUF gguf, int contextLength, boolean loadWeights) {
             return new MistralModelLoader(fileChannel, gguf, contextLength, loadWeights).loadModel();
+        }
+    },
+
+    QWEN_2 {
+        @Override
+        public Model loadModel(FileChannel fileChannel, GGUF gguf, int contextLength, boolean loadWeights) {
+            return new Qwen2ModelLoader(fileChannel, gguf, contextLength, loadWeights).loadModel();
         }
     },
 

@@ -164,7 +164,7 @@ public interface Model {
 
         List<Integer> promptTokens = new ArrayList<>();
 
-        if (!getModelType().equals(ModelType.QWEN_3) && !getModelType().equals(ModelType.PHI_3)) {
+        if (!getModelType().equals(ModelType.QWEN_3) && !getModelType().equals(ModelType.QWEN_2) && !getModelType().equals(ModelType.PHI_3)) {
             promptTokens.add(chatFormat.getBeginOfText());
         }
 
