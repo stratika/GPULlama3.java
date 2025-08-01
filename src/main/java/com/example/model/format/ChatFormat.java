@@ -1,9 +1,13 @@
 package com.example.model.format;
 
+import com.example.model.phi3.Phi3;
 import com.example.tokenizer.impl.LlamaTokenizer;
 import com.example.tokenizer.impl.MistralTokenizer;
+import com.example.tokenizer.impl.Phi3Tokenizer;
 import com.example.tokenizer.impl.Qwen3Tokenizer;
+import com.example.tokenizer.impl.Tokenizer;
 
+import javax.management.relation.Role;
 import java.util.List;
 import java.util.Set;
 
@@ -17,15 +21,13 @@ public interface ChatFormat {
     }
 
     static ChatFormat create(Object tokenizer, ChatTokens chatTokens) {
-        if (tokenizer instanceof LlamaTokenizer llamaTokenizer) {
-            return new LlamaChatFormat(llamaTokenizer);
-        } else if (tokenizer instanceof MistralTokenizer mistralTokenizer) {
-            return new MistralChatFormat(mistralTokenizer);
-        } else if (tokenizer instanceof Qwen3Tokenizer qwen3Tokenizer) {
-            return new Qwen3ChatFormat(qwen3Tokenizer, chatTokens);
-        } else {
-            throw new IllegalArgumentException("Unsupported tokenizer type: " + tokenizer.getClass().getName());
-        }
+        return switch (tokenizer) {
+            case LlamaTokenizer llamaTokenizer -> new LlamaChatFormat(llamaTokenizer);
+            case MistralTokenizer mistralTokenizer -> new MistralChatFormat(mistralTokenizer);
+            case Qwen3Tokenizer qwen3Tokenizer -> new Qwen3ChatFormat(qwen3Tokenizer, chatTokens);
+            case Phi3Tokenizer phi3Tokenizer -> new Phi3ChatFormat(phi3Tokenizer, chatTokens);
+            default -> throw new IllegalArgumentException("Unsupported tokenizer type: " + tokenizer.getClass().getName());
+        };
     }
 
     List<Integer> encodeHeader(Message message);
