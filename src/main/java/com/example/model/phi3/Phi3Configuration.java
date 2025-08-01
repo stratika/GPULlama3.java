@@ -18,17 +18,17 @@ public record Phi3Configuration(int dim,
                                     float ropeTheta) implements Configuration {
     @Override
     public int headSize() {
-        throw new UnsupportedOperationException("Not supported for Qwen3.");
+        throw new UnsupportedOperationException("Not supported for Phi3.");
     }
 
     @Override
     public int kvDim() {
-        throw new UnsupportedOperationException("Not supported for Qwen3.");
+        throw new UnsupportedOperationException("Not supported for Phi3.");
     }
 
     @Override
     public int kvMul() {
-        throw new UnsupportedOperationException("Not supported for Qwen3.");
+        throw new UnsupportedOperationException("Not supported for Phi3.");
     }
 
     @Override

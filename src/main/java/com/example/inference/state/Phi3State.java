@@ -9,7 +9,7 @@ public class Phi3State extends  State{
      * @param config
      * @param batchsize
      */
-    protected Phi3State(Configuration config, int batchsize) {
+    public Phi3State(Configuration config, int batchsize) {
         super(config, batchsize);
     }
 
