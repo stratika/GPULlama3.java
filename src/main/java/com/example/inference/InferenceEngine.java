@@ -2,7 +2,6 @@ package com.example.inference;
 
 import com.example.auxiliary.LastRunMetrics;
 import com.example.inference.sampler.Sampler;
-import com.example.inference.state.Phi3State;
 import com.example.inference.state.State;
 import com.example.model.Configuration;
 import com.example.model.Model;
@@ -10,6 +9,7 @@ import com.example.tokenizer.impl.Tokenizer;
 import com.example.tornadovm.TornadoVMMasterPlan;
 import uk.ac.manchester.tornado.api.types.arrays.FloatArray;
 
+import java.io.ByteArrayOutputStream;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Set;
@@ -217,7 +217,57 @@ public final class InferenceEngine {
 
     public static List<Integer> generateTokensPhi3(Model model, State state, int startPosition, List<Integer> promptTokens, Set<Integer> stopTokens, int maxTokens, Sampler sampler, boolean echo,
             IntConsumer onTokenGenerated) {
-        return null;
+
+        long startNanos = System.nanoTime();
+        if (maxTokens < 0 || model.configuration().contextLength() < maxTokens) {
+            maxTokens = model.configuration().contextLength();
+        }
+        List<Integer> generatedTokens = new ArrayList<>(maxTokens);
+        int token = state.latestToken; // BOS?
+        int nextToken;
+        int promptIndex = 0;
+        ByteArrayOutputStream baos = new ByteArrayOutputStream(5);
+        for (int position = startPosition; position < maxTokens; ++position) {
+
+            model.forward(state, token, position);
+            if (promptIndex < promptTokens.size()) {
+                // Force-pick token from prompt.
+                nextToken = promptTokens.get(promptIndex++);
+                if (echo) {
+                    // log prompt token (different color?)
+                    System.out.println("NextToken: " + nextToken);
+                    //System.err.print(Tokenizer.replaceControlCharacters(model.tokenizer().decode(List.of(nextToken))));
+                    String decoded = model.tokenizer().decode(List.of(nextToken));
+                    System.err.print(Tokenizer.replaceControlCharacters(model.tokenizer().decode(List.of(nextToken))));
+
+                    //                    System.err.print(de(decoded, baos));
+                }
+            } else {
+                nextToken = sampler.sampleToken(state.logits);
+                if (echo) {
+                    // log inferred token
+                    System.err.print(Tokenizer.replaceControlCharacters(model.tokenizer().decode(List.of(nextToken))));
+                }
+                generatedTokens.add(nextToken);
+                if (onTokenGenerated != null) {
+                    onTokenGenerated.accept(nextToken);
+                }
+                if (stopTokens.contains(nextToken)) {
+                    break;
+                }
+            }
+            state.latestToken = token = nextToken;
+            if (position == 2000) {
+                break;
+            }
+        }
+
+        long elapsedNanos = System.nanoTime() - startNanos;
+        int totalTokens = promptIndex + generatedTokens.size();
+        System.err.printf("%n%.2f tokens/s (%d)%n", totalTokens / (elapsedNanos / 1_000_000_000.0), totalTokens);
+
+        return generatedTokens;
+
     }
 
     public static List<Integer> generateTokensGPULlama(Model model, State state, int startPosition, List<Integer> promptTokens, Set<Integer> stopTokens, int maxTokens, Sampler sampler, boolean echo,
@@ -406,4 +456,5 @@ public final class InferenceEngine {
             IntConsumer onTokenGenerated, TornadoVMMasterPlan tornadoVMPlan) {
         return null;
     }
+
 }

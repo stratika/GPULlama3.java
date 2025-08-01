@@ -73,12 +73,12 @@ public class Phi3Tokenizer implements Tokenizer {
 
     @Override
     public boolean isSpecialToken(int tokenIndex) {
-        return false;
+        return specialTokens.containsValue(tokenIndex);
     }
 
     @Override
     public boolean shouldDisplayToken(int token) {
-        return false;
+        return !isSpecialToken(token);
     }
 
     @Override
