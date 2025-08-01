@@ -99,6 +99,7 @@ public class TornadoVMMasterPlan {
         return switch (model.getModelType()) {
             case LLAMA_3, MISTRAL -> new TornadoVMLayerPlanner(state, model);
             case QWEN_3 -> new Qwen3TornadoVMLayerPlanner((Qwen3State) state, model);
+            case PHI_3 -> null;
             case UNKNOWN -> throw new UnsupportedOperationException("Unknown model type");
         };
     }

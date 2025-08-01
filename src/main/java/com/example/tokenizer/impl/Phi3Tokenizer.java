@@ -1,16 +1,19 @@
 package com.example.tokenizer.impl;
 
+import com.example.core.types.Pair;
 import com.example.tokenizer.vocabulary.Vocabulary;
 
 import java.nio.charset.StandardCharsets;
 import java.util.ArrayList;
-import java.util.HashMap;
+import java.util.Arrays;
+import java.util.Collections;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
 import java.util.regex.Pattern;
 import java.util.stream.Collectors;
 import java.util.stream.IntStream;
+
 
 public class Phi3Tokenizer implements Tokenizer {
 
@@ -23,20 +26,39 @@ public class Phi3Tokenizer implements Tokenizer {
     private final Map<String, Integer> specialTokens;
     private final int[] tokenType;
     private final int byte0;
+    /** Special token "&lt;s&gt;" */
+    private static String TOKEN_BOS = "<s>";
+    /** id of token "&lt;s&gt;" */
+    private static int TOKEN_BOS_ID = 1;
+    private static final String TOKENIZER_LLAMA_MODEL = "llama";
+    private static final String LLAMA_3_PATTERN = "(?i:'s|'t|'re|'ve|'m|'ll|'d)|[^\\r\\n\\p{L}\\p{N}]?\\p{L}+|\\p{N}{1,3}| ?[^\\s\\p{L}\\p{N}]+[\\r\\n]*|\\s*[\\r\\n]+|\\s+(?!\\S)|\\s+";
 
     public Phi3Tokenizer(Map<String, Object> metadata, Vocabulary vocabulary) {
-        // load from metadata
         int[] tokenTypes = (int[]) metadata.get("tokenizer.ggml.token_type");
-        List<Integer> specialTokensList = IntStream.range(0, vocabulary.size()).filter(t -> tokenTypes[t] != 1 && tokenTypes[t] != 6).boxed().toList();
-        Map<String, Integer> specialTokens = IntStream.range(0, specialTokensList.size()).boxed().collect(Collectors.toMap(t -> vocabulary.get(specialTokensList.get(t)), specialTokensList::get));
+        List<Pair<Integer, Integer>> merges = Collections.emptyList();
 
-        // init tokenizer object fields
+        int allTokens = vocabulary.size();
+        int baseTokens = 32000; // assume all tokens after the base ones are special.
+        //int reservedSpecialTokens = allTokens - baseTokens;
+        List<String> specialTokensList = Arrays.stream(vocabulary.tokens(), baseTokens, allTokens).toList();
+
+        assert specialTokensList.stream().allMatch(token -> vocabulary.getIndex(token).isPresent());
+
+        Map<String, Integer> specialTokens =
+                IntStream.range(0, specialTokensList.size())
+                        .boxed()
+                        .collect(Collectors.toMap(
+                                i -> specialTokensList.get(i),
+                                i -> baseTokens + i)
+                        );
+        specialTokens.put(TOKEN_BOS, TOKEN_BOS_ID);
+        this.specialTokens = specialTokens;
         this.vocabulary = vocabulary;
+        this.tokenType = tokenTypes != null ? tokenTypes : new int[vocabulary.size()];
         this.compiledPattern = Pattern.compile(PHI3_PATTERN);
-        this.specialTokens = new HashMap<>(specialTokens);
-        this.tokenType = tokenTypes;
-        this.byte0 = vocabulary.getIndex("<0x00>").orElseThrow();
+        this.byte0 = 0xE7; // Default byte for special characters, can be adjusted if needed.
     }
+
 
     @Override
     public String regexPattern() {
@@ -45,8 +67,9 @@ public class Phi3Tokenizer implements Tokenizer {
 
     @Override
     public Map<String, Integer> getSpecialTokens() {
-        return Map.of();
+        return specialTokens;
     }
+
 
     @Override
     public boolean isSpecialToken(int tokenIndex) {
@@ -77,7 +100,8 @@ public class Phi3Tokenizer implements Tokenizer {
             int token = -1;
             for (int j = 0; j < vocSize; j++) {
                 final String voc = vocabulary.get(j);
-                if (text.startsWith(voc, offset) && (curVoc == null || curVoc.length() < voc.length())) {
+                if (text.startsWith(voc, offset)
+                        && (curVoc == null || curVoc.length() < voc.length())) {
                     curVoc = voc;
                     token = j;
                 }
@@ -95,7 +119,8 @@ public class Phi3Tokenizer implements Tokenizer {
                         }
                     }
                     if (token == -1) {
-                        throw new RuntimeException(String.format("Can't tokenize text at offset %d (%c / (%d, sHex %s)), tokens = %s, text: %s", offset, text.charAt(offset), i, sHex, tokens, text));
+                        throw new RuntimeException(String.format("Can't tokenize text at offset %d (%c / (%d, sHex %s)), tokens = %s, text: %s",
+                                offset, text.charAt(offset), i, sHex, tokens, text));
                     }
                     tokens.add(token);
                 }
