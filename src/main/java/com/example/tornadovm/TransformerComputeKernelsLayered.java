@@ -962,59 +962,5 @@ public class TransformerComputeKernelsLayered {
             hbU.set(i, siluGate * upVal);
         }
     }
-    public static void fusedGateUpSiLUDown(KernelContext context,
-            FloatArray input,        // state.wrapXb
-            FloatArray output,       // state.wrapX (with residual)
-            HalfFloatArray wUp,      // weights.wUpLayered[layerIndex]
-            HalfFloatArray wDown,    // weights.wDownLayered[layerIndex]
-            int dim,                 // config.dim()
-            int hiddenDim,          // config.hiddenDim()
-            int localWorkGroupSize) {
 
-        int rowId = context.groupIdx;  // Each workgroup computes one output dimension
-        int localId = context.localIdx;
-
-        if (rowId >= dim) return;
-
-        float[] localSum = context.allocateFloatLocalArray(localWorkGroupSize);
-        float accumulator = 0.0f;
-
-        // Process hidden dimensions in chunks to maintain numerical stability
-        for (int h = localId; h < hiddenDim; h += localWorkGroupSize) {
-            // Step 1: Compute gate value (first half of wUp)
-            float gateValue = 0.0f;
-            for (int i = 0; i < dim; i++) {
-                gateValue += wUp.get(h * dim + i).getFloat32() * input.get(i);
-            }
-
-            // Step 2: Compute up value (second half of wUp)
-            float upValue = 0.0f;
-            for (int i = 0; i < dim; i++) {
-                upValue += wUp.get((h + hiddenDim) * dim + i).getFloat32() * input.get(i);
-            }
-
-            // Step 3: Apply SiLU to gate and multiply with up
-            float siluGate = gateValue / (1.0f + TornadoMath.exp(-gateValue));
-            float activated = siluGate * upValue;
-
-            // Step 4: Apply down projection for this row
-            accumulator += wDown.get(rowId * hiddenDim + h).getFloat32() * activated;
-        }
-
-        // Reduce across workgroup
-        localSum[localId] = accumulator;
-        context.localBarrier();
-
-        for (int stride = localWorkGroupSize / 2; stride > 0; stride >>= 1) {
-            if (localId < stride) {
-                localSum[localId] += localSum[localId + stride];
-            }
-            context.localBarrier();
-        }
-
-        // Add residual connection
-        if (localId == 0) {
-            output.set(rowId, output.get(rowId) + localSum[0]);
-        }
-    }
 }
