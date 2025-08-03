@@ -1,24 +1,14 @@
 package com.example.model.format;
 
-import com.example.model.phi3.Phi3;
 import com.example.tokenizer.impl.LlamaTokenizer;
 import com.example.tokenizer.impl.MistralTokenizer;
 import com.example.tokenizer.impl.Phi3Tokenizer;
 import com.example.tokenizer.impl.Qwen3Tokenizer;
-import com.example.tokenizer.impl.Tokenizer;
 
-import javax.management.relation.Role;
 import java.util.List;
 import java.util.Set;
 
 public interface ChatFormat {
-
-    default ChatTokens chatTokens() {
-        throw new UnsupportedOperationException("ChatFormat for Llama and Mistral does not support chatTokens");
-    }
-
-    record ChatTokens(String tStartHeader, String tEndHeader, String tEndOfTurn, String tEndOfText, String tEndOfTextFim) {
-    }
 
     static ChatFormat create(Object tokenizer, ChatTokens chatTokens) {
         return switch (tokenizer) {
@@ -30,6 +20,10 @@ public interface ChatFormat {
         };
     }
 
+    default ChatTokens chatTokens() {
+        throw new UnsupportedOperationException("ChatFormat for Llama and Mistral does not support chatTokens");
+    }
+
     List<Integer> encodeHeader(Message message);
 
     List<Integer> encodeMessage(Message message);
@@ -38,14 +32,18 @@ public interface ChatFormat {
 
     Set<Integer> getStopTokens();
 
+    record ChatTokens(String tStartHeader, String tEndHeader, String tEndOfTurn, String tEndOfText, String tEndOfTextFim) {
+    }
+
     /**
      * Represents a single message in a LLM chat session.
      *
-     * Each message is associated with a specific role (system, user, or assistant)
-     * and contains the textual content of that message.
+     * Each message is associated with a specific role (system, user, or assistant) and contains the textual content of that message.
      *
-     * @param role the participant who issued the message (SYSTEM, USER, or ASSISTANT).
-     * @param content the textual content of the message
+     * @param role
+     *         the participant who issued the message (SYSTEM, USER, or ASSISTANT).
+     * @param content
+     *         the textual content of the message
      */
     record Message(Role role, String content) {
     }
@@ -60,7 +58,8 @@ public interface ChatFormat {
      * <li><strong>ASSISTANT</strong> - represents output from the AI assistant.</li>
      * </ul>
      *
-     * @param name the string representation of the role
+     * @param name
+     *         the string representation of the role
      */
     record Role(String name) {
         public static Role SYSTEM = new Role("system");
