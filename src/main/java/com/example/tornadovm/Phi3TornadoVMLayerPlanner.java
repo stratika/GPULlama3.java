@@ -66,13 +66,6 @@ public class Phi3TornadoVMLayerPlanner extends TornadoVMLayerPlanner<Phi3State, 
                     .task("splitQKV", TransformerComputeKernelsLayered::splitQKV,
                             state.wrapQkv, state.wrapQ, state.wrapK, state.wrapV,
                             config.dim(), config.headSize() * config.numberOfKeyValueHeads())
-//                    .task("copyQ", TransformerComputeKernelsLayered::copyTo,
-//                            state.wrapQkv, 0, state.wrapQ,0, config.dim())
-//                    .task("copyK", TransformerComputeKernelsLayered::copyTo,
-//                            state.wrapQkv, config.dim(), state.wrapK, 0, config.headSize() * config.numberOfKeyValueHeads())
-//                    .task("copyV", TransformerComputeKernelsLayered::copyTo,
-//                            state.wrapQkv, config.dim() + config.headSize() * config.numberOfKeyValueHeads(),
-//                            state.wrapV, 0, config.headSize() * config.numberOfKeyValueHeads())
                     .task("rope", TransformerComputeKernelsLayered::ropeRotationPhi3,context,
                             state.positionHolder, state.wrapQ, state.wrapK, config.kvDim(),
                             config.headSize())
@@ -88,13 +81,22 @@ public class Phi3TornadoVMLayerPlanner extends TornadoVMLayerPlanner<Phi3State, 
                             state.wrapX, config.dim(), config.rmsNormEps(), state.localSize)
                     .task("mapContextFFN", TransformerComputeKernelsLayered::reductionOneBlock2WithLayer, context, state.wrapXb,
                             state.wrapX, weights.rms_ffn_weightLayered[layerIndex], state.tempFFN)
-                    .task("wGateUp", TransformerComputeKernelsLayered::matrixVectorGeneric, context,
-                            state.wrapXb,   state.wrapHb, weights.wUpLayered[layerIndex],  config.dim(), 2 * config.hiddenDim(),  LOCAL_WORK_GROUP_SIZE_ALLOC)
-                    // Copy gate chunk: hb[0:hiddenDim] -> hbG[0:hiddenDim]
-                    .task("gateUpSiLU", TransformerComputeKernelsLayered::splitGateUpAndSiLU,
-                            state.wrapHb, state.wrapHbG, state.wrapHbU, config.hiddenDim())
-                    .task("wDown", TransformerComputeKernelsLayered::matrixVectorGenericWithResidual, context,
-                            state.wrapHbU, state.wrapX, weights.wDownLayered[layerIndex], config.hiddenDim(), config.dim(),  LOCAL_WORK_GROUP_SIZE_ALLOC)
+                    // Before (3 tasks):
+                    // .task("wGateUp", ...)
+                    // .task("gateUpSiLU", ...)
+                    // .task("wDown", ...)
+
+                    // After (1 fused task):
+                    .task("fusedFFN", TransformerComputeKernelsLayered::fusedGateUpSiLUDownOptimized, context,
+                            state.wrapXb, state.wrapX, weights.wUpLayered[layerIndex],
+                            weights.wDownLayered[layerIndex], config.dim(), config.hiddenDim(),
+                            LOCAL_WORK_GROUP_SIZE_ALLOC)
+//                    .task("wGateUp", TransformerComputeKernelsLayered::matrixVectorGeneric, context,
+//                            state.wrapXb,   state.wrapHb, weights.wUpLayered[layerIndex],  config.dim(), 2 * config.hiddenDim(),  LOCAL_WORK_GROUP_SIZE_ALLOC)
+//                    .task("gateUpSiLU", TransformerComputeKernelsLayered::splitGateUpAndSiLU,
+//                            state.wrapHb, state.wrapHbG, state.wrapHbU, config.hiddenDim())
+//                    .task("wDown", TransformerComputeKernelsLayered::matrixVectorGenericWithResidual, context,
+//                            state.wrapHbU, state.wrapX, weights.wDownLayered[layerIndex], config.hiddenDim(), config.dim(),  LOCAL_WORK_GROUP_SIZE_ALLOC)
                     .persistOnDevice(
                             state.wrapX
                     );
@@ -334,13 +336,7 @@ public class Phi3TornadoVMLayerPlanner extends TornadoVMLayerPlanner<Phi3State, 
         tornadoForwardScheduler.addWorkerGrid("activationUpdate.updateX", singleWorker);
         for (int i = 0; i < config.numberOfLayers(); i++) {
             tornadoForwardScheduler.addWorkerGrid("layer_" + i + ".qkvmatmul", qkvDimRowMajorGlobalWorker);
-//            tornadoForwardScheduler.addWorkerGrid("layer_" + i + ".copyQ", copyQWorker);
-//            tornadoForwardScheduler.addWorkerGrid("layer_" + i + ".copyK", copyKWorker);
-//            tornadoForwardScheduler.addWorkerGrid("layer_" + i + ".copyV", copyVWorker);
-
             tornadoForwardScheduler.addWorkerGrid("layer_" + i + ".splitQKV", splitQKVWorker);
-
-
             tornadoForwardScheduler.addWorkerGrid("layer_" + i + ".rope", ropeWorker);
             tornadoForwardScheduler.addWorkerGrid("layer_" + i + ".matmul1", configDimRowMajorGlobalWorker);
             tornadoForwardScheduler.addWorkerGrid("layer_" + i + ".wDown", configDimRowMajorGlobalWorker);
@@ -352,12 +348,8 @@ public class Phi3TornadoVMLayerPlanner extends TornadoVMLayerPlanner<Phi3State, 
             tornadoForwardScheduler.addWorkerGrid("layer_" + i + ".parallel-attention", parallelAttentionWorker);
             tornadoForwardScheduler.addWorkerGrid("layer_" + i + ".copyToCaches", copyToCachesWorker);
             // New FFN tasks
-            tornadoForwardScheduler.addWorkerGrid("layer_" + i + ".gateUpSiLU", splitGateUpSiLUWorker);
-
-//            tornadoForwardScheduler.addWorkerGrid("layer_" + i + ".copyGate", hiddenDimWorker);
-//            tornadoForwardScheduler.addWorkerGrid("layer_" + i + ".copyUp", hiddenDimWorker);
-//            tornadoForwardScheduler.addWorkerGrid("layer_" + i + ".siluActivation", hiddenDimWorker);
-//            tornadoForwardScheduler.addWorkerGrid("layer_" + i + ".gatedMultiply", hiddenDimWorker);
+//            tornadoForwardScheduler.addWorkerGrid("layer_" + i + ".gateUpSiLU", splitGateUpSiLUWorker);
+            tornadoForwardScheduler.addWorkerGrid("layer_" + i + ".fusedFFN", configDimRowMajorGlobalWorker);
 
         }
 

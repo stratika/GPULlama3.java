@@ -144,8 +144,7 @@ public class TransformerComputeKernelsLayered {
         }
     }
 
-    public static void splitQKV(FloatArray qkv, FloatArray q, FloatArray k, FloatArray v,
-            int dimQ, int dimKV) {
+    public static void splitQKV(FloatArray qkv, FloatArray q, FloatArray k, FloatArray v, int dimQ, int dimKV) {
         int totalSize = dimQ + 2 * dimKV;
 
         for (@Parallel int i = 0; i < totalSize; i++) {
@@ -949,7 +948,6 @@ public class TransformerComputeKernelsLayered {
         }
     }
 
-
     public static void splitGateUpAndSiLU(FloatArray hb, FloatArray hbG, FloatArray hbU, int hiddenDim) {
         // Copy and apply SiLU to gate in one pass
         for (@Parallel int i = 0; i < hiddenDim; i++) {
@@ -962,6 +960,90 @@ public class TransformerComputeKernelsLayered {
             // Store activated gate and multiply with up
             hbG.set(i, siluGate);
             hbU.set(i, siluGate * upVal);
+        }
+    }
+
+    public static void fusedGateUpSiLUDownOptimized(KernelContext context,
+            FloatArray input,
+            FloatArray output,
+            HalfFloatArray wUp,
+            HalfFloatArray wDown,
+            int dim,
+            int hiddenDim,
+            int localWorkGroupSize) {
+
+        int rowId = context.groupIdx;
+        int localId = context.localIdx;
+
+        if (rowId >= dim) return;
+
+        // Shared memory for input vector (reused across all hidden computations)
+        float[] sharedInput = context.allocateFloatLocalArray(dim);
+        float[] localSum = context.allocateFloatLocalArray(localWorkGroupSize);
+
+        // Cooperatively load input into shared memory
+        for (int i = localId; i < dim; i += localWorkGroupSize) {
+            sharedInput[i] = input.get(i);
+        }
+        context.localBarrier();
+
+        float accumulator = 0.0f;
+
+        // Each thread processes multiple hidden dimensions
+        for (int h = localId; h < hiddenDim; h += localWorkGroupSize) {
+            // Compute gate and up values using shared input
+            float gateValue = 0.0f;
+            float upValue = 0.0f;
+
+            int gateRowOffset = h * dim;
+            int upRowOffset = (h + hiddenDim) * dim;
+
+            // Unrolled loop for better performance
+            int i = 0;
+            for (; i < dim - 3; i += 4) {
+                float in0 = sharedInput[i];
+                float in1 = sharedInput[i + 1];
+                float in2 = sharedInput[i + 2];
+                float in3 = sharedInput[i + 3];
+
+                gateValue += wUp.get(gateRowOffset + i).getFloat32() * in0;
+                gateValue += wUp.get(gateRowOffset + i + 1).getFloat32() * in1;
+                gateValue += wUp.get(gateRowOffset + i + 2).getFloat32() * in2;
+                gateValue += wUp.get(gateRowOffset + i + 3).getFloat32() * in3;
+
+                upValue += wUp.get(upRowOffset + i).getFloat32() * in0;
+                upValue += wUp.get(upRowOffset + i + 1).getFloat32() * in1;
+                upValue += wUp.get(upRowOffset + i + 2).getFloat32() * in2;
+                upValue += wUp.get(upRowOffset + i + 3).getFloat32() * in3;
+            }
+
+            // Handle remainder
+            for (; i < dim; i++) {
+                float inVal = sharedInput[i];
+                gateValue += wUp.get(gateRowOffset + i).getFloat32() * inVal;
+                upValue += wUp.get(upRowOffset + i).getFloat32() * inVal;
+            }
+
+            // Apply SiLU and multiply
+            float activated = (gateValue / (1.0f + TornadoMath.exp(-gateValue))) * upValue;
+
+            // Apply down projection
+            accumulator += wDown.get(rowId * hiddenDim + h).getFloat32() * activated;
+        }
+
+        // Final reduction and residual add
+        localSum[localId] = accumulator;
+        context.localBarrier();
+
+        for (int stride = localWorkGroupSize / 2; stride > 0; stride >>= 1) {
+            if (localId < stride) {
+                localSum[localId] += localSum[localId + stride];
+            }
+            context.localBarrier();
+        }
+
+        if (localId == 0) {
+            output.set(rowId, output.get(rowId) + localSum[0]);
         }
     }
 }
