@@ -320,8 +320,6 @@ public class Phi3TornadoVMLayerPlanner extends TornadoVMLayerPlanner<Phi3State, 
         splitQKVWorker.setGlobalWork(opSize, 1, 1);
         splitQKVWorker.setLocalWork(128, 1, 1);
 
-        // Map to task
-
         // Map workers to tasks
         tornadoForwardScheduler.addWorkerGrid("activationUpdate.updateX", singleWorker);
         for (int i = 0; i < config.numberOfLayers(); i++) {
