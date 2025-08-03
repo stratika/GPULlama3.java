@@ -45,7 +45,7 @@ public class Phi3TornadoVMLayerPlanner extends TornadoVMLayerPlanner<Phi3State, 
         taskGraphs.add(activationUpdate.snapshot());
 
         TaskGraph unifiedLayer = null;
-        for (int layerIndex =0; layerIndex < config.numberOfLayers(); layerIndex++) {
+        for (int layerIndex = 0; layerIndex < config.numberOfLayers(); layerIndex++) {
             unifiedLayer = new TaskGraph("layer_" + layerIndex);
             unifiedLayer.consumeFromDevice(state.wrapX);
             unifiedLayer.transferToDevice(DataTransferMode.FIRST_EXECUTION,
