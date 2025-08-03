@@ -3,6 +3,7 @@ package com.example.tokenizer.impl;
 import com.example.core.types.Pair;
 import com.example.tokenizer.vocabulary.Vocabulary;
 
+import java.io.ByteArrayOutputStream;
 import java.nio.charset.StandardCharsets;
 import java.util.ArrayList;
 import java.util.Arrays;
@@ -10,6 +11,7 @@ import java.util.Collections;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
+import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 import java.util.stream.Collectors;
 import java.util.stream.IntStream;
@@ -18,6 +20,7 @@ public class Phi3Tokenizer implements Tokenizer {
 
     private static final String SPM_UNDERSCORE = "\u2581";
     private static final String PHI3_PATTERN = "\\S+|\\s+"; // Define appropriate pattern for Phi3
+    private static final Pattern P_UTF8_BYTE = Pattern.compile("<0x([0-9A-F]{2})>");
     /** Special token "&lt;s&gt;" */
     private static String TOKEN_BOS = "<s>";
     /** id of token "&lt;s&gt;" */
@@ -80,7 +83,7 @@ public class Phi3Tokenizer implements Tokenizer {
 
     @Override
     public List<Integer> encode(String text, Set<String> allowedSpecial) {
-        return List.of();
+        return encodeAsList(text);
     }
 
     @Override
@@ -130,10 +133,35 @@ public class Phi3Tokenizer implements Tokenizer {
 
     @Override
     public String decode(List<Integer> tokens) {
-        final StringBuilder sb = new StringBuilder();
+        StringBuilder sb = new StringBuilder();
+        ByteArrayOutputStream baos = new ByteArrayOutputStream();
+
         for (Integer token : tokens) {
-            sb.append(vocabulary.get(token));
+            String tokenString = vocabulary.get(token);
+
+            // Check if this is a UTF-8 byte token like <0x0A>
+            Matcher matcher = P_UTF8_BYTE.matcher(tokenString);
+            if (matcher.matches()) {
+                // Extract the hex value and add it to the byte buffer
+                int byteValue = Integer.parseInt(matcher.group(1), 16);
+                baos.write(byteValue);
+            } else {
+                // If we have accumulated bytes, convert them to string first
+                if (baos.size() > 0) {
+                    sb.append(new String(baos.toByteArray(), StandardCharsets.UTF_8));
+                    baos.reset();
+                }
+                // Append the regular token
+                sb.append(tokenString);
+            }
         }
+
+        // Don't forget any remaining bytes at the end
+        if (baos.size() > 0) {
+            sb.append(new String(baos.toByteArray(), StandardCharsets.UTF_8));
+        }
+
+        // Replace SPM underscore with space
         return sb.toString().replace(SPM_UNDERSCORE, " ");
     }
 }
