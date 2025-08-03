@@ -953,4 +953,19 @@ public class TransformerComputeKernelsLayered {
             arrayA.set(i, result);
         }
     }
+
+    public static void splitGateUpAndSiLU(FloatArray hb, FloatArray hbG, FloatArray hbU, int hiddenDim) {
+        // Copy and apply SiLU to gate in one pass
+        for (@Parallel int i = 0; i < hiddenDim; i++) {
+            float gateVal = hb.get(i);
+            float upVal = hb.get(hiddenDim + i);
+
+            // Apply SiLU to gate
+            float siluGate = gateVal / (1.0f + TornadoMath.exp(-gateVal));
+
+            // Store activated gate and multiply with up
+            hbG.set(i, siluGate);
+            hbU.set(i, siluGate * upVal);
+        }
+    }
 }

@@ -88,17 +88,19 @@ public class Phi3TornadoVMLayerPlanner extends TornadoVMLayerPlanner<Phi3State, 
                     .task("wGateUp", TransformerComputeKernelsLayered::matrixVectorGeneric, context,
                             state.wrapXb,   state.wrapHb, weights.wUpLayered[layerIndex],  config.dim(), 2 * config.hiddenDim(),  LOCAL_WORK_GROUP_SIZE_ALLOC)
                     // Copy gate chunk: hb[0:hiddenDim] -> hbG[0:hiddenDim]
-                    .task("copyGate", TransformerComputeKernelsLayered::copyChunk,
-                            state.wrapHb, state.wrapHbG, 2 * config.hiddenDim(), config.hiddenDim(), 2, 0)
-                    // Copy up chunk: hb[hiddenDim:2*hiddenDim] -> hbU[0:hiddenDim]
-                    .task("copyUp", TransformerComputeKernelsLayered::copyChunk,
-                            state.wrapHb, state.wrapHbU, 2 * config.hiddenDim(), config.hiddenDim(), 2, 1)
-                    // Apply SiLU activation to gate: hbG = silu(hbG)
-                    .task("siluActivation", TransformerComputeKernelsLayered::siluInPlace,
-                            state.wrapHbG, config.hiddenDim())
-                    // Element-wise multiply: hbU = hbU * hbG
-                    .task("gatedMultiply", TransformerComputeKernelsLayered::multiplyInPlace,
-                            state.wrapHbU, state.wrapHbG, config.hiddenDim())
+                    .task("gateUpSiLU", TransformerComputeKernelsLayered::splitGateUpAndSiLU,
+                            state.wrapHb, state.wrapHbG, state.wrapHbU, config.hiddenDim())
+//                    .task("copyGate", TransformerComputeKernelsLayered::copyChunk,
+//                            state.wrapHb, state.wrapHbG, 2 * config.hiddenDim(), config.hiddenDim(), 2, 0)
+//                    // Copy up chunk: hb[hiddenDim:2*hiddenDim] -> hbU[0:hiddenDim]
+//                    .task("copyUp", TransformerComputeKernelsLayered::copyChunk,
+//                            state.wrapHb, state.wrapHbU, 2 * config.hiddenDim(), config.hiddenDim(), 2, 1)
+//                    // Apply SiLU activation to gate: hbG = silu(hbG)
+//                    .task("siluActivation", TransformerComputeKernelsLayered::siluInPlace,
+//                            state.wrapHbG, config.hiddenDim())
+//                    // Element-wise multiply: hbU = hbU * hbG
+//                    .task("gatedMultiply", TransformerComputeKernelsLayered::multiplyInPlace,
+//                            state.wrapHbU, state.wrapHbG, config.hiddenDim())
                     .task("wDown", TransformerComputeKernelsLayered::matrixVectorGenericWithResidual, context,
                             state.wrapHbU, state.wrapX, weights.wDownLayered[layerIndex], config.hiddenDim(), config.dim(),  LOCAL_WORK_GROUP_SIZE_ALLOC)
                     .persistOnDevice(
@@ -325,6 +327,10 @@ public class Phi3TornadoVMLayerPlanner extends TornadoVMLayerPlanner<Phi3State, 
         hiddenDimWorker.setGlobalWork(config.hiddenDim(), 1, 1);
         hiddenDimWorker.setLocalWork(128, 1, 1);
 
+        WorkerGrid splitGateUpSiLUWorker = new WorkerGrid1D(config.hiddenDim());
+        splitGateUpSiLUWorker.setGlobalWork(config.hiddenDim(), 1, 1);
+        splitGateUpSiLUWorker.setLocalWork(128, 1, 1);
+
         // Map workers to tasks
         tornadoForwardScheduler.addWorkerGrid("activationUpdate.updateX", singleWorker);
         for (int i = 0; i < config.numberOfLayers(); i++) {
@@ -343,10 +349,12 @@ public class Phi3TornadoVMLayerPlanner extends TornadoVMLayerPlanner<Phi3State, 
             tornadoForwardScheduler.addWorkerGrid("layer_" + i + ".parallel-attention", parallelAttentionWorker);
             tornadoForwardScheduler.addWorkerGrid("layer_" + i + ".copyToCaches", copyToCachesWorker);
             // New FFN tasks
-            tornadoForwardScheduler.addWorkerGrid("layer_" + i + ".copyGate", hiddenDimWorker);
-            tornadoForwardScheduler.addWorkerGrid("layer_" + i + ".copyUp", hiddenDimWorker);
-            tornadoForwardScheduler.addWorkerGrid("layer_" + i + ".siluActivation", hiddenDimWorker);
-            tornadoForwardScheduler.addWorkerGrid("layer_" + i + ".gatedMultiply", hiddenDimWorker);
+            tornadoForwardScheduler.addWorkerGrid("layer_" + i + ".gateUpSiLU", splitGateUpSiLUWorker);
+
+//            tornadoForwardScheduler.addWorkerGrid("layer_" + i + ".copyGate", hiddenDimWorker);
+//            tornadoForwardScheduler.addWorkerGrid("layer_" + i + ".copyUp", hiddenDimWorker);
+//            tornadoForwardScheduler.addWorkerGrid("layer_" + i + ".siluActivation", hiddenDimWorker);
+//            tornadoForwardScheduler.addWorkerGrid("layer_" + i + ".gatedMultiply", hiddenDimWorker);
 
         }
 
