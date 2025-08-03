@@ -21,8 +21,7 @@ import java.lang.foreign.MemorySegment;
  * Low-level operations for model inference.
  *
  * <p>
- * This class provides core computational operations such as RMS normalization and
- * forward passes through model layers. It supports both CPU and GPU implementations.
+ * This class provides core computational operations such as RMS normalization and forward passes through model layers. It supports both CPU and GPU implementations.
  * </p>
  *
  * <p>
@@ -312,7 +311,6 @@ public final class InferenceCore {
     }
 
     public static FloatTensor forwardJavaPhi3(Model model, Phi3State state, int token, int position) {
-        // a few convenience variables
         Phi3Configuration config = (Phi3Configuration) model.configuration();
         Phi3StandardWeights weights = (Phi3StandardWeights) model.weights();
         int dim = config.dim();
@@ -320,8 +318,6 @@ public final class InferenceCore {
         int kvDim = (config.dim() * config.numberOfKeyValueHeads()) / config.numberOfHeads();
         int kvMul = config.numberOfHeads() / config.numberOfKeyValueHeads(); // integer multiplier of the kv sharing in multiquery
         float sqrtHeadSize = (float) Math.sqrt(headSize);
-        // dim=3072, headSize=96, kvDim=3072, kvMul=1
-        // System.out.println(String.format("dim=%d, headSize=%d, kvDim=%d, kvMul=%d", dim, headSize, kvDim, kvMul));
 
         // copy the token embedding into x
         weights.token_embedding_table.copyTo(token * dim, state.x, 0, dim);
@@ -331,22 +327,15 @@ public final class InferenceCore {
 
         // forward all the layers
         for (int l = 0; l < config.numberOfLayers(); l++) {
-            // attention rmsnorm
             rmsnorm(state.xb, state.x, weights.rms_att_weight[l], 0, dim, config.rmsNormEps());
 
-            // qkv matmuls for this position
-            // wqkv: (hidden_size, op_size)
             weights.wqkv[l].matmul(state.xb, state.qkv, opSize, dim);
-            // query_pos = self.num_heads * self.head_dim
-            // query_states = qkv[..., :query_pos]
             state.qkv.copyTo(0, state.q, 0, dim);
             // key_states = qkv[..., query_pos : query_pos + self.num_key_value_heads * self.head_dim]
             state.qkv.copyTo(dim, state.k, 0, config.numberOfKeyValueHeads() * headSize);
             // value_states = qkv[..., query_pos + self.num_key_value_heads * self.head_dim :]
             state.qkv.copyTo(dim + config.numberOfKeyValueHeads() * headSize, state.v, 0, config.numberOfKeyValueHeads() * headSize);
 
-            // RoPE relative positional encoding: complex-valued rotate q and k in each head
-            // phi-3 uses RoPE-type neox, i.e. offset dim/2 instead of 1.
             int dimHalf = headSize / 2;
             for (int i = 0; i < dim; i += 2) {
                 int head_dim = i % headSize;
@@ -365,50 +354,31 @@ public final class InferenceCore {
             }
 
             // save key,value at this time step (position) to our kv cache
-            //int loff = l * config.seq_len * kvDim; // kv cache layer offset for convenience
             state.k.copyTo(0, state.keyCache[l], position * kvDim, kvDim);
             state.v.copyTo(0, state.valueCache[l], position * kvDim, kvDim);
 
             int curLayer = l;
 
-            // multihead attention. iterate over all heads
             Parallel.parallelFor(0, config.numberOfHeads(), h -> {
-                // get the query vector for this head
-                // float* q = s.q + h * headSize;
                 int qOffset = h * headSize;
 
-                // attention scores for this head
-                // float* att = s.att + h * config.seq_len;
                 int attOffset = h * config.contextLength();
 
-                // iterate over all timesteps, including the current one
                 for (int t = 0; t <= position; t++) {
-                    // get the key vector for this head and at this timestep
-                    // float* k = s.key_cache + loff + t * dim + h * headSize;
                     int keyCacheOffset = /* loff + */ t * kvDim + (h / kvMul) * headSize;
-                    // calculate the attention score as the dot product of q and k
                     float score = state.q.dot(qOffset, state.keyCache[curLayer], keyCacheOffset, headSize);
                     score /= sqrtHeadSize;
-                    // save the score to the attention buffer
                     state.att.setFloat(attOffset + t, score);
                 }
 
-                // softmax the scores to get attention weights, from 0..position inclusively
                 state.att.softmaxInPlace(attOffset, position + 1);
 
-                // weighted sum of the values, store back into xb
-                // float* xb = s.xb + h * headSize;
                 int xbOffset = h * headSize;
-                // memset(xb, 0, headSize * sizeof(float));
                 state.xb.fillInPlace(xbOffset, headSize, 0f);
 
                 for (int t = 0; t <= position; t++) {
-                    // get the value vector for this head and at this timestep
-                    // float* v = s.value_cache + loff + t * dim + h * headSize;
                     int vOffset = /* loff + */ t * kvDim + (h / kvMul) * headSize;
-                    // get the attention weight for this timestep
                     float a = state.att.getFloat(attOffset + t);
-                    // accumulate the weighted value into xb
                     state.xb.saxpyInPlace(xbOffset, state.valueCache[curLayer], vOffset, headSize, a);
                 }
             });
@@ -419,31 +389,19 @@ public final class InferenceCore {
             // residual connection back into x
             state.x.addInPlace(state.xb2);
 
-            // ffn rmsnorm
             rmsnorm(state.xb, state.x, weights.rms_ffn_weight[l], 0, dim, config.rmsNormEps());
 
-            // MLP in phi3:
-            // up_states = self.gate_up_proj(hidden_states)
             weights.wGateUp[l].matmul(state.xb, state.hb, 2 * config.hiddenDim(), dim);
-            // gate, up_states = up_states.chunk(2, dim=-1)
             copyChunk(state.hb, state.hbG, 2 * config.hiddenDim(), config.hiddenDim(), 2, 0);
             copyChunk(state.hb, state.hbU, 2 * config.hiddenDim(), config.hiddenDim(), 2, 1);
 
-            // self.activation_fn(gate)
-            // SwiGLU non-linearity
-            // silu(x)=x*σ(x), where σ(x) is the logistic sigmoid
             state.hbG.mapInPlace(value -> value / (float) (1.0 + Math.exp(-value)));
 
-            // up_states = up_states * self.activation_fn(gate)
-            // elementwise multiply with w3(x)
             state.hbU.multiplyInPlace(state.hbG);
 
-            // self.down_proj(up_states)
             weights.wDown[l].matmul(state.hbU, state.xb, dim, config.hiddenDim());
 
-            // residual connection
             state.x.addInPlace(state.xb);
-
         }
 
         // final rmsnorm
