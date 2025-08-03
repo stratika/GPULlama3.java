@@ -49,19 +49,12 @@ public class Phi3TornadoVMLayerPlanner extends TornadoVMLayerPlanner<Phi3State, 
             unifiedLayer = new TaskGraph("layer_" + layerIndex);
             unifiedLayer.consumeFromDevice(state.wrapX);
             unifiedLayer.transferToDevice(DataTransferMode.FIRST_EXECUTION,
-                    //Copy-in weights per layer for batched-layered layout
                     weights.rms_att_weightLayered[layerIndex],
-//                    weights.wqLayered[layerIndex],
-//                    weights.wkLayered[layerIndex],
-//                    weights.wvLayered[layerIndex],
                     weights.wqkvLayered[layerIndex],
                     weights.woLayered[layerIndex],
                     weights.rms_ffn_weightLayered[layerIndex],
                     weights.wDownLayered[layerIndex],
                     weights.wUpLayered[layerIndex]
-//                    weights.w1Layered[layerIndex],
-//                    weights.w2Layered[layerIndex],
-//                    weights.w3Layered[layerIndex]
             );
             unifiedLayer = configureLayerDataTransfers(unifiedLayer, layerIndex);
             unifiedLayer.task("reductionsOneBlock" , TransformerComputeKernelsLayered::reductionOneBlockWithLayer, context, state.temp,
@@ -207,9 +200,7 @@ public class Phi3TornadoVMLayerPlanner extends TornadoVMLayerPlanner<Phi3State, 
                     state.wrapKeyCache, state.wrapValueCache, //
                     state.wrapAtt, state.wrapHb, //
                     state.positionHolder, // /
-                    state.wrapHbG, state.wrapHbU, state.wrapQkv
-                    // /
-            );
+                    state.wrapHbG, state.wrapHbU, state.wrapQkv);
         }
         return unifiedLayer;
     }
@@ -268,7 +259,6 @@ public class Phi3TornadoVMLayerPlanner extends TornadoVMLayerPlanner<Phi3State, 
         WorkerGrid qkvDimRowMajorGlobalWorker = new WorkerGrid1D(qkvmatmulDimRowMajorGlobal);
         qkvDimRowMajorGlobalWorker.setLocalWork(LOCAL_WORK_GROUP_SIZE_ALLOC, 1, 1);
 
-
         // config.kvDim Worker for Row major access
         // OpenCL equivalent: clEnqueueNDRangeKernel(globalWorkSize=[config.kvDim*LOCAL_WORK_GROUP_SIZE_ALLOC,1,1], localWorkSize=[LOCAL_WORK_GROUP_SIZE_ALLOC,1,1])
         // CUDA equivalent: kernel<<<dim3(config.kvDim,1,1), dim3(LOCAL_WORK_GROUP_SIZE_ALLOC,1,1)>>>
@@ -286,7 +276,6 @@ public class Phi3TornadoVMLayerPlanner extends TornadoVMLayerPlanner<Phi3State, 
         int wgetUPDimRowMajor = 2 * config.hiddenDim() * LOCAL_WORK_GROUP_SIZE_ALLOC;
         WorkerGrid wgetHiddenDimRowMajorWorker = new WorkerGrid1D(wgetUPDimRowMajor);
         wgetHiddenDimRowMajorWorker.setLocalWork(LOCAL_WORK_GROUP_SIZE_ALLOC, 1, 1);
-
 
         // RMSNorm worker configuration
         // OpenCL equivalent: clEnqueueNDRangeKernel(globalWorkSize=[config.dim,1,1], localWorkSize=[256,1,1])
