@@ -63,13 +63,16 @@ public class Phi3TornadoVMLayerPlanner extends TornadoVMLayerPlanner<Phi3State, 
                             state.wrapX, weights.rms_att_weightLayered[layerIndex], state.temp)
                     .task("qkvmatmul", TransformerComputeKernelsLayered::matrixVectorGeneric, context, state.wrapXb, state.wrapQkv,
                             weights.wqkvLayered[layerIndex], config.dim(), opSize, LOCAL_WORK_GROUP_SIZE_ALLOC)
-                    .task("copyQ", TransformerComputeKernelsLayered::copyTo,
-                            state.wrapQkv, 0, state.wrapQ,0, config.dim())
-                    .task("copyK", TransformerComputeKernelsLayered::copyTo,
-                            state.wrapQkv, config.dim(), state.wrapK, 0, config.headSize() * config.numberOfKeyValueHeads())
-                    .task("copyV", TransformerComputeKernelsLayered::copyTo,
-                            state.wrapQkv, config.dim() + config.headSize() * config.numberOfKeyValueHeads(),
-                            state.wrapV, 0, config.headSize() * config.numberOfKeyValueHeads())
+                    .task("splitQKV", TransformerComputeKernelsLayered::splitQKV,
+                            state.wrapQkv, state.wrapQ, state.wrapK, state.wrapV,
+                            config.dim(), config.headSize() * config.numberOfKeyValueHeads())
+//                    .task("copyQ", TransformerComputeKernelsLayered::copyTo,
+//                            state.wrapQkv, 0, state.wrapQ,0, config.dim())
+//                    .task("copyK", TransformerComputeKernelsLayered::copyTo,
+//                            state.wrapQkv, config.dim(), state.wrapK, 0, config.headSize() * config.numberOfKeyValueHeads())
+//                    .task("copyV", TransformerComputeKernelsLayered::copyTo,
+//                            state.wrapQkv, config.dim() + config.headSize() * config.numberOfKeyValueHeads(),
+//                            state.wrapV, 0, config.headSize() * config.numberOfKeyValueHeads())
                     .task("rope", TransformerComputeKernelsLayered::ropeRotationPhi3,context,
                             state.positionHolder, state.wrapQ, state.wrapK, config.kvDim(),
                             config.headSize())
@@ -90,17 +93,6 @@ public class Phi3TornadoVMLayerPlanner extends TornadoVMLayerPlanner<Phi3State, 
                     // Copy gate chunk: hb[0:hiddenDim] -> hbG[0:hiddenDim]
                     .task("gateUpSiLU", TransformerComputeKernelsLayered::splitGateUpAndSiLU,
                             state.wrapHb, state.wrapHbG, state.wrapHbU, config.hiddenDim())
-//                    .task("copyGate", TransformerComputeKernelsLayered::copyChunk,
-//                            state.wrapHb, state.wrapHbG, 2 * config.hiddenDim(), config.hiddenDim(), 2, 0)
-//                    // Copy up chunk: hb[hiddenDim:2*hiddenDim] -> hbU[0:hiddenDim]
-//                    .task("copyUp", TransformerComputeKernelsLayered::copyChunk,
-//                            state.wrapHb, state.wrapHbU, 2 * config.hiddenDim(), config.hiddenDim(), 2, 1)
-//                    // Apply SiLU activation to gate: hbG = silu(hbG)
-//                    .task("siluActivation", TransformerComputeKernelsLayered::siluInPlace,
-//                            state.wrapHbG, config.hiddenDim())
-//                    // Element-wise multiply: hbU = hbU * hbG
-//                    .task("gatedMultiply", TransformerComputeKernelsLayered::multiplyInPlace,
-//                            state.wrapHbU, state.wrapHbG, config.hiddenDim())
                     .task("wDown", TransformerComputeKernelsLayered::matrixVectorGenericWithResidual, context,
                             state.wrapHbU, state.wrapX, weights.wDownLayered[layerIndex], config.hiddenDim(), config.dim(),  LOCAL_WORK_GROUP_SIZE_ALLOC)
                     .persistOnDevice(
@@ -331,13 +323,24 @@ public class Phi3TornadoVMLayerPlanner extends TornadoVMLayerPlanner<Phi3State, 
         splitGateUpSiLUWorker.setGlobalWork(config.hiddenDim(), 1, 1);
         splitGateUpSiLUWorker.setLocalWork(128, 1, 1);
 
+        // Total work size is dimQ + 2*dimKV (same as opSize)
+        WorkerGrid splitQKVWorker = new WorkerGrid1D(opSize);
+        splitQKVWorker.setGlobalWork(opSize, 1, 1);
+        splitQKVWorker.setLocalWork(128, 1, 1);
+
+        // Map to task
+
         // Map workers to tasks
         tornadoForwardScheduler.addWorkerGrid("activationUpdate.updateX", singleWorker);
         for (int i = 0; i < config.numberOfLayers(); i++) {
             tornadoForwardScheduler.addWorkerGrid("layer_" + i + ".qkvmatmul", qkvDimRowMajorGlobalWorker);
-            tornadoForwardScheduler.addWorkerGrid("layer_" + i + ".copyQ", copyQWorker);
-            tornadoForwardScheduler.addWorkerGrid("layer_" + i + ".copyK", copyKWorker);
-            tornadoForwardScheduler.addWorkerGrid("layer_" + i + ".copyV", copyVWorker);
+//            tornadoForwardScheduler.addWorkerGrid("layer_" + i + ".copyQ", copyQWorker);
+//            tornadoForwardScheduler.addWorkerGrid("layer_" + i + ".copyK", copyKWorker);
+//            tornadoForwardScheduler.addWorkerGrid("layer_" + i + ".copyV", copyVWorker);
+
+            tornadoForwardScheduler.addWorkerGrid("layer_" + i + ".splitQKV", splitQKVWorker);
+
+
             tornadoForwardScheduler.addWorkerGrid("layer_" + i + ".rope", ropeWorker);
             tornadoForwardScheduler.addWorkerGrid("layer_" + i + ".matmul1", configDimRowMajorGlobalWorker);
             tornadoForwardScheduler.addWorkerGrid("layer_" + i + ".wDown", configDimRowMajorGlobalWorker);

@@ -144,11 +144,23 @@ public class TransformerComputeKernelsLayered {
         }
     }
 
-    public static void copyChunk(FloatArray in, FloatArray out, int dim1In, int dim1Out, int nChunks, int chunkNo) {
-        final int startOffsetInDim1 = chunkNo * dim1Out;
+    public static void splitQKV(FloatArray qkv, FloatArray q, FloatArray k, FloatArray v,
+            int dimQ, int dimKV) {
+        int totalSize = dimQ + 2 * dimKV;
 
-        for (@Parallel int i = 0; i < dim1Out; i++) {
-            out.set(i, in.get(startOffsetInDim1 + i));
+        for (@Parallel int i = 0; i < totalSize; i++) {
+            if (i < dimQ) {
+                // Copy to Q
+                q.set(i, qkv.get(i));
+            } else if (i < dimQ + dimKV) {
+                // Copy to K
+                int kIndex = i - dimQ;
+                k.set(kIndex, qkv.get(i));
+            } else {
+                // Copy to V
+                int vIndex = i - dimQ - dimKV;
+                v.set(vIndex, qkv.get(i));
+            }
         }
     }
 
@@ -937,22 +949,6 @@ public class TransformerComputeKernelsLayered {
         }
     }
 
-    public static void siluInPlace(FloatArray array, int size) {
-        // SiLU activation: silu(x) = x * sigmoid(x) = x / (1 + exp(-x))
-        for (@Parallel int i = 0; i < size; i++) {
-            float x = array.get(i);
-            float silu = x / (1.0f + TornadoMath.exp(-x));
-            array.set(i, silu);
-        }
-    }
-
-    public static void multiplyInPlace(FloatArray arrayA, FloatArray arrayB, int size) {
-        // Element-wise multiplication: arrayA[i] = arrayA[i] * arrayB[i]
-        for (@Parallel int i = 0; i < size; i++) {
-            float result = arrayA.get(i) * arrayB.get(i);
-            arrayA.set(i, result);
-        }
-    }
 
     public static void splitGateUpAndSiLU(FloatArray hb, FloatArray hbG, FloatArray hbU, int hiddenDim) {
         // Copy and apply SiLU to gate in one pass
