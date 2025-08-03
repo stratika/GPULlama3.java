@@ -1,8 +1,6 @@
 package com.example.model.format;
 
-import com.example.tokenizer.impl.Phi3Tokenizer;
 import com.example.tokenizer.impl.Tokenizer;
-import org.apache.logging.log4j.message.Message;
 
 import java.util.ArrayList;
 import java.util.List;
@@ -10,9 +8,7 @@ import java.util.Map;
 import java.util.Set;
 
 /**
- * Chat format implementation specifically designed for the Phi3 model.
- * This class handles the specific prompt formatting and token management
- * required for Phi3's conversational interface.
+ * Chat format implementation specifically designed for the Phi3 model. This class handles the specific prompt formatting and token management required for Phi3's conversational interface.
  *
  * <p>Phi3 uses a simpler chat format compared to other models:
  * <ul>
@@ -25,8 +21,6 @@ import java.util.Set;
 public class Phi3ChatFormat implements ChatFormat {
 
     protected final Tokenizer tokenizer;
-    protected ChatTokens chatTokens;
-
     protected final int beginOfText;
     protected final int startHeader;
     protected final int endHeader;
@@ -35,16 +29,16 @@ public class Phi3ChatFormat implements ChatFormat {
     protected final int endOfMessage;
     protected final int endOfTextFim;
     protected final int end; // End token for the chat format
+    protected ChatTokens chatTokens;
 
     public Phi3ChatFormat(Tokenizer tokenizer, ChatTokens chatTokens) {
-//        super(tokenizer, "", "", "<|end|>", "", "", "", "");
         this.tokenizer = tokenizer;
         this.chatTokens = chatTokens;
         this.beginOfText = tokenizer.getSpecialTokens().getOrDefault("", -1);
         this.startHeader = tokenizer.getSpecialTokens().getOrDefault("", -1);
         this.endHeader = tokenizer.getSpecialTokens().getOrDefault("<|end|>", -1);
         this.endOfTurn = tokenizer.getSpecialTokens().getOrDefault("", -1);
-        this.endOfText = tokenizer.getSpecialTokens().getOrDefault("",-1);
+        this.endOfText = tokenizer.getSpecialTokens().getOrDefault("", -1);
         this.endOfTextFim = tokenizer.getSpecialTokens().getOrDefault("", -1);
         this.endOfMessage = tokenizer.getSpecialTokens().getOrDefault("", -1);
         // Initialize end token
@@ -73,7 +67,6 @@ public class Phi3ChatFormat implements ChatFormat {
         } else {
             tokens.addAll(this.tokenizer.encodeAsList(tokenRole));
         }
-        //tokens.addAll(this.tokenizer.encodeAsList("\n"));
         return tokens;
     }
 
@@ -91,7 +84,6 @@ public class Phi3ChatFormat implements ChatFormat {
 
     public List<Integer> encodeDialogPrompt(boolean appendAssistantTurn, List<Message> dialog) {
         List<Integer> tokens = new ArrayList<>();
-        //tokens.add(beginOfText);
         for (Message message : dialog) {
             tokens.addAll(this.encodeMessage(message));
         }
