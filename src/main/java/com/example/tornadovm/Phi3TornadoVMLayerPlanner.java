@@ -87,7 +87,7 @@ public class Phi3TornadoVMLayerPlanner extends TornadoVMLayerPlanner<Phi3State, 
                     // .task("wDown", ...)
 
                     // After (1 fused task):
-                    .task("fusedFFN", TransformerComputeKernelsLayered::fusedGateUpSiLUDownOptimized, context,
+                    .task("fusedFFN", TransformerComputeKernelsLayered::fusedGateUpSiLUDown, context,
                             state.wrapXb, state.wrapX, weights.wUpLayered[layerIndex],
                             weights.wDownLayered[layerIndex], config.dim(), config.hiddenDim(),
                             LOCAL_WORK_GROUP_SIZE_ALLOC)

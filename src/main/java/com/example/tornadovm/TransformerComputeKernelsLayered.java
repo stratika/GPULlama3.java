@@ -962,76 +962,46 @@ public class TransformerComputeKernelsLayered {
             hbU.set(i, siluGate * upVal);
         }
     }
-
-    public static void fusedGateUpSiLUDownOptimized(KernelContext context,
-            FloatArray input,
-            FloatArray output,
-            HalfFloatArray wUp,
-            HalfFloatArray wDown,
-            int dim,
-            int hiddenDim,
+    public static void fusedGateUpSiLUDown(KernelContext context,
+            FloatArray input,        // state.wrapXb
+            FloatArray output,       // state.wrapX (with residual)
+            HalfFloatArray wUp,      // weights.wUpLayered[layerIndex]
+            HalfFloatArray wDown,    // weights.wDownLayered[layerIndex]
+            int dim,                 // config.dim()
+            int hiddenDim,          // config.hiddenDim()
             int localWorkGroupSize) {
 
-        int rowId = context.groupIdx;
+        int rowId = context.groupIdx;  // Each workgroup computes one output dimension
         int localId = context.localIdx;
 
         if (rowId >= dim) return;
 
-        // Shared memory for input vector (reused across all hidden computations)
-        float[] sharedInput = context.allocateFloatLocalArray(dim);
         float[] localSum = context.allocateFloatLocalArray(localWorkGroupSize);
-
-        // Cooperatively load input into shared memory
-        for (int i = localId; i < dim; i += localWorkGroupSize) {
-            sharedInput[i] = input.get(i);
-        }
-        context.localBarrier();
-
         float accumulator = 0.0f;
 
-        // Each thread processes multiple hidden dimensions
+        // Process hidden dimensions in chunks to maintain numerical stability
         for (int h = localId; h < hiddenDim; h += localWorkGroupSize) {
-            // Compute gate and up values using shared input
+            // Step 1: Compute gate value (first half of wUp)
             float gateValue = 0.0f;
+            for (int i = 0; i < dim; i++) {
+                gateValue += wUp.get(h * dim + i).getFloat32() * input.get(i);
+            }
+
+            // Step 2: Compute up value (second half of wUp)
             float upValue = 0.0f;
-
-            int gateRowOffset = h * dim;
-            int upRowOffset = (h + hiddenDim) * dim;
-
-            // Unrolled loop for better performance
-            int i = 0;
-            for (; i < dim - 3; i += 4) {
-                float in0 = sharedInput[i];
-                float in1 = sharedInput[i + 1];
-                float in2 = sharedInput[i + 2];
-                float in3 = sharedInput[i + 3];
-
-                gateValue += wUp.get(gateRowOffset + i).getFloat32() * in0;
-                gateValue += wUp.get(gateRowOffset + i + 1).getFloat32() * in1;
-                gateValue += wUp.get(gateRowOffset + i + 2).getFloat32() * in2;
-                gateValue += wUp.get(gateRowOffset + i + 3).getFloat32() * in3;
-
-                upValue += wUp.get(upRowOffset + i).getFloat32() * in0;
-                upValue += wUp.get(upRowOffset + i + 1).getFloat32() * in1;
-                upValue += wUp.get(upRowOffset + i + 2).getFloat32() * in2;
-                upValue += wUp.get(upRowOffset + i + 3).getFloat32() * in3;
+            for (int i = 0; i < dim; i++) {
+                upValue += wUp.get((h + hiddenDim) * dim + i).getFloat32() * input.get(i);
             }
 
-            // Handle remainder
-            for (; i < dim; i++) {
-                float inVal = sharedInput[i];
-                gateValue += wUp.get(gateRowOffset + i).getFloat32() * inVal;
-                upValue += wUp.get(upRowOffset + i).getFloat32() * inVal;
-            }
+            // Step 3: Apply SiLU to gate and multiply with up
+            float siluGate = gateValue / (1.0f + TornadoMath.exp(-gateValue));
+            float activated = siluGate * upValue;
 
-            // Apply SiLU and multiply
-            float activated = (gateValue / (1.0f + TornadoMath.exp(-gateValue))) * upValue;
-
-            // Apply down projection
+            // Step 4: Apply down projection for this row
             accumulator += wDown.get(rowId * hiddenDim + h).getFloat32() * activated;
         }
 
-        // Final reduction and residual add
+        // Reduce across workgroup
         localSum[localId] = accumulator;
         context.localBarrier();
 
@@ -1042,6 +1012,7 @@ public class TransformerComputeKernelsLayered {
             context.localBarrier();
         }
 
+        // Add residual connection
         if (localId == 0) {
             output.set(rowId, output.get(rowId) + localSum[0]);
         }
