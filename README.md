@@ -209,7 +209,7 @@ llama-tornado --gpu --model beehive-llama-3.2-1b-instruct-fp16.gguf --prompt "te
     @/home/mikepapadim/manchester/TornadoVM/bin/sdk/etc/exportLists/opencl-exports \
     --add-modules ALL-SYSTEM,tornado.runtime,tornado.annotation,tornado.drivers.common,tornado.drivers.opencl \
     -cp /home/mikepapadim/repos/gpu-llama3.java/target/gpu-llama3-1.0-SNAPSHOT.jar \
-    com.example.LlamaApp \
+    org.beehive.gpullama3.LlamaApp \
     -m beehive-llama-3.2-1b-instruct-fp16.gguf \
     --temperature 0.1 \
     --top-p 0.95 \
