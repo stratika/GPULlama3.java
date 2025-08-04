@@ -33,12 +33,15 @@ public class Phi3Tokenizer implements Tokenizer {
     private final int[] tokenType;
     private final int byte0;
 
+    /** Number of base tokens in the vocabulary; tokens after this index are considered special. */
+    private static final int BASE_TOKENS = 32000;
+
     public Phi3Tokenizer(Map<String, Object> metadata, Vocabulary vocabulary) {
         int[] tokenTypes = (int[]) metadata.get("tokenizer.ggml.token_type");
         List<Pair<Integer, Integer>> merges = Collections.emptyList();
 
         int allTokens = vocabulary.size();
-        int baseTokens = 32000; // assume all tokens after the base ones are special.
+        int baseTokens = BASE_TOKENS; // assume all tokens after the base ones are special.
         //int reservedSpecialTokens = allTokens - baseTokens;
         List<String> specialTokensList = Arrays.stream(vocabulary.tokens(), baseTokens, allTokens).toList();
 
