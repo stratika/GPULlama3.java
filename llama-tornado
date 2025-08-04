@@ -172,7 +172,7 @@ class LlamaRunner:
             [
                 "-cp",
                 f"{self.llama_root}/target/gpu-llama3-1.0-SNAPSHOT.jar",
-                "com.example.LlamaApp",
+                "org.beehive.gpullama3.LlamaApp",
             ]
         )
         cmd.extend(module_config)
