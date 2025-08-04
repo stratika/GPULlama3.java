@@ -2,7 +2,11 @@ package org.beehive.gpullama3.model.format;
 
 import org.beehive.gpullama3.tokenizer.impl.MistralTokenizer;
 
-import java.util.*;
+import java.util.ArrayList;
+import java.util.Collections;
+import java.util.List;
+import java.util.Map;
+import java.util.Set;
 
 public class MistralChatFormat implements ChatFormat {
 
