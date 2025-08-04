@@ -17,7 +17,7 @@
 <strong>Llama3</strong> models written in <strong>native Java</strong> automatically accelerated on GPUs with <a href="https://github.com/beehive-lab/TornadoVM" target="_blank"><strong>TornadoVM</strong></a>.
 Runs Llama3 inference efficiently using TornadoVM's GPU acceleration.
 <br><br>
-Currently, supports <strong>Llama3</strong>, <strong>Mistral</strong> and, <strong>Qwen3</strong> models in the GGUF format.
+Currently, supports <strong>Llama3</strong>, <strong>Mistral</strong>l, <strong>Qwen3</strong> and <strong>Phi3</strong> models in the GGUF format.
 <br><br>
 Builds on <a href="https://github.com/mukel/llama3.java">Llama3.java</a> by <a href="https://github.com/mukel">Alfonso² Peterssen</a>.
 Previous integration of TornadoVM and Llama2 it can be found in <a href="https://github.com/mikepapadim/llama2.tornadovm.java">llama2.tornadovm</a>.
