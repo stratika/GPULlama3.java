@@ -2,6 +2,7 @@ package com.example.model.format;
 
 import com.example.tokenizer.impl.LlamaTokenizer;
 import com.example.tokenizer.impl.MistralTokenizer;
+import com.example.tokenizer.impl.Phi3Tokenizer;
 import com.example.tokenizer.impl.Qwen3Tokenizer;
 
 import java.util.List;
@@ -9,23 +10,18 @@ import java.util.Set;
 
 public interface ChatFormat {
 
+    static ChatFormat create(Object tokenizer, ChatTokens chatTokens) {
+        return switch (tokenizer) {
+            case LlamaTokenizer llamaTokenizer -> new LlamaChatFormat(llamaTokenizer);
+            case MistralTokenizer mistralTokenizer -> new MistralChatFormat(mistralTokenizer);
+            case Qwen3Tokenizer qwen3Tokenizer -> new Qwen3ChatFormat(qwen3Tokenizer, chatTokens);
+            case Phi3Tokenizer phi3Tokenizer -> new Phi3ChatFormat(phi3Tokenizer, chatTokens);
+            default -> throw new IllegalArgumentException("Unsupported tokenizer type: " + tokenizer.getClass().getName());
+        };
+    }
+
     default ChatTokens chatTokens() {
         throw new UnsupportedOperationException("ChatFormat for Llama and Mistral does not support chatTokens");
-    }
-
-    public record ChatTokens(String tStartHeader, String tEndHeader, String tEndOfTurn, String tEndOfText, String tEndOfTextFim) {
-    }
-
-    static ChatFormat create(Object tokenizer, ChatTokens chatTokens) {
-        if (tokenizer instanceof LlamaTokenizer llamaTokenizer) {
-            return new LlamaChatFormat(llamaTokenizer);
-        } else if (tokenizer instanceof MistralTokenizer mistralTokenizer) {
-            return new MistralChatFormat(mistralTokenizer);
-        } else if (tokenizer instanceof Qwen3Tokenizer qwen3Tokenizer) {
-            return new Qwen3ChatFormat(qwen3Tokenizer, chatTokens);
-        } else {
-            throw new IllegalArgumentException("Unsupported tokenizer type: " + tokenizer.getClass().getName());
-        }
     }
 
     List<Integer> encodeHeader(Message message);
@@ -36,14 +32,18 @@ public interface ChatFormat {
 
     Set<Integer> getStopTokens();
 
+    record ChatTokens(String tStartHeader, String tEndHeader, String tEndOfTurn, String tEndOfText, String tEndOfTextFim) {
+    }
+
     /**
      * Represents a single message in a LLM chat session.
      *
-     * Each message is associated with a specific role (system, user, or assistant)
-     * and contains the textual content of that message.
+     * Each message is associated with a specific role (system, user, or assistant) and contains the textual content of that message.
      *
-     * @param role the participant who issued the message (SYSTEM, USER, or ASSISTANT).
-     * @param content the textual content of the message
+     * @param role
+     *         the participant who issued the message (SYSTEM, USER, or ASSISTANT).
+     * @param content
+     *         the textual content of the message
      */
     record Message(Role role, String content) {
     }
@@ -58,7 +58,8 @@ public interface ChatFormat {
      * <li><strong>ASSISTANT</strong> - represents output from the AI assistant.</li>
      * </ul>
      *
-     * @param name the string representation of the role
+     * @param name
+     *         the string representation of the role
      */
     record Role(String name) {
         public static Role SYSTEM = new Role("system");

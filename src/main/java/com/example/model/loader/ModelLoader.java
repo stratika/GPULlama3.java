@@ -11,14 +11,13 @@ import com.example.core.model.tensor.GGMLTensorEntry;
 import com.example.core.model.tensor.Q4_0FloatTensor;
 import com.example.core.model.tensor.Q8_0FloatTensor;
 import com.example.core.types.Pair;
+import com.example.inference.operation.RoPE;
+import com.example.inference.weights.Weights;
 import com.example.inference.weights.standard.LlamaStandardWeights;
 import com.example.inference.weights.tornado.LlamaTornadoWeights;
-import com.example.inference.weights.tornado.TornadoWeights;
-import com.example.inference.weights.Weights;
 import com.example.model.Configuration;
 import com.example.model.Model;
 import com.example.model.ModelType;
-import com.example.inference.operation.RoPE;
 import uk.ac.manchester.tornado.api.types.HalfFloat;
 import uk.ac.manchester.tornado.api.types.arrays.ByteArray;
 import uk.ac.manchester.tornado.api.types.arrays.FloatArray;
@@ -63,29 +62,14 @@ public abstract class ModelLoader {
                 return ModelType.LLAMA_3;
             } else if (lowerName.contains("qwen3")) {
                 return ModelType.QWEN_3;
+            } else if (lowerName.contains("phi3")) {
+                return ModelType.PHI_3;
             }
-        }
 
-        // Check by tokenizer model
-        if (TOKENIZER_MISTRAL_MODEL.equals(tokenizerModel)) {
-            return ModelType.MISTRAL;
-        } else if (TOKENIZER_LLAMA_3_MODEL.equals(tokenizerModel)) {
-            return ModelType.LLAMA_3;
-        }
-
-        // Check by vocabulary size as fallback
-        if (vocabSize != null) {
-            if (vocabSize == 32768) {
-                return ModelType.MISTRAL;
-            } else if (vocabSize == 128256) {
-                return ModelType.LLAMA_3;
-            }
         }
 
         return ModelType.UNKNOWN;
     }
-
-    public abstract Model loadModel();
 
     public static Model loadModel(Path ggufPath, int contextLength, boolean loadWeights) throws IOException {
         // initial load of metadata from gguf file
@@ -96,80 +80,6 @@ public abstract class ModelLoader {
         // model type-specific load
         return modelType.loadModel(fileChannel, gguf, contextLength, loadWeights);
     }
-
-    //@formatter:off
-    public Weights loadWeights(Map<String, GGMLTensorEntry> tensorEntries, Configuration config) {
-        boolean ropeScaling = tensorEntries.containsKey("rope_freqs");
-        RopeConfig ropeConfig = new RopeConfig(8.0f,         // scaleFactor
-                1.0f,                    // loFreqFactor
-                3.0f,                    // hiFreqFactor
-                8192                     // oldContextLength
-        );
-
-        Pair<float[], float[]> ropeFreqs = RoPE.precomputeFreqsCis(
-                config.contextLength(),         // Maximum sequence length the model can process
-                config.headSize(),              // Dimension of each attention head
-                config.ropeTheta(),             // Base frequency parameter (typically 10000.0)
-                ropeScaling,                    // Whether to apply frequency scaling (determined by model type)
-                ropeConfig.scaleFactor,         // Scale factor for extending context length (NTK-aware scaling)
-                ropeConfig.loFreqFactor,        // Low frequency scaling factor for better long-range dependencies
-                ropeConfig.hiFreqFactor,        // High frequency scaling factor for preserving local precision
-                ropeConfig.oldContextLength     // Original context length the model was trained with
-        );
-
-        GGMLTensorEntry tokenEmbeddings = tensorEntries.get("token_embd.weight");
-        GGMLTensorEntry outputWeight = tensorEntries.getOrDefault("output.weight", tokenEmbeddings);
-
-        if (LlamaApp.USE_TORNADOVM) {
-            System.out.println("Loading model weights in TornadoVM format (loading " + outputWeight.ggmlType() + " -> " + GGMLType.F16 + ")");
-            return createTornadoVMWeights(tensorEntries, config, ropeFreqs, tokenEmbeddings, outputWeight);
-        } else {
-            return createStandardWeights(tensorEntries, config, ropeFreqs, tokenEmbeddings, outputWeight);
-        }
-    }
-    //@formatter:on
-
-    public Weights createTornadoVMWeights(Map<String, GGMLTensorEntry> tensorEntries, Configuration config, Pair<float[], float[]> ropeFreqs, GGMLTensorEntry tokenEmbeddings,
-            GGMLTensorEntry outputWeight) {
-        return new LlamaTornadoWeights(
-                // Load directly to TornadoVM format
-                loadTensorAsFloatArray(tokenEmbeddings), loadArrayAsFloatArrayFromBuffer(config.numberOfLayers(), i -> tensorEntries.get("blk." + i + ".attn_norm.weight")),
-                loadArrayAsHalfFloatArray(config.numberOfLayers(), i -> tensorEntries.get("blk." + i + ".attn_q.weight")),
-                loadArrayAsHalfFloatArray(config.numberOfLayers(), i -> tensorEntries.get("blk." + i + ".attn_k.weight")),
-                loadArrayAsHalfFloatArray(config.numberOfLayers(), i -> tensorEntries.get("blk." + i + ".attn_v.weight")),
-                loadArrayAsHalfFloatArray(config.numberOfLayers(), i -> tensorEntries.get("blk." + i + ".attn_output.weight")),
-                loadArrayAsFloatArrayFromBuffer(config.numberOfLayers(), i -> tensorEntries.get("blk." + i + ".ffn_norm.weight")),
-                loadArrayAsHalfFloatArray(config.numberOfLayers(), i -> tensorEntries.get("blk." + i + ".ffn_gate.weight")),
-                loadArrayAsHalfFloatArray(config.numberOfLayers(), i -> tensorEntries.get("blk." + i + ".ffn_down.weight")),
-                loadArrayAsHalfFloatArray(config.numberOfLayers(), i -> tensorEntries.get("blk." + i + ".ffn_up.weight")), floatBufferToFloatArray(tensorEntries.get("output_norm.weight")),
-                FloatArray.fromArray(ropeFreqs.first()), FloatArray.fromArray(ropeFreqs.second()), loadTensorAsHalfFloatArray(outputWeight), outputWeight.ggmlType()) {
-        };
-    }
-
-    //@formatter:off
-    /**
-     * Creates weights in standard format only
-     */
-    public Weights createStandardWeights(Map<String, GGMLTensorEntry> tensorEntries, Configuration config, Pair<float[], float[]> ropeFreqs, GGMLTensorEntry tokenEmbeddings,
-            GGMLTensorEntry outputWeight) {
-        return new LlamaStandardWeights(
-                loadQuantized(tokenEmbeddings),
-                loadArrayOfQuantized(config.numberOfLayers(), i -> tensorEntries.get("blk." + i + ".attn_norm.weight")),
-                loadArrayOfQuantized(config.numberOfLayers(), i -> tensorEntries.get("blk." + i + ".attn_q.weight")),
-                loadArrayOfQuantized(config.numberOfLayers(), i -> tensorEntries.get("blk." + i + ".attn_k.weight")),
-                loadArrayOfQuantized(config.numberOfLayers(), i -> tensorEntries.get("blk." + i + ".attn_v.weight")),
-                loadArrayOfQuantized(config.numberOfLayers(), i -> tensorEntries.get("blk." + i + ".attn_output.weight")),
-                loadArrayOfQuantized(config.numberOfLayers(), i -> tensorEntries.get("blk." + i + ".ffn_norm.weight")),
-                loadArrayOfQuantized(config.numberOfLayers(), i -> tensorEntries.get("blk." + i + ".ffn_gate.weight")),
-                loadArrayOfQuantized(config.numberOfLayers(), i -> tensorEntries.get("blk." + i + ".ffn_down.weight")),
-                loadArrayOfQuantized(config.numberOfLayers(), i -> tensorEntries.get("blk." + i + ".ffn_up.weight")),
-                loadQuantized(tensorEntries.get("output_norm.weight")),
-                new ArrayFloatTensor(ropeFreqs.first()),
-                new ArrayFloatTensor(ropeFreqs.second()),
-                loadQuantized(outputWeight),
-                outputWeight.ggmlType());
-    }
-    //@formatter:on
 
     public static FloatTensor loadQuantized(GGMLTensorEntry entry) {
         GGMLType ggmlType = entry.ggmlType();
@@ -189,6 +99,7 @@ public abstract class ModelLoader {
         }
         return array;
     }
+    //@formatter:on
 
     public static HalfFloatArray[] loadArrayAsHalfFloatArray(int size, IntFunction<GGMLTensorEntry> getTensorEntry) {
         HalfFloatArray[] array = new HalfFloatArray[size];
@@ -198,6 +109,8 @@ public abstract class ModelLoader {
         return array;
     }
 
+    //@formatter:off
+
     public static FloatArray floatBufferToFloatArray(GGMLTensorEntry tensorEntry) {
         if (tensorEntry.ggmlType() == GGMLType.F32) {
             FloatBuffer buffer = tensorEntry.memorySegment().asByteBuffer().order(ByteOrder.LITTLE_ENDIAN).asFloatBuffer();
@@ -206,6 +119,7 @@ public abstract class ModelLoader {
             throw new UnsupportedOperationException("Conversion to FloatArray from " + tensorEntry.ggmlType());
         }
     }
+    //@formatter:on
 
     public static FloatArray[] loadArrayAsFloatArrayFromBuffer(int size, IntFunction<GGMLTensorEntry> getTensorEntry) {
         FloatArray[] array = new FloatArray[size];
@@ -278,6 +192,79 @@ public abstract class ModelLoader {
             case F32 -> tensorEntry.memorySegment().asByteBuffer().order(ByteOrder.LITTLE_ENDIAN).asFloatBuffer();
             default -> throw new UnsupportedOperationException("Conversion to " + ggmlType);
         };
+    }
+
+    public abstract Model loadModel();
+
+    //@formatter:off
+    public Weights loadWeights(Map<String, GGMLTensorEntry> tensorEntries, Configuration config) {
+        boolean ropeScaling = tensorEntries.containsKey("rope_freqs");
+        RopeConfig ropeConfig = new RopeConfig(8.0f,         // scaleFactor
+                1.0f,                    // loFreqFactor
+                3.0f,                    // hiFreqFactor
+                8192                     // oldContextLength
+        );
+
+        Pair<float[], float[]> ropeFreqs = RoPE.precomputeFreqsCis(
+                config.contextLength(),         // Maximum sequence length the model can process
+                config.headSize(),              // Dimension of each attention head
+                config.ropeTheta(),             // Base frequency parameter (typically 10000.0)
+                ropeScaling,                    // Whether to apply frequency scaling (determined by model type)
+                ropeConfig.scaleFactor,         // Scale factor for extending context length (NTK-aware scaling)
+                ropeConfig.loFreqFactor,        // Low frequency scaling factor for better long-range dependencies
+                ropeConfig.hiFreqFactor,        // High frequency scaling factor for preserving local precision
+                ropeConfig.oldContextLength     // Original context length the model was trained with
+        );
+
+        GGMLTensorEntry tokenEmbeddings = tensorEntries.get("token_embd.weight");
+        GGMLTensorEntry outputWeight = tensorEntries.getOrDefault("output.weight", tokenEmbeddings);
+
+        if (LlamaApp.USE_TORNADOVM) {
+            System.out.println("Loading model weights in TornadoVM format (loading " + outputWeight.ggmlType() + " -> " + GGMLType.F16 + ")");
+            return createTornadoVMWeights(tensorEntries, config, ropeFreqs, tokenEmbeddings, outputWeight);
+        } else {
+            return createStandardWeights(tensorEntries, config, ropeFreqs, tokenEmbeddings, outputWeight);
+        }
+    }
+
+    public Weights createTornadoVMWeights(Map<String, GGMLTensorEntry> tensorEntries, Configuration config, Pair<float[], float[]> ropeFreqs, GGMLTensorEntry tokenEmbeddings,
+            GGMLTensorEntry outputWeight) {
+        return new LlamaTornadoWeights(
+                // Load directly to TornadoVM format
+                loadTensorAsFloatArray(tokenEmbeddings), loadArrayAsFloatArrayFromBuffer(config.numberOfLayers(), i -> tensorEntries.get("blk." + i + ".attn_norm.weight")),
+                loadArrayAsHalfFloatArray(config.numberOfLayers(), i -> tensorEntries.get("blk." + i + ".attn_q.weight")),
+                loadArrayAsHalfFloatArray(config.numberOfLayers(), i -> tensorEntries.get("blk." + i + ".attn_k.weight")),
+                loadArrayAsHalfFloatArray(config.numberOfLayers(), i -> tensorEntries.get("blk." + i + ".attn_v.weight")),
+                loadArrayAsHalfFloatArray(config.numberOfLayers(), i -> tensorEntries.get("blk." + i + ".attn_output.weight")),
+                loadArrayAsFloatArrayFromBuffer(config.numberOfLayers(), i -> tensorEntries.get("blk." + i + ".ffn_norm.weight")),
+                loadArrayAsHalfFloatArray(config.numberOfLayers(), i -> tensorEntries.get("blk." + i + ".ffn_gate.weight")),
+                loadArrayAsHalfFloatArray(config.numberOfLayers(), i -> tensorEntries.get("blk." + i + ".ffn_down.weight")),
+                loadArrayAsHalfFloatArray(config.numberOfLayers(), i -> tensorEntries.get("blk." + i + ".ffn_up.weight")), floatBufferToFloatArray(tensorEntries.get("output_norm.weight")),
+                FloatArray.fromArray(ropeFreqs.first()), FloatArray.fromArray(ropeFreqs.second()), loadTensorAsHalfFloatArray(outputWeight), outputWeight.ggmlType()) {
+        };
+    }
+
+    /**
+     * Creates weights in standard format only
+     */
+    public Weights createStandardWeights(Map<String, GGMLTensorEntry> tensorEntries, Configuration config, Pair<float[], float[]> ropeFreqs, GGMLTensorEntry tokenEmbeddings,
+            GGMLTensorEntry outputWeight) {
+        return new LlamaStandardWeights(
+                loadQuantized(tokenEmbeddings),
+                loadArrayOfQuantized(config.numberOfLayers(), i -> tensorEntries.get("blk." + i + ".attn_norm.weight")),
+                loadArrayOfQuantized(config.numberOfLayers(), i -> tensorEntries.get("blk." + i + ".attn_q.weight")),
+                loadArrayOfQuantized(config.numberOfLayers(), i -> tensorEntries.get("blk." + i + ".attn_k.weight")),
+                loadArrayOfQuantized(config.numberOfLayers(), i -> tensorEntries.get("blk." + i + ".attn_v.weight")),
+                loadArrayOfQuantized(config.numberOfLayers(), i -> tensorEntries.get("blk." + i + ".attn_output.weight")),
+                loadArrayOfQuantized(config.numberOfLayers(), i -> tensorEntries.get("blk." + i + ".ffn_norm.weight")),
+                loadArrayOfQuantized(config.numberOfLayers(), i -> tensorEntries.get("blk." + i + ".ffn_gate.weight")),
+                loadArrayOfQuantized(config.numberOfLayers(), i -> tensorEntries.get("blk." + i + ".ffn_down.weight")),
+                loadArrayOfQuantized(config.numberOfLayers(), i -> tensorEntries.get("blk." + i + ".ffn_up.weight")),
+                loadQuantized(tensorEntries.get("output_norm.weight")),
+                new ArrayFloatTensor(ropeFreqs.first()),
+                new ArrayFloatTensor(ropeFreqs.second()),
+                loadQuantized(outputWeight),
+                outputWeight.ggmlType());
     }
 
     // Helper class to encapsulate RoPE configuration parameters

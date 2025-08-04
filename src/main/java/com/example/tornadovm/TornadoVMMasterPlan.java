@@ -1,6 +1,7 @@
 package com.example.tornadovm;
 
 import com.example.auxiliary.Tuple2;
+import com.example.inference.state.Phi3State;
 import com.example.inference.state.Qwen3State;
 import com.example.inference.state.State;
 import com.example.model.Configuration;
@@ -38,14 +39,13 @@ public class TornadoVMMasterPlan {
     }
 
     /**
-     * Initializes the TornadoVM plan for GPU acceleration with optional timing.
-     * This method handles:
-     * 1. Creation of the TornadoVM master plan
-     * 2. Warming up the JIT compiler for better performance
-     * 3. Copying read-only model weights to the GPU
+     * Initializes the TornadoVM plan for GPU acceleration with optional timing. This method handles: 1. Creation of the TornadoVM master plan 2. Warming up the JIT compiler for better performance 3.
+     * Copying read-only model weights to the GPU
      *
-     * @param state The model state containing KV cache
-     * @param model The Llama model instance
+     * @param state
+     *         The model state containing KV cache
+     * @param model
+     *         The Llama model instance
      * @return The initialized TornadoVMMasterPlan ready for inference
      */
     public static TornadoVMMasterPlan initializeTornadoVMPlan(State state, Model model) {
@@ -93,25 +93,13 @@ public class TornadoVMMasterPlan {
     }
 
     /**
-     * Dispatcher method to select the TornadoVMLayerPlanner for the model.
-     */
-    TornadoVMLayerPlanner createPlanner(State state, Model model) {
-        return switch (model.getModelType()) {
-            case LLAMA_3, MISTRAL -> new TornadoVMLayerPlanner(state, model);
-            case QWEN_3 -> new Qwen3TornadoVMLayerPlanner((Qwen3State) state, model);
-            case UNKNOWN -> throw new UnsupportedOperationException("Unknown model type");
-        };
-    }
-
-    /**
-     * Determines whether the NVIDIA-specific scheduler should be used based on the current
-     * hardware backend and the model type.
+     * Determines whether the NVIDIA-specific scheduler should be used based on the current hardware backend and the model type.
      * <p>
-     * The scheduler is used only if the runtime is targeting an NVIDIA backend and the model
-     * is not of type {@code MISTRAL}. If either the hardware is not NVIDIA or the model is
-     * {@code MISTRAL}, the NVIDIA-specific scheduler should not be used.
+     * The scheduler is used only if the runtime is targeting an NVIDIA backend and the model is not of type {@code MISTRAL}. If either the hardware is not NVIDIA or the model is {@code MISTRAL}, the
+     * NVIDIA-specific scheduler should not be used.
      *
-     * @param model the model whose type may affect the scheduler decision
+     * @param model
+     *         the model whose type may affect the scheduler decision
      * @return {@code true} if the NVIDIA-specific scheduler should be used; {@code false} otherwise
      */
     public static boolean shouldUseNvidiaScheduler(Model model) {
@@ -127,8 +115,19 @@ public class TornadoVMMasterPlan {
     }
 
     /**
-     * Executes the forward pass of a LLaMA transformer model using TornadoVM acceleration.
-     *This method processes the transformer layers in sequence for a particular token position in the context
+     * Dispatcher method to select the TornadoVMLayerPlanner for the model.
+     */
+    TornadoVMLayerPlanner createPlanner(State state, Model model) {
+        return switch (model.getModelType()) {
+            case LLAMA_3, MISTRAL -> new TornadoVMLayerPlanner(state, model);
+            case QWEN_3 -> new Qwen3TornadoVMLayerPlanner((Qwen3State) state, model);
+            case PHI_3 -> new Phi3TornadoVMLayerPlanner((Phi3State) state, model);
+            case UNKNOWN -> throw new UnsupportedOperationException("Unknown model type");
+        };
+    }
+
+    /**
+     * Executes the forward pass of a LLaMA transformer model using TornadoVM acceleration. This method processes the transformer layers in sequence for a particular token position in the context
      * window.
      *
      * <p>The execution happens in three phases:
@@ -137,7 +136,6 @@ public class TornadoVMMasterPlan {
      *   <li>Sequential processing through each transformer layer using TornadoVM</li>
      *   <li>Final projection to logits using TornadoVM</li>
      * </ol>
-     *
      *
      * @param position
      *         The current position in the sequence being processed
@@ -181,7 +179,9 @@ public class TornadoVMMasterPlan {
 
     /**
      * Returns the graph index for the given transformer layer.
-     * @param layerIndex Index of the transformer layer (0-based)
+     *
+     * @param layerIndex
+     *         Index of the transformer layer (0-based)
      */
     private int getLayerGraphIndex(int layerIndex) {
         return 1 + layerIndex;
@@ -194,8 +194,7 @@ public class TornadoVMMasterPlan {
         return taskGraphs.size() - 1;
     }
 
-    /// Execute the forward pass of the LLaMA transformer model using TornadoVM acceleration
-    /// just once to copy the data into the read-only data layer.
+    /// Execute the forward pass of the LLaMA transformer model using TornadoVM acceleration just once to copy the data into the read-only data layer.
     public void forceCopyInReadOnlyDataLayered() {
         // Execute all TornadoVM graphs
         state.wrapX.init(0.0f);
@@ -214,9 +213,7 @@ public class TornadoVMMasterPlan {
     }
 
     /**
-     * Frees the device memory allocated for the TornadoVM execution plan.
-     * This method should be called when the execution plan is no longer needed
-     * to release resources and avoid memory leaks.
+     * Frees the device memory allocated for the TornadoVM execution plan. This method should be called when the execution plan is no longer needed to release resources and avoid memory leaks.
      */
     public void freeTornadoExecutionPlan() {
         executionPlan.freeDeviceMemory();

@@ -16,22 +16,23 @@ public class TransformerComputeKernelsLayered {
     }
 
     /**
-     * Performs RMS (Root Mean Square) normalization using parallel reduction.
-     * This is the first phase of RMS normalization that computes the variance
-     * and scaling factor across all work groups.
+     * Performs RMS (Root Mean Square) normalization using parallel reduction. This is the first phase of RMS normalization that computes the variance and scaling factor across all work groups.
      *
-     * Algorithm:
-     * 1. Each thread computes square of its input element
-     * 2. Work group performs parallel reduction of squares
-     * 3. Partial sums stored per work group
-     * 4. First thread combines all partial sums and computes normalization factor
+     * Algorithm: 1. Each thread computes square of its input element 2. Work group performs parallel reduction of squares 3. Partial sums stored per work group 4. First thread combines all partial
+     * sums and computes normalization factor
      *
-     * @param context Kernel execution context
-     * @param output Array to store partial sums and final normalization factor
-     * @param x Input array to normalize
-     * @param size Number of elements to process
-     * @param ermsNorm Epsilon value squared for numerical stability
-     * @param localMemSize Size of local memory allocation (must match work group size)
+     * @param context
+     *         Kernel execution context
+     * @param output
+     *         Array to store partial sums and final normalization factor
+     * @param x
+     *         Input array to normalize
+     * @param size
+     *         Number of elements to process
+     * @param ermsNorm
+     *         Epsilon value squared for numerical stability
+     * @param localMemSize
+     *         Size of local memory allocation (must match work group size)
      */
     public static void reductionOneBlockWithLayer(KernelContext context, FloatArray output, FloatArray x, int size, float ermsNorm, int localMemSize) {
         int gid = context.globalIdx;
@@ -80,16 +81,20 @@ public class TransformerComputeKernelsLayered {
     }
 
     /**
-     * Applies the computed normalization factor to input and weight elements.
-     * This is the second phase of RMS normalization.
+     * Applies the computed normalization factor to input and weight elements. This is the second phase of RMS normalization.
      *
      * Formula: output[i] = weight[i] * (normalizationFactor * x[i])
      *
-     * @param context Kernel execution context
-     * @param output Array for normalized output
-     * @param x Input values to normalize
-     * @param weights Weight values for each element
-     * @param temp Temporary array containing normalization factor at index 0
+     * @param context
+     *         Kernel execution context
+     * @param output
+     *         Array for normalized output
+     * @param x
+     *         Input values to normalize
+     * @param weights
+     *         Weight values for each element
+     * @param temp
+     *         Temporary array containing normalization factor at index 0
      */
     public static void reductionOneBlock2WithLayer(KernelContext context, FloatArray output, FloatArray x, FloatArray weights, FloatArray temp) {
         int gid = context.globalIdx;
@@ -99,21 +104,26 @@ public class TransformerComputeKernelsLayered {
     }
 
     /**
-     * Copies keys and values into the key-value cache for attention computation.
-     * Enables efficient access to past key-value pairs during autoregressive generation.
+     * Copies keys and values into the key-value cache for attention computation. Enables efficient access to past key-value pairs during autoregressive generation.
      *
-     * Cache layout: [layer][position][dimension]
-     * - Each layer has its own key and value cache
-     * - Each position in sequence has a key and value vector
+     * Cache layout: [layer][position][dimension] - Each layer has its own key and value cache - Each position in sequence has a key and value vector
      *
-     * @param destKeyCache Destination array for key cache
-     * @param srcKey Source keys to copy
-     * @param destValueCache Destination array for value cache
-     * @param srcValue Source values to copy
-     * @param positioNlayer Array containing current position
-     * @param kvDim Dimension of key/value vectors
-     * @param layer Current transformer layer index
-     * @param contextLength Maximum sequence length
+     * @param destKeyCache
+     *         Destination array for key cache
+     * @param srcKey
+     *         Source keys to copy
+     * @param destValueCache
+     *         Destination array for value cache
+     * @param srcValue
+     *         Source values to copy
+     * @param positioNlayer
+     *         Array containing current position
+     * @param kvDim
+     *         Dimension of key/value vectors
+     * @param layer
+     *         Current transformer layer index
+     * @param contextLength
+     *         Maximum sequence length
      */
     public static void copyToCache(FloatArray destKeyCache, FloatArray srcKey, FloatArray destValueCache, FloatArray srcValue, IntArray positioNlayer, int kvDim, int layer, int contextLength) {
 
@@ -127,21 +137,50 @@ public class TransformerComputeKernelsLayered {
         }
     }
 
+    public static void copyTo(FloatArray src, int srcOffset, FloatArray dest, int destOffset, int size) {
+        // Generic copy: src[srcOffset:srcOffset+size] -> dest[destOffset:destOffset+size]
+        for (@Parallel int i = 0; i < size; i++) {
+            dest.set(destOffset + i, src.get(srcOffset + i));
+        }
+    }
+
+    public static void splitQKV(FloatArray qkv, FloatArray q, FloatArray k, FloatArray v, int dimQ, int dimKV) {
+        int totalSize = dimQ + 2 * dimKV;
+
+        for (@Parallel int i = 0; i < totalSize; i++) {
+            if (i < dimQ) {
+                // Copy to Q
+                q.set(i, qkv.get(i));
+            } else if (i < dimQ + dimKV) {
+                // Copy to K
+                int kIndex = i - dimQ;
+                k.set(kIndex, qkv.get(i));
+            } else {
+                // Copy to V
+                int vIndex = i - dimQ - dimKV;
+                v.set(vIndex, qkv.get(i));
+            }
+        }
+    }
+
     /**
-     * Applies Rotary Position Encoding (RoPE) to query and key vectors.
-     * RoPE rotates pairs of dimensions based on their position in the sequence,
-     * enabling the model to learn relative positional information.
+     * Applies Rotary Position Encoding (RoPE) to query and key vectors. RoPE rotates pairs of dimensions based on their position in the sequence, enabling the model to learn relative positional
+     * information.
      *
-     * For each pair of dimensions (2*i, 2*i+1):
-     * - Compute rotation angle based on position and frequency
-     * - Apply 2D rotation to the pair
+     * For each pair of dimensions (2*i, 2*i+1): - Compute rotation angle based on position and frequency - Apply 2D rotation to the pair
      *
-     * @param context Kernel execution context
-     * @param positionHolder Array containing current position
-     * @param sq Query vectors to rotate
-     * @param sk Key vectors to rotate
-     * @param kv_dim Dimension of key/value vectors
-     * @param head_size Dimension of each attention head
+     * @param context
+     *         Kernel execution context
+     * @param positionHolder
+     *         Array containing current position
+     * @param sq
+     *         Query vectors to rotate
+     * @param sk
+     *         Key vectors to rotate
+     * @param kv_dim
+     *         Dimension of key/value vectors
+     * @param head_size
+     *         Dimension of each attention head
      */
     public static void ropeRotation(KernelContext context, IntArray positionHolder, FloatArray sq, FloatArray sk, int kv_dim, int head_size) {
         int i = context.globalIdx * 2;
@@ -171,28 +210,80 @@ public class TransformerComputeKernelsLayered {
 
     }
 
+    public static void ropeRotationPhi3(KernelContext context, IntArray positionHolder, FloatArray sq, FloatArray sk, int kv_dim, int head_size) {
+        int idx = context.globalIdx;
+
+        // For Phi3, we process pairs with offset of head_size/2
+        int dimHalf = head_size / 2;
+
+        // Each thread processes one dimension pair
+        if (idx >= dimHalf) {
+            return;
+        }
+
+        int position = positionHolder.get(0);
+
+        // Calculate frequency for this dimension
+        float freq = 1.0f / TornadoMath.pow(10000.0f, (float) (idx * 2) / (float) head_size);
+        float val = position * freq;
+        float fcr = TornadoMath.cos(val);
+        float fci = TornadoMath.sin(val);
+
+        // Process all heads
+        int totalDim = sq.getSize();
+        for (int base = 0; base < totalDim; base += head_size) {
+            // Skip if we're beyond the bounds
+            if (base + idx >= totalDim || base + idx + dimHalf >= totalDim) {
+                break;
+            }
+
+            // Rotate query
+            float v0 = sq.get(base + idx);
+            float v1 = sq.get(base + idx + dimHalf);
+            sq.set(base + idx, v0 * fcr - v1 * fci);
+            sq.set(base + idx + dimHalf, v0 * fci + v1 * fcr);
+
+            // Rotate key if within kv_dim
+            if (base < kv_dim && base + idx < sk.getSize() && base + idx + dimHalf < sk.getSize()) {
+                float k0 = sk.get(base + idx);
+                float k1 = sk.get(base + idx + dimHalf);
+                sk.set(base + idx, k0 * fcr - k1 * fci);
+                sk.set(base + idx + dimHalf, k0 * fci + k1 * fcr);
+            }
+        }
+    }
+
     /**
-     * Orchestrates parallel multi-head attention computation across all heads.
-     * Each head processes attention independently in parallel.
+     * Orchestrates parallel multi-head attention computation across all heads. Each head processes attention independently in parallel.
      *
-     * Attention computation:
-     * 1. Compute attention scores (Q·K)
-     * 2. Apply softmax for attention weights
-     * 3. Compute weighted sum of values (attention·V)
+     * Attention computation: 1. Compute attention scores (Q·K) 2. Apply softmax for attention weights 3. Compute weighted sum of values (attention·V)
      *
-     * @param q Query vectors for all heads
-     * @param key_cache Cached key vectors
-     * @param value_cache Cached value vectors
-     * @param xb Output buffer for attention results
-     * @param nHeads Number of attention heads
-     * @param headSize Dimension of each head
-     * @param kvDim Total key/value dimension
-     * @param kvMul Key/value head multiplier for grouped-query attention
-     * @param seqLen Current sequence length
-     * @param positionHolder Array containing position and layer info
-     * @param wrapAtt Buffer for attention weights
-     * @param layer Current transformer layer
-     * @param contextLength Maximum context length
+     * @param q
+     *         Query vectors for all heads
+     * @param key_cache
+     *         Cached key vectors
+     * @param value_cache
+     *         Cached value vectors
+     * @param xb
+     *         Output buffer for attention results
+     * @param nHeads
+     *         Number of attention heads
+     * @param headSize
+     *         Dimension of each head
+     * @param kvDim
+     *         Total key/value dimension
+     * @param kvMul
+     *         Key/value head multiplier for grouped-query attention
+     * @param seqLen
+     *         Current sequence length
+     * @param positionHolder
+     *         Array containing position and layer info
+     * @param wrapAtt
+     *         Buffer for attention weights
+     * @param layer
+     *         Current transformer layer
+     * @param contextLength
+     *         Maximum context length
      */
     public static void processHeadsParallel(FloatArray q, FloatArray key_cache, FloatArray value_cache, FloatArray xb, int nHeads, int headSize, int kvDim, int kvMul, int seqLen,
             IntArray positionHolder, FloatArray wrapAtt, int layer, int contextLength) {
@@ -208,25 +299,32 @@ public class TransformerComputeKernelsLayered {
     }
 
     /**
-     * Computes attention for a single head.
-     * Implements scaled dot-product attention with softmax normalization.
+     * Computes attention for a single head. Implements scaled dot-product attention with softmax normalization.
      *
-     * Steps:
-     * 1. Compute attention scores: Q·K / sqrt(head_size)
-     * 2. Apply softmax (with max subtraction for numerical stability)
-     * 3. Compute weighted sum of values
+     * Steps: 1. Compute attention scores: Q·K / sqrt(head_size) 2. Apply softmax (with max subtraction for numerical stability) 3. Compute weighted sum of values
      *
-     * @param allQ All query vectors
-     * @param key_cache Cached keys
-     * @param value_cache Cached values
-     * @param allXb Output buffer
-     * @param h Head index to process
-     * @param headSize Dimension per head
-     * @param kvDim Key/value dimension
-     * @param kvMul Key multiplier for grouped attention
-     * @param loff Layer offset in cache
-     * @param pos Current position
-     * @param wrapAtt Attention weights buffer
+     * @param allQ
+     *         All query vectors
+     * @param key_cache
+     *         Cached keys
+     * @param value_cache
+     *         Cached values
+     * @param allXb
+     *         Output buffer
+     * @param h
+     *         Head index to process
+     * @param headSize
+     *         Dimension per head
+     * @param kvDim
+     *         Key/value dimension
+     * @param kvMul
+     *         Key multiplier for grouped attention
+     * @param loff
+     *         Layer offset in cache
+     * @param pos
+     *         Current position
+     * @param wrapAtt
+     *         Attention weights buffer
      */
     private static void processHeadTornado(FloatArray allQ, FloatArray key_cache, FloatArray value_cache, FloatArray allXb, int h, int headSize, int kvDim, int kvMul, long loff, int pos,
             FloatArray wrapAtt) {
@@ -411,8 +509,7 @@ public class TransformerComputeKernelsLayered {
     }
 
     /**
-     * Same as processHeadsFlashAttention but with some optimizations
-     * that seem to lower attention's execution time, especially in larger models.
+     * Same as processHeadsFlashAttention but with some optimizations that seem to lower attention's execution time, especially in larger models.
      */
     public static void processHeadsFlashAttentionOpt(KernelContext context, FloatArray q, FloatArray key_cache, FloatArray value_cache, FloatArray xb, int nHeads, int headSize, int kvDim, int kvMul,
             IntArray positionHolder, int layer, int contextLength) {
@@ -582,21 +679,24 @@ public class TransformerComputeKernelsLayered {
     }
 
     /**
-     * Performs optimized matrix-vector multiplication where each work group
-     * processes one row of the matrix.
+     * Performs optimized matrix-vector multiplication where each work group processes one row of the matrix.
      *
-     * Algorithm:
-     * 1. Each work group handles one output dimension
-     * 2. Threads in work group compute partial dot products
-     * 3. Parallel reduction yields final row result
+     * Algorithm: 1. Each work group handles one output dimension 2. Threads in work group compute partial dot products 3. Parallel reduction yields final row result
      *
-     * @param context Kernel execution context
-     * @param x Input vector
-     * @param hb Output vector
-     * @param w Weight matrix (row-major)
-     * @param n Input dimension
-     * @param d Output dimension
-     * @param localWorkGroupSize Number of threads per work group
+     * @param context
+     *         Kernel execution context
+     * @param x
+     *         Input vector
+     * @param hb
+     *         Output vector
+     * @param w
+     *         Weight matrix (row-major)
+     * @param n
+     *         Input dimension
+     * @param d
+     *         Output dimension
+     * @param localWorkGroupSize
+     *         Number of threads per work group
      */
     public static void matrixVectorGeneric(KernelContext context, FloatArray x, FloatArray hb, FloatArray w, int n, int d, int localWorkGroupSize) {
         // One row per workgroup (not per thread)
@@ -644,18 +744,24 @@ public class TransformerComputeKernelsLayered {
     // @formatter:on
 
     /**
-     * Matrix-vector multiplication with residual connection.
-     * Combines regular matrix multiplication with addition of existing values.
+     * Matrix-vector multiplication with residual connection. Combines regular matrix multiplication with addition of existing values.
      *
      * Formula: hb[i] = hb[i] + w[i]·x
      *
-     * @param context Kernel execution context
-     * @param x Input vector
-     * @param hb Input/output vector (contains residual, receives result)
-     * @param w Weight matrix
-     * @param n Input dimension
-     * @param d Output dimension
-     * @param localWorkGroupSize Work group size
+     * @param context
+     *         Kernel execution context
+     * @param x
+     *         Input vector
+     * @param hb
+     *         Input/output vector (contains residual, receives result)
+     * @param w
+     *         Weight matrix
+     * @param n
+     *         Input dimension
+     * @param d
+     *         Output dimension
+     * @param localWorkGroupSize
+     *         Work group size
      */
     public static void matrixVectorGenericWithResidual(KernelContext context, FloatArray x, FloatArray hb, HalfFloatArray w, int n, int d, int localWorkGroupSize) {
         // One row per workgroup (not per thread)
@@ -678,20 +784,26 @@ public class TransformerComputeKernelsLayered {
     }
 
     /**
-     * Fused feed-forward network with SiLU activation and GLU gating.
-     * Implements the SwiGLU variant used in LLaMA-style models.
+     * Fused feed-forward network with SiLU activation and GLU gating. Implements the SwiGLU variant used in LLaMA-style models.
      *
-     * Formula: FFN(x) = SiLU(x·W1) ⊙ (x·W3)
-     * where ⊙ denotes element-wise multiplication
+     * Formula: FFN(x) = SiLU(x·W1) ⊙ (x·W3) where ⊙ denotes element-wise multiplication
      *
-     * @param context Kernel execution context
-     * @param x Input vector
-     * @param hb Output buffer
-     * @param w1 First feed-forward weight matrix
-     * @param w3 Third feed-forward weight matrix (gate)
-     * @param n Input dimension
-     * @param d Hidden dimension
-     * @param localWorkGroupSize Work group size
+     * @param context
+     *         Kernel execution context
+     * @param x
+     *         Input vector
+     * @param hb
+     *         Output buffer
+     * @param w1
+     *         First feed-forward weight matrix
+     * @param w3
+     *         Third feed-forward weight matrix (gate)
+     * @param n
+     *         Input dimension
+     * @param d
+     *         Hidden dimension
+     * @param localWorkGroupSize
+     *         Work group size
      */
     public static void fusedFeedForwardWithSiLUAndGLUActivation(KernelContext context, FloatArray x, FloatArray hb, HalfFloatArray w1, HalfFloatArray w3, int n, int d, int localWorkGroupSize) {
         // One row per workgroup (not per thread)
@@ -714,10 +826,10 @@ public class TransformerComputeKernelsLayered {
     }
 
     /**
-     * Gaussian Error Linear Unit (GELU) activation function.
-     * Approximation formula: GELU(x) ≈ 0.5 * x * (1 + tanh(√(2/π) * (x + 0.044715 * x³)))
+     * Gaussian Error Linear Unit (GELU) activation function. Approximation formula: GELU(x) ≈ 0.5 * x * (1 + tanh(√(2/π) * (x + 0.044715 * x³)))
      *
-     * @param x Input value
+     * @param x
+     *         Input value
      * @return Activated value
      */
     public static float geluActivation(float x) {
@@ -726,12 +838,12 @@ public class TransformerComputeKernelsLayered {
     }
 
     /**
-     * Sigmoid-weighted Linear Unit (SiLU) activation function.
-     * Also known as Swish activation.
+     * Sigmoid-weighted Linear Unit (SiLU) activation function. Also known as Swish activation.
      *
      * Formula: SiLU(x) = x * σ(x) = x / (1 + e^(-x))
      *
-     * @param x Input value
+     * @param x
+     *         Input value
      * @return Activated value
      */
     public static float siluActivation(float x) {
@@ -739,20 +851,20 @@ public class TransformerComputeKernelsLayered {
     }
 
     /**
-     * Optimized row-major matrix-vector multiplication for a single row.
-     * Uses parallel reduction within a work group to compute one dot product.
+     * Optimized row-major matrix-vector multiplication for a single row. Uses parallel reduction within a work group to compute one dot product.
      *
-     * Algorithm:
-     * 1. Each thread computes partial dot product
-     * 2. Partial results stored in local memory
-     * 3. Tree-based reduction combines partial results
-     * 4. Returns final dot product for the row
+     * Algorithm: 1. Each thread computes partial dot product 2. Partial results stored in local memory 3. Tree-based reduction combines partial results 4. Returns final dot product for the row
      *
-     * @param context Kernel execution context
-     * @param localSize Work group size
-     * @param x Input vector
-     * @param w Weight matrix row
-     * @param n Input dimension
+     * @param context
+     *         Kernel execution context
+     * @param localSize
+     *         Work group size
+     * @param x
+     *         Input vector
+     * @param w
+     *         Weight matrix row
+     * @param n
+     *         Input dimension
      * @return Dot product result for this row
      */
     public static float matrixVectorRowMajorOptimized(KernelContext context, int localSize, FloatArray x, FloatArray w, int n) {
@@ -835,4 +947,20 @@ public class TransformerComputeKernelsLayered {
             output.set(0, ss);  // Store the final scale factor
         }
     }
+
+    public static void splitGateUpAndSiLU(FloatArray hb, FloatArray hbG, FloatArray hbU, int hiddenDim) {
+        // Copy and apply SiLU to gate in one pass
+        for (@Parallel int i = 0; i < hiddenDim; i++) {
+            float gateVal = hb.get(i);
+            float upVal = hb.get(hiddenDim + i);
+
+            // Apply SiLU to gate
+            float siluGate = gateVal / (1.0f + TornadoMath.exp(-gateVal));
+
+            // Store activated gate and multiply with up
+            hbG.set(i, siluGate);
+            hbU.set(i, siluGate * upVal);
+        }
+    }
+
 }

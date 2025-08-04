@@ -12,9 +12,6 @@ import java.util.Set;
  */
 public class Qwen3ChatFormat implements ChatFormat {
 
-    protected Qwen3Tokenizer tokenizer;
-    protected ChatTokens chatTokens;
-
     protected final int beginOfText;
     protected final int startHeader;
     protected final int endHeader;
@@ -22,13 +19,13 @@ public class Qwen3ChatFormat implements ChatFormat {
     protected final int endOfText;
     protected final int endOfMessage;
     protected final int endOfTextFim;
-
     protected final int imStart; // beginOfText
     protected final int imEnd; // endOfText
-
     protected final int fimPrefix;
     protected final int fimSuffix;
     protected final int fimMiddle;
+    protected Qwen3Tokenizer tokenizer;
+    protected ChatTokens chatTokens;
 
     public Qwen3ChatFormat(Qwen3Tokenizer tokenizer, ChatTokens chatTokens) {
         this.tokenizer = tokenizer;
@@ -112,7 +109,6 @@ public class Qwen3ChatFormat implements ChatFormat {
             throw new IllegalStateException("No stop token is defined.");
         }
         if (imEnd == -1) {
-
             return Set.of(endOfText);
         }
         return Set.of(imEnd, endOfText, endOfTextFim);

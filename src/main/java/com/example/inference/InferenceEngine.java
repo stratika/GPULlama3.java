@@ -9,6 +9,7 @@ import com.example.tokenizer.impl.Tokenizer;
 import com.example.tornadovm.TornadoVMMasterPlan;
 import uk.ac.manchester.tornado.api.types.arrays.FloatArray;
 
+import java.io.ByteArrayOutputStream;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Set;
@@ -18,8 +19,7 @@ import java.util.function.IntConsumer;
  * Main entry point for LLM token generation.
  *
  * <p>
- * Orchestrates the complete inference process: ingests prompt tokens, then generates
- * new tokens until a stop condition is met. Supports both CPU and GPU execution.
+ * Orchestrates the complete inference process: ingests prompt tokens, then generates new tokens until a stop condition is met. Supports both CPU and GPU execution.
  * </p>
  *
  * <p>
@@ -42,19 +42,26 @@ public final class InferenceEngine {
      * LLM generation entry point, ingest prompt tokens and generates new tokens.
      *
      * <p>
-     * All prompt tokens are ingested first, then inference starts, until a stop token is found.
-     * The returned tokens only include generated/inferred tokens.
+     * All prompt tokens are ingested first, then inference starts, until a stop token is found. The returned tokens only include generated/inferred tokens.
      *
-     * @param model            model to run inference (including weights, configuration, tokenizer ...)
-     * @param state            state of the model e.g. key/value caches ... this is mutated by this call
-     * @param startPosition    start prompt ingestion + inference at this position in the context e.g. useful if state was kept across calls (chained generation). 0 implies run with no previous context.
-     * @param promptTokens     prompt tokens to ingest, all the prompt tokens will be ingested, given there's enough capacity left in the context
-     * @param stopTokens       set of tokens that abort generation during inference, stop tokens do not affect prompt ingestion
-     * @param maxTokens        maximum number of tokens (can go up to {@link Configuration#contextLength context length}
-     *                         if this value is negative or greater than {@link Configuration#contextLength context length}
-     * @param sampler          {@link Sampler strategy} used to select tokens
-     * @param echo             debugging flag, prints ALL, prompt and inferred tokens, to {@link System#err stderr}
-     * @param onTokenGenerated callback, if non-null, it's called every time a token is inferred e.g. it's not called when ingesting prompt tokens
+     * @param model
+     *         model to run inference (including weights, configuration, tokenizer ...)
+     * @param state
+     *         state of the model e.g. key/value caches ... this is mutated by this call
+     * @param startPosition
+     *         start prompt ingestion + inference at this position in the context e.g. useful if state was kept across calls (chained generation). 0 implies run with no previous context.
+     * @param promptTokens
+     *         prompt tokens to ingest, all the prompt tokens will be ingested, given there's enough capacity left in the context
+     * @param stopTokens
+     *         set of tokens that abort generation during inference, stop tokens do not affect prompt ingestion
+     * @param maxTokens
+     *         maximum number of tokens (can go up to {@link Configuration#contextLength context length} if this value is negative or greater than {@link Configuration#contextLength context length}
+     * @param sampler
+     *         {@link Sampler strategy} used to select tokens
+     * @param echo
+     *         debugging flag, prints ALL, prompt and inferred tokens, to {@link System#err stderr}
+     * @param onTokenGenerated
+     *         callback, if non-null, it's called every time a token is inferred e.g. it's not called when ingesting prompt tokens
      * @return list of generated/inferred tokens, including the stop token, if any e.g. does not include any token from the prompt
      */
     public static List<Integer> generateTokensLlama(Model model, State state, int startPosition, List<Integer> promptTokens, Set<Integer> stopTokens, int maxTokens, Sampler sampler, boolean echo,
@@ -212,6 +219,60 @@ public final class InferenceEngine {
         LastRunMetrics.setMetrics(totalTokens, totalTimeSeconds);
 
         return generatedTokens;
+    }
+
+    public static List<Integer> generateTokensPhi3(Model model, State state, int startPosition, List<Integer> promptTokens, Set<Integer> stopTokens, int maxTokens, Sampler sampler, boolean echo,
+            IntConsumer onTokenGenerated) {
+
+        long startNanos = System.nanoTime();
+        if (maxTokens < 0 || model.configuration().contextLength() < maxTokens) {
+            maxTokens = model.configuration().contextLength();
+        }
+        List<Integer> generatedTokens = new ArrayList<>(maxTokens);
+        int token = state.latestToken; // BOS?
+        int nextToken;
+        int promptIndex = 0;
+        ByteArrayOutputStream baos = new ByteArrayOutputStream(5);
+        for (int position = startPosition; position < maxTokens; ++position) {
+
+            model.forward(state, token, position);
+            if (promptIndex < promptTokens.size()) {
+                // Force-pick token from prompt.
+                nextToken = promptTokens.get(promptIndex++);
+                if (echo) {
+                    System.out.println("NextToken: " + nextToken);
+                    String decoded = model.tokenizer().decode(List.of(nextToken));
+                    System.err.print(Tokenizer.replaceControlCharacters(model.tokenizer().decode(List.of(nextToken))));
+                }
+            } else {
+                nextToken = sampler.sampleToken(state.logits);
+                if (echo) {
+                    // log inferred token
+                    System.err.print(Tokenizer.replaceControlCharacters(model.tokenizer().decode(List.of(nextToken))));
+                }
+                generatedTokens.add(nextToken);
+                if (onTokenGenerated != null) {
+                    onTokenGenerated.accept(nextToken);
+                }
+                if (stopTokens.contains(nextToken)) {
+                    break;
+                }
+            }
+            state.latestToken = token = nextToken;
+            if (position == 2000) {
+                break;
+            }
+        }
+
+        // Calculate and print performance metrics
+        long endNanos = System.nanoTime();
+        double totalTimeSeconds = (endNanos - startNanos) / 1_000_000_000.0;
+        int totalTokens = promptIndex + generatedTokens.size();
+
+        LastRunMetrics.setMetrics(totalTokens, totalTimeSeconds);
+
+        return generatedTokens;
+
     }
 
     public static List<Integer> generateTokensGPULlama(Model model, State state, int startPosition, List<Integer> promptTokens, Set<Integer> stopTokens, int maxTokens, Sampler sampler, boolean echo,
@@ -384,6 +445,81 @@ public final class InferenceEngine {
 
             // Update for next iteration
             state.latestToken = currentToken = nextToken;
+        }
+
+        // Calculate and print performance metrics
+        long endNanos = System.nanoTime();
+        double totalTimeSeconds = (endNanos - startNanos) / 1_000_000_000.0;
+        int totalTokens = promptIndex + generatedTokens.size();
+
+        LastRunMetrics.setMetrics(totalTokens, totalTimeSeconds);
+
+        return generatedTokens;
+    }
+
+    public static List<Integer> generateTokensGPUPhi3(Model model, State state, int startPosition, List<Integer> promptTokens, Set<Integer> stopTokens, int maxTokens, Sampler sampler, boolean echo,
+            IntConsumer onTokenGenerated, TornadoVMMasterPlan tornadoVMPlan) {
+        // Start timing the whole process
+        long startNanos = System.nanoTime();
+        long inferenceStartNanos = 0;
+
+        // Validate and adjust maxTokens if necessary
+        if (maxTokens < 0 || model.configuration().contextLength() < maxTokens) {
+            maxTokens = model.configuration().contextLength();
+        }
+
+        // Storage for generated tokens
+        List<Integer> generatedTokens = new ArrayList<>();
+
+        // Initialize token variables
+        int currentToken = state.latestToken;
+        int nextToken;
+        int promptIndex = 0;
+        int pos = startPosition;
+
+        while (pos < maxTokens) {
+            // GPU Forward Pass
+            FloatArray logits = InferenceCore.forwardTornadoVM(model, state, currentToken, pos, tornadoVMPlan);
+
+            // Handle token processing
+            if (promptIndex < promptTokens.size()) {
+                // We're still processing the prompt tokens
+                nextToken = promptTokens.get(promptIndex++);
+                if (echo) {
+                    System.err.print(Tokenizer.replaceControlCharacters(model.tokenizer().decode(List.of(nextToken))));
+                }
+            } else {
+                // Mark the start of actual generation (after prompt processing)
+                if (inferenceStartNanos == 0) {
+                    inferenceStartNanos = System.nanoTime();
+                }
+
+                // Sample the next token
+                nextToken = sampler.sampleToken(logits);
+
+                // Output the token if echo is enabled
+                if (echo) {
+                    System.err.print(Tokenizer.replaceControlCharacters(model.tokenizer().decode(List.of(nextToken))));
+                }
+
+                // Track the generated token
+                generatedTokens.add(nextToken);
+
+                // Notify via callback if provided
+                if (onTokenGenerated != null) {
+                    onTokenGenerated.accept(nextToken);
+                }
+
+                // Check for stop condition
+                if (stopTokens.contains(nextToken)) {
+                    break;
+                }
+            }
+
+            // Update for next iteration
+            currentToken = nextToken;
+            state.latestToken = currentToken;
+            pos++;
         }
 
         // Calculate and print performance metrics
