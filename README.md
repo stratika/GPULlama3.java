@@ -271,6 +271,9 @@ wget https://huggingface.co/ggml-org/Qwen3-0.6B-GGUF/resolve/main/Qwen3-4B-f16.g
 
 # Qwen3 (8B) - FP16
 wget https://huggingface.co/ggml-org/Qwen3-0.6B-GGUF/resolve/main/Qwen3-8B-f16.gguf
+
+# Phi-3-mini-4k - FP16
+wget https://huggingface.co/microsoft/Phi-3-mini-4k-instruct-gguf/resolve/main/Phi-3-mini-4k-instruct-fp16.gguf
 ```
 
 **[Experimental]** you can download the Q8 and Q4 used in the original implementation of Llama3.java, but for now are going to be dequanted to FP16 for TornadoVM support:
