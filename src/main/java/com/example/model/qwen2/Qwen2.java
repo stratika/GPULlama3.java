@@ -54,6 +54,32 @@ public class Qwen2 extends AbstractModel {
         return state;
     }
 
+    /**
+     * No <|beginoftext|> needed for Qwen models.
+     */
+    @Override
+    public boolean shouldAddBeginOfText() {
+        return false;
+    }
+
+    /**
+     * No system prompt for Deepseek-R1-Distill-Qwen.
+     * Based on <a href="https://huggingface.co/deepseek-ai/DeepSeek-R1-Distill-Qwen-1.5B">Usage Recommendations</a>
+     */
+    @Override
+    public boolean shouldAddSystemPrompt() {
+        return !getModelType().isDeepSeekR1();
+    }
+
+    /**
+     * Force inclusion of <think></think> for Deepseek-R1-Distill-Qwen.
+     * Based on <a href="https://huggingface.co/deepseek-ai/DeepSeek-R1-Distill-Qwen-1.5B">Usage Recommendations</a>
+     */
+    @Override
+    public boolean shouldIncludeReasoning() {
+        return getModelType().isDeepSeekR1();
+    }
+
     @Override
     public void forward(State state, int token, int position) {
         if (plan == null) {

@@ -53,6 +53,14 @@ public class Phi3 extends AbstractModel {
         return state;
     }
 
+    /**
+     * No begin of text needed for Phi3 models.
+     */
+    @Override
+    public boolean shouldAddBeginOfText() {
+        return false;
+    }
+
     @Override
     public void forward(State state, int token, int position) {
         if (plan == null) {
