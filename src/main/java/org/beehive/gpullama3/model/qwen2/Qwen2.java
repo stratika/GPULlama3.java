@@ -1,17 +1,17 @@
-package com.example.model.qwen2;
+package org.beehive.gpullama3.model.qwen2;
 
-import com.example.inference.InferenceCore;
-import com.example.inference.InferenceEngine;
-import com.example.inference.sampler.Sampler;
-import com.example.inference.state.Qwen2State;
-import com.example.inference.state.State;
-import com.example.inference.weights.Weights;
-import com.example.model.AbstractModel;
-import com.example.model.ModelType;
-import com.example.model.format.ChatFormat;
-import com.example.tokenizer.impl.Qwen3Tokenizer;
-import com.example.tokenizer.impl.Tokenizer;
-import com.example.tornadovm.TornadoVMMasterPlan;
+import org.beehive.gpullama3.inference.InferenceCore;
+import org.beehive.gpullama3.inference.InferenceEngine;
+import org.beehive.gpullama3.inference.sampler.Sampler;
+import org.beehive.gpullama3.inference.state.Qwen2State;
+import org.beehive.gpullama3.inference.state.State;
+import org.beehive.gpullama3.inference.weights.Weights;
+import org.beehive.gpullama3.model.AbstractModel;
+import org.beehive.gpullama3.model.ModelType;
+import org.beehive.gpullama3.model.format.ChatFormat;
+import org.beehive.gpullama3.tokenizer.impl.Qwen3Tokenizer;
+import org.beehive.gpullama3.tokenizer.impl.Tokenizer;
+import org.beehive.gpullama3.tornadovm.TornadoVMMasterPlan;
 
 import java.util.List;
 import java.util.Set;

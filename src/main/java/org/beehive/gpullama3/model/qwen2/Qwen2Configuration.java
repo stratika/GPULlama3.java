@@ -1,6 +1,6 @@
-package com.example.model.qwen2;
+package org.beehive.gpullama3.model.qwen2;
 
-import com.example.model.Configuration;
+import org.beehive.gpullama3.model.Configuration;
 
 public record Qwen2Configuration(int dim,
                                  int hiddenDim,
