@@ -50,6 +50,13 @@ public enum ModelType {
         }
     },
 
+    DEEPSEEK_R1_DISTILL_QWEN {
+        @Override
+        public Model loadModel(FileChannel fileChannel, GGUF gguf, int contextLength, boolean loadWeights) {
+            return new Qwen2ModelLoader(fileChannel, gguf, contextLength, loadWeights).loadModel();
+        }
+    },
+
     PHI_3 {
         @Override
         public Model loadModel(FileChannel fileChannel, GGUF gguf, int contextLength, boolean loadWeights) {
@@ -66,4 +73,8 @@ public enum ModelType {
 
     // Abstract method that each enum constant must implement
     public abstract Model loadModel(FileChannel fileChannel, GGUF gguf, int contextLength, boolean loadWeights);
+
+    public boolean isDeepSeekR1() {
+        return this == DEEPSEEK_R1_DISTILL_QWEN;
+    }
 }
