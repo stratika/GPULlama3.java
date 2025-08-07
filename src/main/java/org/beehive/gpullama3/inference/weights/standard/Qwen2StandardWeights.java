@@ -6,6 +6,7 @@ import org.beehive.gpullama3.core.model.tensor.FloatTensor;
 import org.beehive.gpullama3.inference.weights.Weights;
 
 public class Qwen2StandardWeights extends StandardWeights {
+    // Qwen2-specific weights
     public final FloatTensor[] q_bias, k_bias, v_bias;
 
     public Qwen2StandardWeights(

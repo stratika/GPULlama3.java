@@ -20,6 +20,7 @@ import org.beehive.gpullama3.model.qwen2.Qwen2Configuration;
 import org.beehive.gpullama3.tokenizer.impl.Qwen3Tokenizer;
 import org.beehive.gpullama3.tokenizer.impl.Tokenizer;
 import org.beehive.gpullama3.tokenizer.vocabulary.Vocabulary;
+import uk.ac.manchester.tornado.api.types.arrays.FloatArray;
 
 import java.io.IOException;
 import java.nio.channels.FileChannel;
@@ -112,7 +113,6 @@ public class Qwen2ModelLoader extends ModelLoader {
             return createStandardWeights(tensorEntries, config, ropeFreqs, tokenEmbeddings, outputWeight);
         }
     }
-    // @formatter:on
 
     @Override
     public Weights createStandardWeights(Map<String, GGMLTensorEntry> tensorEntries, Configuration config, Pair<float[], float[]> ropeFreqs, GGMLTensorEntry tokenEmbeddings,
@@ -141,6 +141,30 @@ public class Qwen2ModelLoader extends ModelLoader {
     }
 
     @Override
+    public Weights createTornadoVMWeights(Map<String, GGMLTensorEntry> tensorEntries, Configuration config, Pair<float[], float[]> ropeFreqs, GGMLTensorEntry tokenEmbeddings,
+            GGMLTensorEntry outputWeight) {
+        return new Qwen2TornadoWeights(
+                loadTensorAsFloatArray(tokenEmbeddings),
+                loadArrayAsFloatArrayFromBuffer(config.numberOfLayers(), i -> tensorEntries.get("blk." + i + ".attn_norm.weight")),
+                loadArrayAsHalfFloatArray(config.numberOfLayers(), i -> tensorEntries.get("blk." + i + ".attn_q.weight")),
+                loadArrayAsHalfFloatArray(config.numberOfLayers(), i -> tensorEntries.get("blk." + i + ".attn_k.weight")),
+                loadArrayAsHalfFloatArray(config.numberOfLayers(), i -> tensorEntries.get("blk." + i + ".attn_v.weight")),
+                // Qwen2-specific: qkv bias
+                loadArrayAsFloatArray(config.numberOfLayers(), i -> tensorEntries.get("blk." + i + ".attn_q.bias")),
+                loadArrayAsFloatArray(config.numberOfLayers(), i -> tensorEntries.get("blk." + i + ".attn_k.bias")),
+                loadArrayAsFloatArray(config.numberOfLayers(), i -> tensorEntries.get("blk." + i + ".attn_v.bias")),
+
+                loadArrayAsHalfFloatArray(config.numberOfLayers(), i -> tensorEntries.get("blk." + i + ".attn_output.weight")),
+                loadArrayAsFloatArrayFromBuffer(config.numberOfLayers(), i -> tensorEntries.get("blk." + i + ".ffn_norm.weight")),
+                loadArrayAsHalfFloatArray(config.numberOfLayers(), i -> tensorEntries.get("blk." + i + ".ffn_gate.weight")),            // w1
+                loadArrayAsHalfFloatArray(config.numberOfLayers(), i -> tensorEntries.get("blk." + i + ".ffn_down.weight")),            // w2
+                loadArrayAsHalfFloatArray(config.numberOfLayers(), i -> tensorEntries.get("blk." + i + ".ffn_up.weight")),              // w3
+                floatBufferToFloatArray(tensorEntries.get("output_norm.weight")),
+                FloatArray.fromArray(ropeFreqs.first()),
+                FloatArray.fromArray(ropeFreqs.second()),
+                loadTensorAsHalfFloatArray(outputWeight),
+                outputWeight.ggmlType()
+        );
     }
     // @formatter:on
 
