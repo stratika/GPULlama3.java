@@ -1,12 +1,16 @@
 package org.beehive.gpullama3.model.loader;
 
+import org.beehive.gpullama3.LlamaApp;
 import org.beehive.gpullama3.auxiliary.Timer;
+import org.beehive.gpullama3.core.model.GGMLType;
 import org.beehive.gpullama3.core.model.GGUF;
 import org.beehive.gpullama3.core.model.tensor.ArrayFloatTensor;
 import org.beehive.gpullama3.core.model.tensor.GGMLTensorEntry;
 import org.beehive.gpullama3.core.types.Pair;
+import org.beehive.gpullama3.inference.operation.RoPE;
 import org.beehive.gpullama3.inference.weights.Weights;
 import org.beehive.gpullama3.inference.weights.standard.Qwen2StandardWeights;
+import org.beehive.gpullama3.inference.weights.tornado.Qwen2TornadoWeights;
 import org.beehive.gpullama3.model.Configuration;
 import org.beehive.gpullama3.model.Model;
 import org.beehive.gpullama3.model.format.ChatFormat;
@@ -79,6 +83,32 @@ public class Qwen2ModelLoader extends ModelLoader {
         }
     }
 
+    // @formatter:off
+    @Override
+    public Weights loadWeights(Map<String, GGMLTensorEntry> tensorEntries, Configuration config) {
+        Pair<float[], float[]> ropeFreqs = RoPE.precomputeFreqsCis(
+                config.contextLengthModel(),
+                config.headSize(),
+                config.ropeTheta(),
+                false,
+                8,
+                1,
+                3,
+                8192
+        );
+
+        GGMLTensorEntry tokenEmbeddings = tensorEntries.get("token_embd.weight");
+        GGMLTensorEntry outputWeight = tensorEntries.getOrDefault("output.weight", tokenEmbeddings);
+
+        if (LlamaApp.USE_TORNADOVM) {
+            System.out.println("Loading model weights in TornadoVM format (loading " + outputWeight.ggmlType() + " -> " + GGMLType.F16 + ")");
+            return createTornadoVMWeights(tensorEntries, config, ropeFreqs, tokenEmbeddings, outputWeight);
+        } else {
+            return createStandardWeights(tensorEntries, config, ropeFreqs, tokenEmbeddings, outputWeight);
+        }
+    }
+    // @formatter:on
+
     @Override
     public Weights createStandardWeights(Map<String, GGMLTensorEntry> tensorEntries, Configuration config, Pair<float[], float[]> ropeFreqs, GGMLTensorEntry tokenEmbeddings,
             GGMLTensorEntry outputWeight) {
@@ -104,4 +134,9 @@ public class Qwen2ModelLoader extends ModelLoader {
                 loadQuantized(outputWeight),
                 outputWeight.ggmlType());
     }
+
+    @Override
+    }
+    // @formatter:on
+
 }
