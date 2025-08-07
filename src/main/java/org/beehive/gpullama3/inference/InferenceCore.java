@@ -201,19 +201,10 @@ public final class InferenceCore {
             weights.wk[l].matmul(state.xb, state.k, kvDim, dim);
             weights.wv[l].matmul(state.xb, state.v, kvDim, dim);
 
-            if ((weights.q_bias != null && weights.q_bias[curLayer] != null)
-                    || (weights.k_bias != null && weights.k_bias[curLayer] != null)
-                    || (weights.v_bias != null && weights.v_bias[curLayer] != null)) {
-                if (weights.q_bias != null && weights.q_bias[curLayer] != null) {
-                    state.q.addInPlace(weights.q_bias[curLayer]);
-                }
-                if (weights.k_bias != null && weights.k_bias[curLayer] != null) {
-                    state.k.addInPlace(weights.k_bias[curLayer]);
-                }
-                if (weights.v_bias != null && weights.v_bias[curLayer] != null) {
-                    state.v.addInPlace(weights.v_bias[curLayer]);
-                }
-            }
+            // qkv additions with qkv bias
+            state.q.addInPlace(weights.q_bias[curLayer]);
+            state.k.addInPlace(weights.k_bias[curLayer]);
+            state.v.addInPlace(weights.v_bias[curLayer]);
 
             // RoPE relative positional encoding: complex-valued rotate q and k in each head
             // GPT-NeoX style RoPE, real/imaginary components are stored with a headSize/2 offset per head, instead of consecutive.
