@@ -35,9 +35,14 @@ public class Qwen2ModelLoader extends ModelLoader {
 
     @Override
     public Model loadModel() {
-        try (var ignored = Timer.log("Load Qwen2 model")) {
-            Map<String, Object> metadata = gguf.getMetadata();
+        Map<String, Object> metadata = gguf.getMetadata();
+        String basename = (String) metadata.get("general.basename");
 
+        String modelName = "DeepSeek-R1-Distill-Qwen".equals(basename)
+                ? "DeepSeek-R1-Distill-Qwen"
+                : "Qwen2.5";
+
+        try (var ignored = Timer.log("Load " + modelName + " model")) {
             // reuse method of Qwen3
             Vocabulary vocabulary = loadQwen3Vocabulary(metadata);
             boolean isDeepSeekR1DistillQwen = "DeepSeek-R1-Distill-Qwen".equals(metadata.get("general.basename"));
