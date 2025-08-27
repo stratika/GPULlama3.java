@@ -56,7 +56,7 @@ public class LlamaApp {
      *
      * @throws IllegalArgumentException if logits are of an unsupported type
      */
-    static Sampler selectSampler(int vocabularySize, float temperature, float topp, long rngSeed) {
+    public static Sampler selectSampler(int vocabularySize, float temperature, float topp, long rngSeed) {
         Sampler sampler;
         if (temperature == 0.0f) {
             // greedy argmax sampling: take the token with the highest probability
@@ -151,7 +151,10 @@ public class LlamaApp {
         if (options.interactive()) {
             model.runInteractive(sampler, options);
         } else {
-            model.runInstructOnce(sampler, options);
+//            model.runInstructOnce(sampler, options);
+            System.out.println(model.runInstructOnce(sampler, options, true /* print metrics */));
+
+
         }
     }
 }
