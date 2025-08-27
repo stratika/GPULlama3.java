@@ -10,7 +10,7 @@ public record Options(Path modelPath, String prompt, String systemPrompt, String
     public static final int DEFAULT_MAX_TOKENS = 1024;
 
     public Options {
-        require(modelPath != null, "Missing argument: --model <path> is required");
+//        require(modelPath != null, "Missing argument: --model <path> is required");
         require(interactive || prompt != null, "Missing argument: --prompt is required in --instruct mode e.g. --prompt \"Why is the sky blue?\"");
         require(0 <= temperature, "Invalid argument: --temperature must be non-negative");
         require(0 <= topp && topp <= 1, "Invalid argument: --top-p must be within [0, 1]");
@@ -42,6 +42,24 @@ public record Options(Path modelPath, String prompt, String systemPrompt, String
         out.println("  --stream <boolean>            print tokens during generation; may cause encoding artifacts for non ASCII text, default true");
         out.println("  --echo <boolean>              print ALL tokens to stderr, if true, recommended to set --stream=false, default false");
         out.println();
+    }
+
+
+    public static Options getDefaultOptions() {
+        String prompt = "Tell me a story with Java"; // Hardcoded for testing
+        String systemPrompt = null;
+        String suffix = null;
+        float temperature = 0.1f;
+        float topp = 0.95f;
+        Path modelPath = null;
+        long seed = System.nanoTime();
+        // Keep max context length small for low-memory devices.
+        int maxTokens = DEFAULT_MAX_TOKENS;
+        boolean interactive = false;
+        boolean stream = true;
+        boolean echo = false;
+
+        return new Options(modelPath, prompt, systemPrompt, suffix, interactive, temperature, topp, seed, maxTokens, stream, echo);
     }
 
     public static Options parseOptions(String[] args) {
@@ -95,6 +113,9 @@ public record Options(Path modelPath, String prompt, String systemPrompt, String
                 }
             }
         }
+        require(modelPath != null, "Missing argument: --model <path> is required");
+
+
         return new Options(modelPath, prompt, systemPrompt, suffix, interactive, temperature, topp, seed, maxTokens, stream, echo);
     }
 }
