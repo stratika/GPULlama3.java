@@ -157,7 +157,8 @@ public interface Model {
      * @param sampler
      * @param options
      */
-    default void runInstructOnce(Sampler sampler, Options options) {
+    default String runInstructOnce(Sampler sampler, Options options, boolean printMetrics) {
+//        default void runInstructOnce(Sampler sampler, Options options) {
         State state = createNewState();
         ChatFormat chatFormat = chatFormat();
         TornadoVMMasterPlan tornadoVMPlan = null;
@@ -204,15 +205,22 @@ public interface Model {
         if (!responseTokens.isEmpty() && stopTokens.contains(responseTokens.getLast())) {
             responseTokens.removeLast();
         }
+
+        String responseText = null;
         if (!options.stream()) {
-            String responseText = tokenizer().decode(responseTokens);
-            System.out.println(responseText);
+//            String responseText = tokenizer().decode(responseTokens);
+//            System.out.println(responseText);
+            responseText = tokenizer().decode(responseTokens);
         }
 
-        LastRunMetrics.printMetrics();
+        if (printMetrics) {
+            LastRunMetrics.printMetrics();
+        }
 
         if (tornadoVMPlan != null) {
             tornadoVMPlan.freeTornadoExecutionPlan();
         }
+
+        return responseText;
     }
 }
