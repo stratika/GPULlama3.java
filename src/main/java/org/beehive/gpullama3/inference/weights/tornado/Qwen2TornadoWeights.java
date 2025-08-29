@@ -7,9 +7,9 @@ import uk.ac.manchester.tornado.api.types.arrays.HalfFloatArray;
 public class Qwen2TornadoWeights extends TornadoWeights {
 
     // Qwen2-specific tornado weights
-    FloatArray[] q_biasLayered;
-    FloatArray[] k_biasLayered;
-    FloatArray[] v_biasLayered;
+    public FloatArray[] q_biasLayered;
+    public FloatArray[] k_biasLayered;
+    public FloatArray[] v_biasLayered;
 
     public Qwen2TornadoWeights(FloatArray tokenEmbeddingTable, FloatArray[] rms_att_weightLayered, HalfFloatArray[] wqLayered, HalfFloatArray[] wkLayered, HalfFloatArray[] wvLayered,
             FloatArray[] wqBiasLayered,

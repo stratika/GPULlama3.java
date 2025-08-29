@@ -27,7 +27,7 @@ public record Qwen2Configuration(int dim,
 
     @Override
     public int kvMul() {
-        throw new UnsupportedOperationException("Not supported for Qwen2.");
+        return numberOfHeads / numberOfKeyValueHeads;
     }
 
     @Override

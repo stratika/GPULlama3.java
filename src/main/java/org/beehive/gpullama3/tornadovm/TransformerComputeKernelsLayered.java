@@ -963,4 +963,12 @@ public class TransformerComputeKernelsLayered {
         }
     }
 
+    public static void addInPlace(FloatArray arrayA, FloatArray arrayB, int size) {
+        // Element-wise addition: arrayA[i] = arrayA[i] + arrayB[i]
+        for (@Parallel int i = 0; i < size; i++) {
+            float result = arrayA.get(i) + arrayB.get(i);
+            arrayA.set(i, result);
+        }
+    }
+
 }

@@ -4,17 +4,16 @@ import org.beehive.gpullama3.core.model.tensor.ArrayFloatTensor;
 import org.beehive.gpullama3.core.model.tensor.FloatTensor;
 import org.beehive.gpullama3.model.Configuration;
 import org.beehive.gpullama3.model.qwen2.Qwen2Configuration;
+import uk.ac.manchester.tornado.api.types.arrays.FloatArray;
+import uk.ac.manchester.tornado.api.types.arrays.IntArray;
 
 import java.util.stream.Stream;
 
 public class Qwen2State extends State {
 
-    //Qwen2 specific fields TODO
-
     public Qwen2State(Configuration config, int batchsize) {
         super(config, batchsize);
-        // Initialize Qwen2-specific fields TODO
-        Qwen2Configuration qwen2Config = (Qwen2Configuration) config;
+        this.localSize = 32;
     }
     @Override
     protected StateFields createStateFields(Configuration configuration) {
@@ -39,6 +38,30 @@ public class Qwen2State extends State {
         // Key-value cache with Qwen2 dimensions
         fields.keyCache = Stream.generate(() -> ArrayFloatTensor.allocate(config.contextLength(), nEmbdGqa)).limit(config.numberOfLayers()).toArray(FloatTensor[]::new);
         fields.valueCache = Stream.generate(() -> ArrayFloatTensor.allocate(config.contextLength(), nEmbdGqa)).limit(config.numberOfLayers()).toArray(FloatTensor[]::new);
+
+        // TornadoVM wrappers with Qwen2 dimensions
+        fields.wrapX = new FloatArray(config.dim());
+        fields.wrapXb = new FloatArray(config.dim());
+        fields.wrapXb2 = new FloatArray(config.dim());
+        fields.wrapHb = new FloatArray(config.hiddenDim());
+        fields.wrapHb2 = new FloatArray(config.hiddenDim());
+
+        fields.wrapLogits = new FloatArray(config.vocabularySize());
+        fields.wrapQ = new FloatArray(config.dim());
+        fields.wrapK = new FloatArray(config.kvDim());
+        fields.wrapV = new FloatArray(config.kvDim());
+
+        fields.wrapKeyCache = new FloatArray(config.contextLength() * nEmbdGqa * config.numberOfLayers());
+        fields.wrapValueCache = new FloatArray(config.contextLength() * nEmbdGqa * config.numberOfLayers());
+        fields.wrapValueCache.init(0.f);
+        fields.wrapKeyCache.init(0.f);
+        fields.wrapAtt = new FloatArray(config.numberOfHeads() * config.contextLength());
+        fields.positionHolder = new IntArray(1);
+
+        // Temporary arrays
+        fields.temp = new FloatArray(1 + ((config.dim() + localSize - 1) / localSize));
+        fields.tempFFN = new FloatArray(1 + ((config.dim() + localSize - 1) / localSize));
+        fields.tempLogits = new FloatArray(1 + ((config.dim() + localSize - 1) / localSize));
 
         return fields;
 
