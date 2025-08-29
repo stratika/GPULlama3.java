@@ -244,6 +244,13 @@ Download `FP16` quantized `Qwen3` .gguf files from:
 - https://huggingface.co/ggml-org/Qwen3-4B-GGUF
 - https://huggingface.co/ggml-org/Qwen3-8B-GGUF
 
+Download `FP16` quantized `Qwen2.5` .gguf files from:
+- https://huggingface.co/bartowski/Qwen2.5-0.5B-Instruct-GGUF
+- https://huggingface.co/Qwen/Qwen2.5-1.5B-Instruct-GGUF
+
+Download `FP16` quantized `DeepSeek-R1-Distill-Qwen` .gguf files from:
+- https://huggingface.co/hdnh2006/DeepSeek-R1-Distill-Qwen-1.5B-GGUF
+
 Please be gentle with [huggingface.co](https://huggingface.co) servers:
 
 **Note** FP16 models are first-class citizens for the current version.
@@ -274,6 +281,15 @@ wget https://huggingface.co/ggml-org/Qwen3-0.6B-GGUF/resolve/main/Qwen3-8B-f16.g
 
 # Phi-3-mini-4k - FP16
 wget https://huggingface.co/microsoft/Phi-3-mini-4k-instruct-gguf/resolve/main/Phi-3-mini-4k-instruct-fp16.gguf
+
+# Qwen2.5 (0.5B)
+wget https://huggingface.co/bartowski/Qwen2.5-0.5B-Instruct-GGUF/resolve/main/Qwen2.5-0.5B-Instruct-f16.gguf
+
+# Qwen2.5 (1.5B)
+wget https://huggingface.co/Qwen/Qwen2.5-1.5B-Instruct-GGUF/resolve/main/qwen2.5-1.5b-instruct-fp16.gguf
+
+# DeepSeek-R1-Distill-Qwen (1.5B)
+wget https://huggingface.co/hdnh2006/DeepSeek-R1-Distill-Qwen-1.5B-GGUF/resolve/main/DeepSeek-R1-Distill-Qwen-1.5B-F16.gguf
 ```
 
 **[Experimental]** you can download the Q8 and Q4 used in the original implementation of Llama3.java, but for now are going to be dequanted to FP16 for TornadoVM support:
