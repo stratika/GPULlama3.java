@@ -42,8 +42,7 @@ public interface Model {
      * Wrapper for invoking the model-specific forward pass via InferenceCore.
      *
      * <p>
-     * Delegates to the appropriate InferenceCore method based on the model type
-     * (e.g., {@code forwardJava}, {@code forwardJavaQwen3}).
+     * Delegates to the appropriate InferenceCore method based on the model type (e.g., {@code forwardJava}, {@code forwardJavaQwen3}).
      * </p>
      */
     void forward(State state, int token, int position);
@@ -58,6 +57,7 @@ public interface Model {
 
     /**
      * Model agnostic default implementation for interactive mode.
+     *
      * @param sampler
      * @param options
      */
@@ -154,11 +154,12 @@ public interface Model {
 
     /**
      * Model agnostic default implementation for instruct mode.
+     *
      * @param sampler
      * @param options
      */
-    default String runInstructOnce(Sampler sampler, Options options, boolean printMetrics) {
-//        default void runInstructOnce(Sampler sampler, Options options) {
+    default String runInstructOnce(Sampler sampler, Options options) {
+        //        default void runInstructOnce(Sampler sampler, Options options) {
         State state = createNewState();
         ChatFormat chatFormat = chatFormat();
         TornadoVMMasterPlan tornadoVMPlan = null;
@@ -208,13 +209,7 @@ public interface Model {
 
         String responseText = null;
         if (!options.stream()) {
-//            String responseText = tokenizer().decode(responseTokens);
-//            System.out.println(responseText);
             responseText = tokenizer().decode(responseTokens);
-        }
-
-        if (printMetrics) {
-            LastRunMetrics.printMetrics();
         }
 
         if (tornadoVMPlan != null) {
