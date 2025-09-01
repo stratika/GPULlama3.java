@@ -73,7 +73,7 @@ public record Options(Path modelPath, String prompt, String systemPrompt, String
         // Keep max context length small for low-memory devices.
         int maxTokens = DEFAULT_MAX_TOKENS;
         boolean interactive = false;
-        boolean stream = true;
+        boolean stream = false;
         boolean echo = false;
 
         for (int i = 0; i < args.length; i++) {
@@ -107,12 +107,16 @@ public record Options(Path modelPath, String prompt, String systemPrompt, String
                         case "--seed", "-s" -> seed = Long.parseLong(nextArg);
                         case "--max-tokens", "-n" -> maxTokens = Integer.parseInt(nextArg);
                         case "--stream" -> stream = Boolean.parseBoolean(nextArg);
+//                        case "--stream" -> stream  = false;
+
                         case "--echo" -> echo = Boolean.parseBoolean(nextArg);
                         default -> require(false, "Unknown option: %s", optionName);
                     }
                 }
             }
         }
+
+        System.out.println("Printt stream -> " + stream);
         require(modelPath != null, "Missing argument: --model <path> is required");
 
 
