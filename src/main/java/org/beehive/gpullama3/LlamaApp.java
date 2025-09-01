@@ -1,12 +1,13 @@
 package org.beehive.gpullama3;
 
 import org.beehive.gpullama3.aot.AOT;
+import org.beehive.gpullama3.auxiliary.LastRunMetrics;
 import org.beehive.gpullama3.core.model.tensor.FloatTensor;
 import org.beehive.gpullama3.inference.sampler.CategoricalSampler;
 import org.beehive.gpullama3.inference.sampler.Sampler;
 import org.beehive.gpullama3.inference.sampler.ToppSampler;
-import org.beehive.gpullama3.model.loader.ModelLoader;
 import org.beehive.gpullama3.model.Model;
+import org.beehive.gpullama3.model.loader.ModelLoader;
 import org.beehive.gpullama3.tornadovm.FloatArrayUtils;
 import uk.ac.manchester.tornado.api.types.arrays.FloatArray;
 
@@ -36,25 +37,27 @@ public class LlamaApp {
      * <p>The method handles both {@link FloatTensor} and {@link FloatArray} logits types
      * to support both CPU and GPU execution paths.</p>
      *
-     * @param vocabularySize The size of the model's vocabulary
-     * @param temperature A value controlling randomness in sampling:
-     *                   <ul>
-     *                     <li>0.0f: No randomness (greedy sampling)</li>
-     *                     <li>1.0f: Standard sampling from unmodified distribution</li>
-     *                     <li>&lt;1.0f: More deterministic (sharper distribution)</li>
-     *                     <li>&gt;1.0f: More random (flatter distribution)</li>
-     *                   </ul>
-     * @param topp The cumulative probability threshold for nucleus sampling (0.0-1.0).
-     *            <ul>
-     *              <li>Values ≤0 or ≥1: Disables top-p sampling</li>
-     *              <li>Values in (0,1): Restricts sampling to tokens comprising the top p probability mass</li>
-     *            </ul>
-     * @param rngSeed Seed value for the random number generator to ensure reproducibility
-     *
-     * @return A configured {@link Sampler} that implements the selected sampling strategy
-     *         and handles both tensor and array-based logits
-     *
-     * @throws IllegalArgumentException if logits are of an unsupported type
+     * @param vocabularySize
+     *         The size of the model's vocabulary
+     * @param temperature
+     *         A value controlling randomness in sampling:
+     *         <ul>
+     *           <li>0.0f: No randomness (greedy sampling)</li>
+     *           <li>1.0f: Standard sampling from unmodified distribution</li>
+     *           <li>&lt;1.0f: More deterministic (sharper distribution)</li>
+     *           <li>&gt;1.0f: More random (flatter distribution)</li>
+     *         </ul>
+     * @param topp
+     *         The cumulative probability threshold for nucleus sampling (0.0-1.0).
+     *         <ul>
+     *           <li>Values ≤0 or ≥1: Disables top-p sampling</li>
+     *           <li>Values in (0,1): Restricts sampling to tokens comprising the top p probability mass</li>
+     *         </ul>
+     * @param rngSeed
+     *         Seed value for the random number generator to ensure reproducibility
+     * @return A configured {@link Sampler} that implements the selected sampling strategy and handles both tensor and array-based logits
+     * @throws IllegalArgumentException
+     *         if logits are of an unsupported type
      */
     public static Sampler selectSampler(int vocabularySize, float temperature, float topp, long rngSeed) {
         Sampler sampler;
@@ -109,14 +112,16 @@ public class LlamaApp {
     /**
      * Loads the language model based on the given options.
      * <p>
-     * If Ahead-of-Time (AOT) mode is enabled, attempts to use a pre-loaded compiled model.
-     * Otherwise, loads the model from the specified path using the model loader.
+     * If Ahead-of-Time (AOT) mode is enabled, attempts to use a pre-loaded compiled model. Otherwise, loads the model from the specified path using the model loader.
      * </p>
      *
-     * @param options the parsed CLI options containing model path and max token limit
+     * @param options
+     *         the parsed CLI options containing model path and max token limit
      * @return the loaded {@link Model} instance
-     * @throws IOException if the model fails to load
-     * @throws IllegalStateException if AOT loading is enabled but the preloaded model is unavailable
+     * @throws IOException
+     *         if the model fails to load
+     * @throws IllegalStateException
+     *         if AOT loading is enabled but the preloaded model is unavailable
      */
     private static Model loadModel(Options options) throws IOException {
         if (USE_AOT) {
@@ -137,11 +142,12 @@ public class LlamaApp {
      * Entry point for running the LLaMA-based model with provided command-line arguments.
      *
      * <p>Initializes model options, loads the appropriate model (either AOT or on-demand),
-     * configures the sampler, and runs either in interactive or single-instruction mode
-     * based on the input options.</p>
+     * configures the sampler, and runs either in interactive or single-instruction mode based on the input options.</p>
      *
-     * @param args command-line arguments used to configure model path, temperature, seed, etc.
-     * @throws IOException if model loading or file operations fail.
+     * @param args
+     *         command-line arguments used to configure model path, temperature, seed, etc.
+     * @throws IOException
+     *         if model loading or file operations fail.
      */
     public static void main(String[] args) throws IOException {
         Options options = Options.parseOptions(args);
@@ -151,10 +157,11 @@ public class LlamaApp {
         if (options.interactive()) {
             model.runInteractive(sampler, options);
         } else {
-//            model.runInstructOnce(sampler, options);
-            System.out.println(model.runInstructOnce(sampler, options, true /* print metrics */));
-
-
+            String response = model.runInstructOnce(sampler, options);
+            System.out.println(response);
+            if (SHOW_PERF_INTERACTIVE) {
+                LastRunMetrics.printMetrics();
+            }
         }
     }
 }
