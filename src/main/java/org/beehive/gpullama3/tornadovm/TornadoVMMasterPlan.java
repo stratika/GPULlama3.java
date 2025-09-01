@@ -18,7 +18,7 @@ import java.util.List;
 import java.util.Locale;
 
 public class TornadoVMMasterPlan {
-    private static final boolean ENABLE_TORNADOVM_INIT_TIME = Boolean.parseBoolean(System.getProperty("llama.EnableTimingForTornadoVMInit", "False"));
+    public static final boolean ENABLE_TORNADOVM_INIT_TIME = Boolean.parseBoolean(System.getProperty("llama.EnableTimingForTornadoVMInit", "False"));
 
     private final State state;
     private final Configuration config;

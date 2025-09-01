@@ -18,6 +18,7 @@ import org.beehive.gpullama3.model.phi3.Phi3Configuration;
 import org.beehive.gpullama3.tokenizer.impl.Phi3Tokenizer;
 import org.beehive.gpullama3.tokenizer.impl.Tokenizer;
 import org.beehive.gpullama3.tokenizer.vocabulary.Vocabulary;
+import org.beehive.gpullama3.tornadovm.TornadoVMMasterPlan;
 import uk.ac.manchester.tornado.api.types.arrays.FloatArray;
 
 import java.io.IOException;
@@ -38,6 +39,7 @@ public class Phi3ModelLoader extends ModelLoader {
 
             Vocabulary vocabulary = Vocabulary.loadPhi3Vocabulary(metadata);
             Tokenizer tokenizer = new Phi3Tokenizer(metadata, vocabulary);
+
             System.out.println("Tokenizer: " + tokenizer.getClass().getSimpleName());
 
             int modelContextLength = (int) metadata.get(modelPrefix + "context_length");
@@ -96,7 +98,9 @@ public class Phi3ModelLoader extends ModelLoader {
         GGMLTensorEntry outputWeight = tensorEntries.get("output.weight"); // Phi3 always has separate output weight
 
         if (LlamaApp.USE_TORNADOVM) {
-            System.out.println("Loading model weights in TornadoVM format (loading " + outputWeight.ggmlType() + " -> " + GGMLType.F16 + ")");
+            if (TornadoVMMasterPlan.ENABLE_TORNADOVM_INIT_TIME) {
+                System.out.println("Loading model weights in TornadoVM format (loading " + outputWeight.ggmlType() + " -> " + GGMLType.F16 + ")");
+            }
             return createTornadoVMWeights(tensorEntries, config, ropeFreqs, tokenEmbeddings, outputWeight);
         } else {
             return createStandardWeights(tensorEntries, config, ropeFreqs, tokenEmbeddings, outputWeight);
