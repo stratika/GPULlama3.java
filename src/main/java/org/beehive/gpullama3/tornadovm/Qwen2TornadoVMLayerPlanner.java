@@ -19,12 +19,12 @@ import java.util.List;
 public class Qwen2TornadoVMLayerPlanner extends TornadoVMLayerPlanner<Qwen2State, Qwen2Configuration, Qwen2TornadoWeights> {
 
     /**
-     * Constructs a TornadoVMLayerPlanner for the given Llama model.
+     * Constructs a TornadoVMLayerPlanner for the given Qwen2 model.
      *
      * @param state
      *         The state object containing model tensors and buffers
      * @param model
-     *         The Llama model instance containing configuration and weights
+     *         The Qwen2 model instance containing configuration and weights
      */
     public Qwen2TornadoVMLayerPlanner(Qwen2State state, Model model) {
         super(state, model);
