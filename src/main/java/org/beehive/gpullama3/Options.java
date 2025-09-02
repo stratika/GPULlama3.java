@@ -10,7 +10,7 @@ public record Options(Path modelPath, String prompt, String systemPrompt, String
     public static final int DEFAULT_MAX_TOKENS = 1024;
 
     public Options {
-//        require(modelPath != null, "Missing argument: --model <path> is required");
+
         require(interactive || prompt != null, "Missing argument: --prompt is required in --instruct mode e.g. --prompt \"Why is the sky blue?\"");
         require(0 <= temperature, "Invalid argument: --temperature must be non-negative");
         require(0 <= topp && topp <= 1, "Invalid argument: --top-p must be within [0, 1]");
@@ -107,8 +107,6 @@ public record Options(Path modelPath, String prompt, String systemPrompt, String
                         case "--seed", "-s" -> seed = Long.parseLong(nextArg);
                         case "--max-tokens", "-n" -> maxTokens = Integer.parseInt(nextArg);
                         case "--stream" -> stream = Boolean.parseBoolean(nextArg);
-//                        case "--stream" -> stream  = false;
-
                         case "--echo" -> echo = Boolean.parseBoolean(nextArg);
                         default -> require(false, "Unknown option: %s", optionName);
                     }
@@ -116,7 +114,6 @@ public record Options(Path modelPath, String prompt, String systemPrompt, String
             }
         }
 
-        System.out.println("Printt stream -> " + stream);
         require(modelPath != null, "Missing argument: --model <path> is required");
 
 
