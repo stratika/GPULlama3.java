@@ -45,7 +45,9 @@ public final class GGUF {
         }
 
         // second check to make sure that nothing goes wrong during model loading
-        try (FileChannel fileChannel = FileChannel.open(modelPath); var ignored = Timer.log("Parse " + modelPath)) {
+        try (FileChannel fileChannel = FileChannel.open(modelPath);
+//                var ignored = Timer.log("Parse " + modelPath)
+        ) {
             GGUF gguf = new GGUF();
             gguf.loadModelImpl(fileChannel);
             return gguf;

@@ -24,7 +24,7 @@ public class LlamaModelLoader extends ModelLoader {
     // @formatter:off
     @Override
     public Llama loadModel() {
-        try (var ignored = Timer.log("Load LlaMa model")) {
+        try  {
             Map<String, Object> metadata = gguf.getMetadata();
 
             Vocabulary vocabulary = Vocabulary.loadLlamaVocabulary(metadata);
