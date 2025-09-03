@@ -5,12 +5,11 @@ import java.nio.file.Path;
 import java.nio.file.Paths;
 
 public record Options(Path modelPath, String prompt, String systemPrompt, String suffix, boolean interactive,
-                      float temperature, float topp, long seed, int maxTokens, boolean stream, boolean echo) {
+                      float temperature, float topp, long seed, int maxTokens, boolean stream, boolean echo, boolean useTornadovm) {
 
     public static final int DEFAULT_MAX_TOKENS = 1024;
 
     public Options {
-
         require(interactive || prompt != null, "Missing argument: --prompt is required in --instruct mode e.g. --prompt \"Why is the sky blue?\"");
         require(0 <= temperature, "Invalid argument: --temperature must be non-negative");
         require(0 <= topp && topp <= 1, "Invalid argument: --top-p must be within [0, 1]");
@@ -24,6 +23,11 @@ public record Options(Path modelPath, String prompt, String systemPrompt, String
             System.exit(-1);
         }
     }
+
+    private static boolean getDefaultTornadoVM() {
+        return Boolean.parseBoolean(System.getProperty("use.tornadovm", "false"));
+    }
+
 
     static void printUsage(PrintStream out) {
         out.println("Usage:  jbang Llama3.java [options]");
@@ -58,8 +62,9 @@ public record Options(Path modelPath, String prompt, String systemPrompt, String
         boolean interactive = false;
         boolean stream = true;
         boolean echo = false;
+        boolean useTornadoVM = getDefaultTornadoVM();
 
-        return new Options(modelPath, prompt, systemPrompt, suffix, interactive, temperature, topp, seed, maxTokens, stream, echo);
+        return new Options(modelPath, prompt, systemPrompt, suffix, interactive, temperature, topp, seed, maxTokens, stream, echo, useTornadoVM);
     }
 
     public static Options parseOptions(String[] args) {
@@ -75,6 +80,7 @@ public record Options(Path modelPath, String prompt, String systemPrompt, String
         boolean interactive = false;
         boolean stream = false;
         boolean echo = false;
+        Boolean useTornadovm = null; // null means not specified via command line
 
         for (int i = 0; i < args.length; i++) {
             String optionName = args[i];
@@ -116,7 +122,10 @@ public record Options(Path modelPath, String prompt, String systemPrompt, String
 
         require(modelPath != null, "Missing argument: --model <path> is required");
 
+        if (useTornadovm == null) {
+            useTornadovm = getDefaultTornadoVM();
+        }
 
-        return new Options(modelPath, prompt, systemPrompt, suffix, interactive, temperature, topp, seed, maxTokens, stream, echo);
+        return new Options(modelPath, prompt, systemPrompt, suffix, interactive, temperature, topp, seed, maxTokens, stream, echo, useTornadovm);
     }
 }

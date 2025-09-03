@@ -1,6 +1,6 @@
 package org.beehive.gpullama3.model.loader;
 
-import org.beehive.gpullama3.LlamaApp;
+import org.beehive.gpullama3.Options;
 import org.beehive.gpullama3.core.model.GGMLType;
 import org.beehive.gpullama3.core.model.GGUF;
 import org.beehive.gpullama3.core.model.tensor.ArrayFloatTensor;
@@ -18,7 +18,6 @@ import org.beehive.gpullama3.inference.weights.tornado.LlamaTornadoWeights;
 import org.beehive.gpullama3.model.Configuration;
 import org.beehive.gpullama3.model.Model;
 import org.beehive.gpullama3.model.ModelType;
-import org.beehive.gpullama3.model.llama.Llama;
 import org.beehive.gpullama3.tornadovm.TornadoVMMasterPlan;
 import uk.ac.manchester.tornado.api.types.HalfFloat;
 import uk.ac.manchester.tornado.api.types.arrays.ByteArray;
@@ -34,11 +33,7 @@ import java.nio.file.StandardOpenOption;
 import java.util.Map;
 import java.util.function.IntFunction;
 
-import static org.beehive.gpullama3.tornadovm.TornadoVMMasterPlan.ENABLE_TORNADOVM_INIT_TIME;
-
 public abstract class ModelLoader {
-    private static final String TOKENIZER_LLAMA_3_MODEL = "gpt2";
-    private static final String TOKENIZER_MISTRAL_MODEL = "llama";
 
     protected FileChannel fileChannel;
     protected GGUF gguf;
@@ -223,7 +218,7 @@ public abstract class ModelLoader {
         GGMLTensorEntry tokenEmbeddings = tensorEntries.get("token_embd.weight");
         GGMLTensorEntry outputWeight = tensorEntries.getOrDefault("output.weight", tokenEmbeddings);
 
-        if (LlamaApp.USE_TORNADOVM) {
+        if (Options.getDefaultOptions().useTornadovm()) {
             if (TornadoVMMasterPlan.ENABLE_TORNADOVM_INIT_TIME) {
                 System.out.println("Loading model weights in TornadoVM format (loading " + outputWeight.ggmlType() + " -> " + GGMLType.F16 + ")");
             }

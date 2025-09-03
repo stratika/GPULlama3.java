@@ -17,7 +17,6 @@ import java.util.function.Consumer;
 import java.util.function.IntConsumer;
 
 import static org.beehive.gpullama3.LlamaApp.SHOW_PERF_INTERACTIVE;
-import static org.beehive.gpullama3.LlamaApp.USE_TORNADOVM;
 
 public interface Model {
 
@@ -81,7 +80,7 @@ public interface Model {
         Scanner in = new Scanner(System.in);
 
         // Initialize TornadoVM plan once at the beginning if GPU path is enabled
-        if (USE_TORNADOVM && tornadoVMPlan == null) {
+        if (Options.getDefaultOptions().useTornadovm() && tornadoVMPlan == null) {
             tornadoVMPlan = TornadoVMMasterPlan.initializeTornadoVMPlan(state, this);
         }
 
@@ -108,7 +107,7 @@ public interface Model {
                 };
 
                 // Choose between GPU and CPU path based on configuration
-                if (USE_TORNADOVM) {
+                if (Options.getDefaultOptions().useTornadovm()) {
                     // GPU path using TornadoVM
                     responseTokens = generateTokensGPU(state, startPosition, conversationTokens.subList(startPosition, conversationTokens.size()), stopTokens, options.maxTokens(), sampler,
                             options.echo(), options.stream() ? tokenConsumer : null, tornadoVMPlan);
@@ -143,7 +142,7 @@ public interface Model {
             }
         } finally {
             // Clean up TornadoVM resources when exiting the chat loop
-            if (USE_TORNADOVM && tornadoVMPlan != null) {
+            if (Options.getDefaultOptions().useTornadovm() && tornadoVMPlan != null) {
                 try {
                     tornadoVMPlan.freeTornadoExecutionPlan();
                 } catch (Exception e) {
@@ -176,7 +175,7 @@ public interface Model {
         }
 
         // Initialize TornadoVM plan once at the beginning if GPU path is enabled
-        if (USE_TORNADOVM && tornadoVMPlan == null) {
+        if (Options.getDefaultOptions().useTornadovm() && tornadoVMPlan == null) {
             tornadoVMPlan = TornadoVMMasterPlan.initializeTornadoVMPlan(state, this);
         }
 
@@ -195,9 +194,8 @@ public interface Model {
 
         Set<Integer> stopTokens = chatFormat.getStopTokens();
 
-        if (USE_TORNADOVM) {
-            // GPU path using TornadoVM
-            // Call generateTokensGPU without the token consumer parameter
+        if (Options.getDefaultOptions().useTornadovm()) {
+            // GPU path using TornadoVM - Call generateTokensGPU without the token consumer parameter
             responseTokens = generateTokensGPU(state, 0, promptTokens, stopTokens, options.maxTokens(), sampler, options.echo(), options.stream() ? tokenConsumer : null, tornadoVMPlan);
         } else {
             // CPU path
@@ -208,7 +206,7 @@ public interface Model {
             responseTokens.removeLast();
         }
 
-        String responseText = null;
+        String responseText = "";
         if (!options.stream()) {
             responseText = tokenizer().decode(responseTokens);
         }
@@ -242,7 +240,7 @@ public interface Model {
         }
 
         // Initialize TornadoVM plan once at the beginning if GPU path is enabled
-        if (USE_TORNADOVM && tornadoVMPlan == null) {
+        if (Options.getDefaultOptions().useTornadovm() && tornadoVMPlan == null) {
             tornadoVMPlan = TornadoVMMasterPlan.initializeTornadoVMPlan(state, this);
         }
 
@@ -262,9 +260,8 @@ public interface Model {
 
         Set<Integer> stopTokens = chatFormat.getStopTokens();
 
-        if (USE_TORNADOVM) {
-            // GPU path using TornadoVM
-            // Call generateTokensGPU without the token consumer parameter
+        if (Options.getDefaultOptions().useTornadovm()) {
+            // GPU path using TornadoVM Call generateTokensGPU without the token consumer parameter
             responseTokens = generateTokensGPU(state, 0, promptTokens, stopTokens, options.maxTokens(), sampler, options.echo(), options.stream() ? tokenConsumer : null, tornadoVMPlan);
         } else {
             // CPU path

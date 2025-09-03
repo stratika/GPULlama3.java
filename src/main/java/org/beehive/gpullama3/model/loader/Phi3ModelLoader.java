@@ -1,6 +1,7 @@
 package org.beehive.gpullama3.model.loader;
 
 import org.beehive.gpullama3.LlamaApp;
+import org.beehive.gpullama3.Options;
 import org.beehive.gpullama3.auxiliary.Timer;
 import org.beehive.gpullama3.core.model.GGMLType;
 import org.beehive.gpullama3.core.model.GGUF;
@@ -97,7 +98,7 @@ public class Phi3ModelLoader extends ModelLoader {
         GGMLTensorEntry tokenEmbeddings = tensorEntries.get("token_embd.weight");
         GGMLTensorEntry outputWeight = tensorEntries.get("output.weight"); // Phi3 always has separate output weight
 
-        if (LlamaApp.USE_TORNADOVM) {
+        if (Options.getDefaultOptions().useTornadovm()) {
             if (TornadoVMMasterPlan.ENABLE_TORNADOVM_INIT_TIME) {
                 System.out.println("Loading model weights in TornadoVM format (loading " + outputWeight.ggmlType() + " -> " + GGMLType.F16 + ")");
             }
@@ -155,6 +156,5 @@ public class Phi3ModelLoader extends ModelLoader {
                 outputWeight.ggmlType()                                                                                      // weightType
         );
     }
-
     // @formatter:on
 }
