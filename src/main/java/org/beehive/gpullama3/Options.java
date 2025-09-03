@@ -4,8 +4,8 @@ import java.io.PrintStream;
 import java.nio.file.Path;
 import java.nio.file.Paths;
 
-public record Options(Path modelPath, String prompt, String systemPrompt, String suffix, boolean interactive,
-                      float temperature, float topp, long seed, int maxTokens, boolean stream, boolean echo, boolean useTornadovm) {
+public record Options(Path modelPath, String prompt, String systemPrompt, String suffix, boolean interactive, float temperature, float topp, long seed, int maxTokens, boolean stream, boolean echo,
+                      boolean useTornadovm) {
 
     public static final int DEFAULT_MAX_TOKENS = 1024;
 
@@ -25,9 +25,8 @@ public record Options(Path modelPath, String prompt, String systemPrompt, String
     }
 
     private static boolean getDefaultTornadoVM() {
-        return Boolean.parseBoolean(System.getProperty("use.tornadovm", "false"));
+        return Boolean.parseBoolean(System.getProperty("use.tornadovm", "true"));
     }
-
 
     static void printUsage(PrintStream out) {
         out.println("Usage:  jbang Llama3.java [options]");
@@ -48,7 +47,6 @@ public record Options(Path modelPath, String prompt, String systemPrompt, String
         out.println();
     }
 
-
     public static Options getDefaultOptions() {
         String prompt = "Tell me a story with Java"; // Hardcoded for testing
         String systemPrompt = null;
@@ -57,7 +55,6 @@ public record Options(Path modelPath, String prompt, String systemPrompt, String
         float topp = 0.95f;
         Path modelPath = null;
         long seed = System.nanoTime();
-        // Keep max context length small for low-memory devices.
         int maxTokens = DEFAULT_MAX_TOKENS;
         boolean interactive = false;
         boolean stream = true;
@@ -75,7 +72,6 @@ public record Options(Path modelPath, String prompt, String systemPrompt, String
         float topp = 0.95f;
         Path modelPath = null;
         long seed = System.nanoTime();
-        // Keep max context length small for low-memory devices.
         int maxTokens = DEFAULT_MAX_TOKENS;
         boolean interactive = false;
         boolean stream = false;
@@ -114,6 +110,7 @@ public record Options(Path modelPath, String prompt, String systemPrompt, String
                         case "--max-tokens", "-n" -> maxTokens = Integer.parseInt(nextArg);
                         case "--stream" -> stream = Boolean.parseBoolean(nextArg);
                         case "--echo" -> echo = Boolean.parseBoolean(nextArg);
+                        case "--use-tornadovm" -> useTornadovm = Boolean.parseBoolean(nextArg);
                         default -> require(false, "Unknown option: %s", optionName);
                     }
                 }
