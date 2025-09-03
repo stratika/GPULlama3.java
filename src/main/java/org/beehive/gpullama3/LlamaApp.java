@@ -137,6 +137,14 @@ public class LlamaApp {
         return selectSampler(model.configuration().vocabularySize(), options.temperature(), options.topp(), options.seed());
     }
 
+    private static void runSingleInstruction(Model model, Sampler sampler, Options options) {
+        String response = model.runInstructOnce(sampler, options);
+        System.out.println(response);
+        if (SHOW_PERF_INTERACTIVE) {
+            LastRunMetrics.printMetrics();
+        }
+    }
+
     /**
      * Entry point for running the LLaMA-based model with provided command-line arguments.
      *
@@ -148,7 +156,7 @@ public class LlamaApp {
      * @throws IOException
      *         if model loading or file operations fail.
      */
-    public static void main(String[] args) throws IOException {
+    static void main(String[] args) throws IOException {
         Options options = Options.parseOptions(args);
         Model model = loadModel(options);
         Sampler sampler = createSampler(model, options);
@@ -156,11 +164,7 @@ public class LlamaApp {
         if (options.interactive()) {
             model.runInteractive(sampler, options);
         } else {
-            String response = model.runInstructOnce(sampler, options);
-            System.out.println(response);
-            if (SHOW_PERF_INTERACTIVE) {
-                LastRunMetrics.printMetrics();
-            }
+            runSingleInstruction(model, sampler, options);
         }
     }
 }
