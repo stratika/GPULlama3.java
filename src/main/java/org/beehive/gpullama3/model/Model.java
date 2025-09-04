@@ -159,7 +159,6 @@ public interface Model {
      * @param options
      */
     default String runInstructOnce(Sampler sampler, Options options) {
-        //        default void runInstructOnce(Sampler sampler, Options options) {
         State state = createNewState();
         ChatFormat chatFormat = chatFormat();
         TornadoVMMasterPlan tornadoVMPlan = null;
