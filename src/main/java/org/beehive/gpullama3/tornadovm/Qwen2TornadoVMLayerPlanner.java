@@ -83,7 +83,7 @@ public class Qwen2TornadoVMLayerPlanner extends TornadoVMLayerPlanner<Qwen2State
                             config.headSize())
                     .task("copyToCaches", TransformerComputeKernelsLayered::copyToCache,
                             state.wrapKeyCache, state.wrapK,  state.wrapValueCache, state.wrapV, state.positionHolder, config.kvDim(), layerIndex, config.contextLength())
-                    .task("parallel-attention", TransformerComputeKernelsLayered::processHeadsFlashAttention, context,
+                    .task("parallel-attention", Qwen2Kernels::processHeadsFlashAttention, context,
                             state.wrapQ, state.wrapKeyCache, state.wrapValueCache, state.wrapXb,
                             config.numberOfHeads(), config.headSize(), config.kvDim(), config.kvMul(),
                             state.positionHolder, layerIndex, config.contextLength())
@@ -190,12 +190,21 @@ public class Qwen2TornadoVMLayerPlanner extends TornadoVMLayerPlanner<Qwen2State
         rmsNormWorker.setLocalWork(32, 1, 1);         // Set local work size to 256 (standard efficient size)
 
         // Parallel attention worker configuration
-        // OpenCL equivalent: clEnqueueNDRangeKernel(globalWorkSize=[config.numberOfHeads,1,1], localWorkSize=[4,1,1])
-        // CUDA equivalent: kernel<<<dim3((config.numberOfHeads+3)/4,1,1), dim3(4,1,1)>>>
+        // Calculate optimal local work size based on head dimension
+        int optimalLocalSize = Math.min(config.headSize(), 64); // Start with 64 threads per head
+        if (config.headSize() % optimalLocalSize != 0) {
+            // Find largest divisor of headSize <= 64
+            for (int size = 64; size >= 1; size--) {
+                if (config.headSize() % size == 0) {
+                    optimalLocalSize = size;
+                    break;
+                }
+            }
+        }
+
         WorkerGrid parallelAttentionWorker = new WorkerGrid1D(config.numberOfHeads());
-        // the global group work size is numberOfHeads * localWorkGroupSize, where the localWorkGroupSize is currently 4
-        parallelAttentionWorker.setGlobalWork(config.numberOfHeads(), 1, 1);
-        parallelAttentionWorker.setLocalWork(1, 1, 1); // Set local work size to 4 (for parallel attention)
+        parallelAttentionWorker.setGlobalWork(config.numberOfHeads() * optimalLocalSize, 1, 1);
+        parallelAttentionWorker.setLocalWork(optimalLocalSize, 1, 1);
 
         // Copy to caches worker configuration
         // OpenCL equivalent: clEnqueueNDRangeKernel(globalWorkSize=[config.dim,1,1], localWorkSize=[128,1,1])
