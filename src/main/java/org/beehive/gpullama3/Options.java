@@ -4,13 +4,12 @@ import java.io.PrintStream;
 import java.nio.file.Path;
 import java.nio.file.Paths;
 
-public record Options(Path modelPath, String prompt, String systemPrompt, String suffix, boolean interactive,
-                      float temperature, float topp, long seed, int maxTokens, boolean stream, boolean echo) {
+public record Options(Path modelPath, String prompt, String systemPrompt, String suffix, boolean interactive, float temperature, float topp, long seed, int maxTokens, boolean stream, boolean echo,
+                      boolean useTornadovm) {
 
     public static final int DEFAULT_MAX_TOKENS = 1024;
 
     public Options {
-        require(modelPath != null, "Missing argument: --model <path> is required");
         require(interactive || prompt != null, "Missing argument: --prompt is required in --instruct mode e.g. --prompt \"Why is the sky blue?\"");
         require(0 <= temperature, "Invalid argument: --temperature must be non-negative");
         require(0 <= topp && topp <= 1, "Invalid argument: --top-p must be within [0, 1]");
@@ -23,6 +22,10 @@ public record Options(Path modelPath, String prompt, String systemPrompt, String
             printUsage(System.out);
             System.exit(-1);
         }
+    }
+
+    private static boolean getDefaultTornadoVM() {
+        return Boolean.parseBoolean(System.getProperty("use.tornadovm", "false"));
     }
 
     static void printUsage(PrintStream out) {
@@ -44,6 +47,23 @@ public record Options(Path modelPath, String prompt, String systemPrompt, String
         out.println();
     }
 
+    public static Options getDefaultOptions() {
+        String prompt = "Tell me a story with Java"; // Hardcoded for testing
+        String systemPrompt = null;
+        String suffix = null;
+        float temperature = 0.1f;
+        float topp = 0.95f;
+        Path modelPath = null;
+        long seed = System.nanoTime();
+        int maxTokens = DEFAULT_MAX_TOKENS;
+        boolean interactive = false;
+        boolean stream = true;
+        boolean echo = false;
+        boolean useTornadoVM = getDefaultTornadoVM();
+
+        return new Options(modelPath, prompt, systemPrompt, suffix, interactive, temperature, topp, seed, maxTokens, stream, echo, useTornadoVM);
+    }
+
     public static Options parseOptions(String[] args) {
         String prompt = "Tell me a story with Java"; // Hardcoded for testing
         String systemPrompt = null;
@@ -52,11 +72,11 @@ public record Options(Path modelPath, String prompt, String systemPrompt, String
         float topp = 0.95f;
         Path modelPath = null;
         long seed = System.nanoTime();
-        // Keep max context length small for low-memory devices.
         int maxTokens = DEFAULT_MAX_TOKENS;
         boolean interactive = false;
-        boolean stream = true;
+        boolean stream = false;
         boolean echo = false;
+        Boolean useTornadovm = null; // null means not specified via command line
 
         for (int i = 0; i < args.length; i++) {
             String optionName = args[i];
@@ -90,11 +110,19 @@ public record Options(Path modelPath, String prompt, String systemPrompt, String
                         case "--max-tokens", "-n" -> maxTokens = Integer.parseInt(nextArg);
                         case "--stream" -> stream = Boolean.parseBoolean(nextArg);
                         case "--echo" -> echo = Boolean.parseBoolean(nextArg);
+                        case "--use-tornadovm" -> useTornadovm = Boolean.parseBoolean(nextArg);
                         default -> require(false, "Unknown option: %s", optionName);
                     }
                 }
             }
         }
-        return new Options(modelPath, prompt, systemPrompt, suffix, interactive, temperature, topp, seed, maxTokens, stream, echo);
+
+        require(modelPath != null, "Missing argument: --model <path> is required");
+
+        if (useTornadovm == null) {
+            useTornadovm = getDefaultTornadoVM();
+        }
+
+        return new Options(modelPath, prompt, systemPrompt, suffix, interactive, temperature, topp, seed, maxTokens, stream, echo, useTornadovm);
     }
 }

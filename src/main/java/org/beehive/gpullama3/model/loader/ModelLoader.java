@@ -1,6 +1,6 @@
 package org.beehive.gpullama3.model.loader;
 
-import org.beehive.gpullama3.LlamaApp;
+import org.beehive.gpullama3.Options;
 import org.beehive.gpullama3.core.model.GGMLType;
 import org.beehive.gpullama3.core.model.GGUF;
 import org.beehive.gpullama3.core.model.tensor.ArrayFloatTensor;
@@ -18,6 +18,7 @@ import org.beehive.gpullama3.inference.weights.tornado.LlamaTornadoWeights;
 import org.beehive.gpullama3.model.Configuration;
 import org.beehive.gpullama3.model.Model;
 import org.beehive.gpullama3.model.ModelType;
+import org.beehive.gpullama3.tornadovm.TornadoVMMasterPlan;
 import uk.ac.manchester.tornado.api.types.HalfFloat;
 import uk.ac.manchester.tornado.api.types.arrays.ByteArray;
 import uk.ac.manchester.tornado.api.types.arrays.FloatArray;
@@ -33,8 +34,6 @@ import java.util.Map;
 import java.util.function.IntFunction;
 
 public abstract class ModelLoader {
-    private static final String TOKENIZER_LLAMA_3_MODEL = "gpt2";
-    private static final String TOKENIZER_MISTRAL_MODEL = "llama";
 
     protected FileChannel fileChannel;
     protected GGUF gguf;
@@ -223,8 +222,10 @@ public abstract class ModelLoader {
         GGMLTensorEntry tokenEmbeddings = tensorEntries.get("token_embd.weight");
         GGMLTensorEntry outputWeight = tensorEntries.getOrDefault("output.weight", tokenEmbeddings);
 
-        if (LlamaApp.USE_TORNADOVM) {
-            System.out.println("Loading model weights in TornadoVM format (loading " + outputWeight.ggmlType() + " -> " + GGMLType.F16 + ")");
+        if (Options.getDefaultOptions().useTornadovm()) {
+            if (TornadoVMMasterPlan.ENABLE_TORNADOVM_INIT_TIME) {
+                System.out.println("Loading model weights in TornadoVM format (loading " + outputWeight.ggmlType() + " -> " + GGMLType.F16 + ")");
+            }
             return createTornadoVMWeights(tensorEntries, config, ropeFreqs, tokenEmbeddings, outputWeight);
         } else {
             return createStandardWeights(tensorEntries, config, ropeFreqs, tokenEmbeddings, outputWeight);
