@@ -13,6 +13,7 @@ import java.util.ArrayList;
 import java.util.List;
 import java.util.Scanner;
 import java.util.Set;
+import java.util.function.Consumer;
 import java.util.function.IntConsumer;
 
 import static org.beehive.gpullama3.LlamaApp.SHOW_PERF_INTERACTIVE;
@@ -246,6 +247,80 @@ public interface Model {
         if (!options.stream()) {
              responseText = tokenizer().decode(responseTokens);
             // Add the forced <think>\n prefix for non-streaming output
+            if (shouldIncludeReasoning()) {
+                responseText = "<think>\n" + responseText;
+            }
+        }
+
+        if (tornadoVMPlan != null) {
+            tornadoVMPlan.freeTornadoExecutionPlan();
+        }
+
+        return responseText;
+    }
+
+    default String runInstructOnceLangChain4J(Sampler sampler, Options options, Consumer<String> tokenCallback) {
+        State state = createNewState();
+        ChatFormat chatFormat = chatFormat();
+        TornadoVMMasterPlan tornadoVMPlan = null;
+
+        List<Integer> promptTokens = new ArrayList<>();
+
+        if (shouldAddBeginOfText()) {
+            promptTokens.add(chatFormat.getBeginOfText());
+        }
+
+        if (shouldAddSystemPrompt() && options.systemPrompt() != null) {
+            promptTokens.addAll(chatFormat.encodeMessage(new ChatFormat.Message(ChatFormat.Role.SYSTEM, options.systemPrompt())));
+        }
+
+        // Initialize TornadoVM plan once at the beginning if GPU path is enabled
+        if (Options.getDefaultOptions().useTornadovm() && tornadoVMPlan == null) {
+            tornadoVMPlan = TornadoVMMasterPlan.initializeTornadoVMPlan(state, this);
+        }
+
+        promptTokens.addAll(chatFormat.encodeMessage(new ChatFormat.Message(ChatFormat.Role.USER, options.prompt())));
+        promptTokens.addAll(chatFormat.encodeHeader(new ChatFormat.Message(ChatFormat.Role.ASSISTANT, "")));
+
+        if (shouldIncludeReasoning()) {
+            List<Integer> thinkStartTokens = tokenizer().encode("<think>\n", tokenizer().getSpecialTokens().keySet());
+            promptTokens.addAll(thinkStartTokens);
+
+            // If streaming, immediately output the think start
+            if (options.stream()) {
+                System.out.print("<think>\n");
+            }
+        }
+
+        List<Integer> responseTokens;
+
+        IntConsumer tokenConsumer = token -> {
+            if (tokenizer().shouldDisplayToken(token)) {
+                String piece = tokenizer().decode(List.of(token));
+                if (options.stream() && tokenCallback != null) {
+                    tokenCallback.accept(piece);  // ✅ send to LangChain4j handler
+                }
+            }
+        };
+
+        Set<Integer> stopTokens = chatFormat.getStopTokens();
+
+        if (Options.getDefaultOptions().useTornadovm()) {
+            // GPU path using TornadoVM Call generateTokensGPU without the token consumer parameter
+            responseTokens = generateTokensGPU(state, 0, promptTokens, stopTokens, options.maxTokens(), sampler, options.echo(), options.stream() ? tokenConsumer : null, tornadoVMPlan);
+        } else {
+            // CPU path
+            responseTokens = generateTokens(state, 0, promptTokens, stopTokens, options.maxTokens(), sampler, options.echo(), tokenConsumer);
+        }
+
+        if (!responseTokens.isEmpty() && stopTokens.contains(responseTokens.getLast())) {
+            responseTokens.removeLast();
+        }
+
+        String responseText = tokenizer().decode(responseTokens);
+
+        if (!options.stream()) {
+            responseText = tokenizer().decode(responseTokens);
             if (shouldIncludeReasoning()) {
                 responseText = "<think>\n" + responseText;
             }
