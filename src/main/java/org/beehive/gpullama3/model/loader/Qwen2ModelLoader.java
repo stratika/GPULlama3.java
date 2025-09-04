@@ -1,8 +1,6 @@
 package org.beehive.gpullama3.model.loader;
 
-import org.beehive.gpullama3.LlamaApp;
 import org.beehive.gpullama3.Options;
-import org.beehive.gpullama3.auxiliary.Timer;
 import org.beehive.gpullama3.core.model.GGMLType;
 import org.beehive.gpullama3.core.model.GGUF;
 import org.beehive.gpullama3.core.model.tensor.ArrayFloatTensor;
@@ -21,6 +19,7 @@ import org.beehive.gpullama3.model.qwen2.Qwen2Configuration;
 import org.beehive.gpullama3.tokenizer.impl.Qwen3Tokenizer;
 import org.beehive.gpullama3.tokenizer.impl.Tokenizer;
 import org.beehive.gpullama3.tokenizer.vocabulary.Vocabulary;
+import org.beehive.gpullama3.tornadovm.TornadoVMMasterPlan;
 import uk.ac.manchester.tornado.api.types.arrays.FloatArray;
 
 import java.io.IOException;
@@ -40,11 +39,9 @@ public class Qwen2ModelLoader extends ModelLoader {
         Map<String, Object> metadata = gguf.getMetadata();
         String basename = (String) metadata.get("general.basename");
 
-        String modelName = "DeepSeek-R1-Distill-Qwen".equals(basename)
-                ? "DeepSeek-R1-Distill-Qwen"
-                : "Qwen2.5";
+        String modelName = "DeepSeek-R1-Distill-Qwen".equals(basename) ? "DeepSeek-R1-Distill-Qwen" : "Qwen2.5";
 
-        try (var ignored = Timer.log("Load " + modelName + " model")) {
+        try {
             // reuse method of Qwen3
             Vocabulary vocabulary = loadQwen3Vocabulary(metadata);
             boolean isDeepSeekR1DistillQwen = "DeepSeek-R1-Distill-Qwen".equals(metadata.get("general.basename"));
@@ -55,11 +52,8 @@ public class Qwen2ModelLoader extends ModelLoader {
                 contextLength = modelContextLength;
             }
 
-            int numberOfKeyValueHeads = metadata.containsKey("qwen2.attention.head_count_kv")
-                    ? (int) metadata.get("qwen2.attention.head_count_kv")
-                    : (int) metadata.get("qwen2.attention.head_count");
-            Qwen2Configuration config = new Qwen2Configuration(
-                    (int) metadata.get("qwen2.embedding_length"),       // dim
+            int numberOfKeyValueHeads = metadata.containsKey("qwen2.attention.head_count_kv") ? (int) metadata.get("qwen2.attention.head_count_kv") : (int) metadata.get("qwen2.attention.head_count");
+            Qwen2Configuration config = new Qwen2Configuration((int) metadata.get("qwen2.embedding_length"),       // dim
                     (int) metadata.get("qwen2.feed_forward_length"),    // hiddendim
                     (int) metadata.get("qwen2.block_count"),            // numberOfLayers
                     (int) metadata.get("qwen2.attention.head_count"),   // numberOfHeads
@@ -68,12 +62,7 @@ public class Qwen2ModelLoader extends ModelLoader {
                     numberOfKeyValueHeads, // numberOfHeadsKey
                     numberOfKeyValueHeads, // numberOfHeadsValue
 
-                    vocabulary.size(),
-                    modelContextLength, contextLength,
-                    false,
-                    (float) metadata.get("qwen2.attention.layer_norm_rms_epsilon"),
-                    (float) metadata.get("qwen2.rope.freq_base")
-            );
+                    vocabulary.size(), modelContextLength, contextLength, false, (float) metadata.get("qwen2.attention.layer_norm_rms_epsilon"), (float) metadata.get("qwen2.rope.freq_base"));
 
             Weights weights = null;
             if (loadWeights) {
@@ -81,9 +70,9 @@ public class Qwen2ModelLoader extends ModelLoader {
                 weights = loadWeights(tensorEntries, config);
             }
             // Qwen2.5-Coder uses <|endoftext|> as stop-token.
-            ChatTokens chatTokens = isDeepSeekR1DistillQwen ?
-                    new ChatTokens( "<｜begin▁of▁sentence｜>", "", "", "<｜end▁of▁sentence｜>", "") :
-                    new ChatTokens( "<|im_start|>", "<|im_end|>", "", "<|end_of_text|>", "<|endoftext|>");
+            ChatTokens chatTokens = isDeepSeekR1DistillQwen
+                    ? new ChatTokens("<｜begin▁of▁sentence｜>", "", "", "<｜end▁of▁sentence｜>", "")
+                    : new ChatTokens("<|im_start|>", "<|im_end|>", "", "<|end_of_text|>", "<|endoftext|>");
             return new Qwen2(config, tokenizer, weights, ChatFormat.create(tokenizer, chatTokens));
         } catch (IOException e) {
             throw new RuntimeException(e);
@@ -108,7 +97,9 @@ public class Qwen2ModelLoader extends ModelLoader {
         GGMLTensorEntry outputWeight = tensorEntries.getOrDefault("output.weight", tokenEmbeddings);
 
         if (Options.getDefaultOptions().useTornadovm()) {
-            System.out.println("Loading model weights in TornadoVM format (loading " + outputWeight.ggmlType() + " -> " + GGMLType.F16 + ")");
+            if (TornadoVMMasterPlan.ENABLE_TORNADOVM_INIT_TIME) {
+                System.out.println("Loading model weights in TornadoVM format (loading " + outputWeight.ggmlType() + " -> " + GGMLType.F16 + ")");
+            }
             return createTornadoVMWeights(tensorEntries, config, ropeFreqs, tokenEmbeddings, outputWeight);
         } else {
             return createStandardWeights(tensorEntries, config, ropeFreqs, tokenEmbeddings, outputWeight);
