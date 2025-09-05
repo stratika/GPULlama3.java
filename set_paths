@@ -12,7 +12,7 @@ export TORNADO_ROOT="${LLAMA_ROOT}/external/tornadovm"
 export TORNADO_SDK="${TORNADO_ROOT}/bin/sdk"
 
 # Add TornadoVM and LLaMA bin directories to PATH
-export PATH="${PATH}:${TORNADO_SDK}:${LLAMA_ROOT}/bin"
+export PATH="${PATH}:${TORNADO_SDK}:${LLAMA_ROOT}"
 
 # Optional: Set JAVA_HOME if required
 # export JAVA_HOME=/path/to/graalvm

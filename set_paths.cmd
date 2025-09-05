@@ -12,7 +12,7 @@ set "TORNADO_ROOT=%LLAMA_ROOT%\external\tornadovm"
 set "TORNADO_SDK=%TORNADO_ROOT%\bin\sdk"
 
 REM Add TornadoVM SDK and LLaMA3 bin to PATH
-set "PATH=%TORNADO_SDK%;%LLAMA_ROOT%\bin;%PATH%"
+set "PATH=%TORNADO_SDK%;%LLAMA_ROOT%;%PATH%"
 
 REM Optional: Set JAVA_HOME if needed
 REM set "JAVA_HOME=C:\Path\To\GraalVM"
