@@ -103,7 +103,7 @@ public interface Sampler {
         return sampler;
     }
 
-    static Sampler createSampler(Model model, Options options) {
+    public static Sampler createSampler(Model model, Options options) {
         return selectSampler(model.configuration().vocabularySize(), options.temperature(), options.topp(), options.seed());
     }
 
