@@ -30,8 +30,8 @@ import static org.beehive.gpullama3.tokenizer.vocabulary.Vocabulary.loadQwen3Voc
 
 public class Qwen2ModelLoader extends ModelLoader {
 
-    public Qwen2ModelLoader(FileChannel fileChannel, GGUF gguf, int contextLength, boolean loadWeights) {
-        super(fileChannel, gguf, contextLength, loadWeights);
+    public Qwen2ModelLoader(FileChannel fileChannel, GGUF gguf, int contextLength, boolean loadWeights, boolean useTornadovm) {
+        super(fileChannel, gguf, contextLength, loadWeights, useTornadovm);
     }
 
     @Override
@@ -96,7 +96,7 @@ public class Qwen2ModelLoader extends ModelLoader {
         GGMLTensorEntry tokenEmbeddings = tensorEntries.get("token_embd.weight");
         GGMLTensorEntry outputWeight = tensorEntries.getOrDefault("output.weight", tokenEmbeddings);
 
-        if (Options.getDefaultOptions().useTornadovm()) {
+        if (useTornadovm) {
             if (TornadoVMMasterPlan.ENABLE_TORNADOVM_INIT_TIME) {
                 System.out.println("Loading model weights in TornadoVM format (loading " + outputWeight.ggmlType() + " -> " + GGMLType.F16 + ")");
             }

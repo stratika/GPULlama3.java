@@ -17,8 +17,8 @@ import java.util.Map;
 
 public class LlamaModelLoader extends ModelLoader {
 
-    public LlamaModelLoader(FileChannel fileChannel, GGUF gguf, int contextLength, boolean loadWeights) {
-        super(fileChannel, gguf, contextLength, loadWeights);
+    public LlamaModelLoader(FileChannel fileChannel, GGUF gguf, int contextLength, boolean loadWeights, boolean useTornadoVM) {
+        super(fileChannel, gguf, contextLength, loadWeights, useTornadoVM);
     }
 
     // @formatter:off

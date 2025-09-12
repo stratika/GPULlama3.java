@@ -24,55 +24,55 @@ import java.nio.channels.FileChannel;
 public enum ModelType {
     LLAMA_3 {
         @Override
-        public Model loadModel(FileChannel fileChannel, GGUF gguf, int contextLength, boolean loadWeights) {
-            return new LlamaModelLoader(fileChannel, gguf, contextLength, loadWeights).loadModel();
+        public Model loadModel(FileChannel fileChannel, GGUF gguf, int contextLength, boolean loadWeights, boolean useTornadovm) {
+            return new LlamaModelLoader(fileChannel, gguf, contextLength, loadWeights, useTornadovm).loadModel();
         }
     },
 
     MISTRAL {
         @Override
-        public Model loadModel(FileChannel fileChannel, GGUF gguf, int contextLength, boolean loadWeights) {
-            return new MistralModelLoader(fileChannel, gguf, contextLength, loadWeights).loadModel();
+        public Model loadModel(FileChannel fileChannel, GGUF gguf, int contextLength, boolean loadWeights, boolean useTornadovm) {
+            return new MistralModelLoader(fileChannel, gguf, contextLength, loadWeights, useTornadovm).loadModel();
         }
     },
 
     QWEN_2 {
         @Override
-        public Model loadModel(FileChannel fileChannel, GGUF gguf, int contextLength, boolean loadWeights) {
-            return new Qwen2ModelLoader(fileChannel, gguf, contextLength, loadWeights).loadModel();
+        public Model loadModel(FileChannel fileChannel, GGUF gguf, int contextLength, boolean loadWeights, boolean useTornadovm) {
+            return new Qwen2ModelLoader(fileChannel, gguf, contextLength, loadWeights, useTornadovm).loadModel();
         }
     },
 
     QWEN_3 {
         @Override
-        public Model loadModel(FileChannel fileChannel, GGUF gguf, int contextLength, boolean loadWeights) {
-            return new Qwen3ModelLoader(fileChannel, gguf, contextLength, loadWeights).loadModel();
+        public Model loadModel(FileChannel fileChannel, GGUF gguf, int contextLength, boolean loadWeights, boolean useTornadovm) {
+            return new Qwen3ModelLoader(fileChannel, gguf, contextLength, loadWeights, useTornadovm).loadModel();
         }
     },
 
     DEEPSEEK_R1_DISTILL_QWEN {
         @Override
-        public Model loadModel(FileChannel fileChannel, GGUF gguf, int contextLength, boolean loadWeights) {
-            return new Qwen2ModelLoader(fileChannel, gguf, contextLength, loadWeights).loadModel();
+        public Model loadModel(FileChannel fileChannel, GGUF gguf, int contextLength, boolean loadWeights, boolean useTornadovm) {
+            return new Qwen2ModelLoader(fileChannel, gguf, contextLength, loadWeights, useTornadovm).loadModel();
         }
     },
 
     PHI_3 {
         @Override
-        public Model loadModel(FileChannel fileChannel, GGUF gguf, int contextLength, boolean loadWeights) {
-            return new Phi3ModelLoader(fileChannel, gguf, contextLength, loadWeights).loadModel();
+        public Model loadModel(FileChannel fileChannel, GGUF gguf, int contextLength, boolean loadWeights, boolean useTornadovm) {
+            return new Phi3ModelLoader(fileChannel, gguf, contextLength, loadWeights, useTornadovm).loadModel();
         }
     },
 
     UNKNOWN {
         @Override
-        public Model loadModel(FileChannel fileChannel, GGUF gguf, int contextLength, boolean loadWeights) {
+        public Model loadModel(FileChannel fileChannel, GGUF gguf, int contextLength, boolean loadWeights, boolean useTornadovm) {
             throw new UnsupportedOperationException("Cannot load unknown model type");
         }
     };
 
     // Abstract method that each enum constant must implement
-    public abstract Model loadModel(FileChannel fileChannel, GGUF gguf, int contextLength, boolean loadWeights);
+    public abstract Model loadModel(FileChannel fileChannel, GGUF gguf, int contextLength, boolean loadWeights, boolean useTornadovm);
 
     public boolean isDeepSeekR1() {
         return this == DEEPSEEK_R1_DISTILL_QWEN;
