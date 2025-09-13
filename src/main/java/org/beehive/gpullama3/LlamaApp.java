@@ -130,7 +130,7 @@ public class LlamaApp {
             }
             return model;
         }
-        return ModelLoader.loadModel(options.modelPath(), options.maxTokens(), true);
+        return ModelLoader.loadModel(options.modelPath(), options.maxTokens(), true, options.useTornadovm());
     }
 
     private static Sampler createSampler(Model model, Options options) {

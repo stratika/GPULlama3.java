@@ -39,12 +39,14 @@ public abstract class ModelLoader {
     protected GGUF gguf;
     protected int contextLength;
     protected boolean loadWeights;
+    protected boolean useTornadovm;
 
-    public ModelLoader(FileChannel fileChannel, GGUF gguf, int contextLength, boolean loadWeights) {
+    public ModelLoader(FileChannel fileChannel, GGUF gguf, int contextLength, boolean loadWeights, boolean useTornadovm) {
         this.fileChannel = fileChannel;
         this.gguf = gguf;
         this.contextLength = contextLength;
         this.loadWeights = loadWeights;
+        this.useTornadovm = useTornadovm;
     }
 
     private static ModelType detectModelType(Map<String, Object> metadata) {
@@ -74,14 +76,14 @@ public abstract class ModelLoader {
         return ModelType.UNKNOWN;
     }
 
-    public static Model loadModel(Path ggufPath, int contextLength, boolean loadWeights) throws IOException {
+    public static Model loadModel(Path ggufPath, int contextLength, boolean loadWeights, boolean useTornadovm) throws IOException {
         // initial load of metadata from gguf file
         GGUF gguf = GGUF.loadModel(ggufPath);
         FileChannel fileChannel = FileChannel.open(ggufPath, StandardOpenOption.READ);
         // detect model type
         ModelType modelType = detectModelType(gguf.getMetadata());
         // model type-specific load
-        return modelType.loadModel(fileChannel, gguf, contextLength, loadWeights);
+        return modelType.loadModel(fileChannel, gguf, contextLength, loadWeights, useTornadovm);
     }
 
     public static FloatTensor loadQuantized(GGMLTensorEntry entry) {
@@ -222,7 +224,7 @@ public abstract class ModelLoader {
         GGMLTensorEntry tokenEmbeddings = tensorEntries.get("token_embd.weight");
         GGMLTensorEntry outputWeight = tensorEntries.getOrDefault("output.weight", tokenEmbeddings);
 
-        if (Options.getDefaultOptions().useTornadovm()) {
+        if (useTornadovm) {
             if (TornadoVMMasterPlan.ENABLE_TORNADOVM_INIT_TIME) {
                 System.out.println("Loading model weights in TornadoVM format (loading " + outputWeight.ggmlType() + " -> " + GGMLType.F16 + ")");
             }

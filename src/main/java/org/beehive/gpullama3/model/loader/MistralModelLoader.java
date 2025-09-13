@@ -17,8 +17,8 @@ import java.util.Map;
 
 public class MistralModelLoader extends ModelLoader {
 
-    public MistralModelLoader(FileChannel fileChannel, GGUF gguf, int contextLength, boolean loadWeights) {
-        super(fileChannel, gguf, contextLength, loadWeights);
+    public MistralModelLoader(FileChannel fileChannel, GGUF gguf, int contextLength, boolean loadWeights, boolean useTornadovm) {
+        super(fileChannel, gguf, contextLength, loadWeights, useTornadovm);
     }
 
     // @formatter:off

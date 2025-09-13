@@ -27,8 +27,8 @@ import java.nio.channels.FileChannel;
 import java.util.Map;
 
 public class Phi3ModelLoader extends ModelLoader {
-    public Phi3ModelLoader(FileChannel fileChannel, GGUF gguf, int contextLength, boolean loadWeights) {
-        super(fileChannel, gguf, contextLength, loadWeights);
+    public Phi3ModelLoader(FileChannel fileChannel, GGUF gguf, int contextLength, boolean loadWeights, boolean useTornadovm) {
+        super(fileChannel, gguf, contextLength, loadWeights, useTornadovm);
     }
 
     // @formatter:off
@@ -98,7 +98,7 @@ public class Phi3ModelLoader extends ModelLoader {
         GGMLTensorEntry tokenEmbeddings = tensorEntries.get("token_embd.weight");
         GGMLTensorEntry outputWeight = tensorEntries.get("output.weight"); // Phi3 always has separate output weight
 
-        if (Options.getDefaultOptions().useTornadovm()) {
+        if (useTornadovm) {
             if (TornadoVMMasterPlan.ENABLE_TORNADOVM_INIT_TIME) {
                 System.out.println("Loading model weights in TornadoVM format (loading " + outputWeight.ggmlType() + " -> " + GGMLType.F16 + ")");
             }
