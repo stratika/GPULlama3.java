@@ -1,6 +1,5 @@
 package org.beehive.gpullama3.model;
 
-import dev.langchain4j.model.chat.request.ChatRequest;
 import org.beehive.gpullama3.Options;
 import org.beehive.gpullama3.auxiliary.LastRunMetrics;
 import org.beehive.gpullama3.inference.sampler.Sampler;
