@@ -171,7 +171,7 @@ class LlamaRunner:
         module_config.extend(
             [
                 "-cp",
-                f"{self.llama_root}/target/gpu-llama3-2.0-SNAPSHOT.jar",
+                f"{self.llama_root}/target/gpu-llama3-2.1.0-SNAPSHOT.jar",
                 "org.beehive.gpullama3.LlamaApp",
             ]
         )
