@@ -5,6 +5,7 @@ Run LLM models using either OpenCL or PTX backends.
 """
 
 import argparse
+import glob
 import os
 import subprocess
 import sys
@@ -171,13 +172,31 @@ class LlamaRunner:
         module_config.extend(
             [
                 "-cp",
-                f"{self.llama_root}/target/gpu-llama3-2.1.0-SNAPSHOT.jar",
+                self._find_llama_jar(),
                 "org.beehive.gpullama3.LlamaApp",
             ]
         )
         cmd.extend(module_config)
 
         return cmd
+
+    def _find_llama_jar(self) -> str:
+        """Find the LLaMA JAR file automatically using glob pattern."""
+        target_dir = f"{self.llama_root}/target"
+        jar_pattern = f"{target_dir}/gpu-llama3-*-SNAPSHOT.jar"
+        jar_files = glob.glob(jar_pattern)
+
+        if not jar_files:
+            # Fallback: try any gpu-llama3 jar
+            jar_pattern = f"{target_dir}/gpu-llama3-*.jar"
+            jar_files = glob.glob(jar_pattern)
+
+        if not jar_files:
+            raise FileNotFoundError(f"No gpu-llama3 JAR file found in {target_dir}")
+
+        # Sort to get the latest version if multiple exist
+        jar_files.sort(reverse=True)
+        return jar_files[0]
 
     def _add_llama_args(self, cmd: List[str], args: argparse.Namespace) -> List[str]:
         """Add LLaMA-specific arguments to the command."""
