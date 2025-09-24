@@ -25,7 +25,7 @@ public record Options(Path modelPath, String prompt, String systemPrompt, String
     }
 
     private static boolean getDefaultTornadoVM() {
-        return Boolean.parseBoolean(System.getProperty("use.tornadovm", "true"));
+        return Boolean.parseBoolean(System.getProperty("use.tornadovm", "false"));
     }
 
     static void printUsage(PrintStream out) {
