@@ -4,18 +4,17 @@ import org.beehive.gpullama3.auxiliary.Parallel;
 import org.beehive.gpullama3.core.model.tensor.FloatTensor;
 import org.beehive.gpullama3.inference.state.Phi3State;
 import org.beehive.gpullama3.inference.state.State;
-import org.beehive.gpullama3.inference.weights.standard.Qwen2StandardWeights;
 import org.beehive.gpullama3.inference.weights.standard.Phi3StandardWeights;
+import org.beehive.gpullama3.inference.weights.standard.Qwen2StandardWeights;
 import org.beehive.gpullama3.inference.weights.standard.Qwen3StandardWeights;
 import org.beehive.gpullama3.inference.weights.standard.StandardWeights;
 import org.beehive.gpullama3.inference.weights.tornado.TornadoWeights;
 import org.beehive.gpullama3.model.Configuration;
 import org.beehive.gpullama3.model.Model;
-import org.beehive.gpullama3.model.qwen2.Qwen2Configuration;
 import org.beehive.gpullama3.model.phi3.Phi3Configuration;
+import org.beehive.gpullama3.model.qwen2.Qwen2Configuration;
 import org.beehive.gpullama3.model.qwen3.Qwen3Configuration;
 import org.beehive.gpullama3.tornadovm.TornadoVMMasterPlan;
-
 import uk.ac.manchester.tornado.api.types.arrays.FloatArray;
 
 import java.lang.foreign.MemorySegment;
@@ -218,9 +217,9 @@ public final class InferenceCore {
                     for (int vi = 0; vi < rotn; vi++) {
                         FloatTensor vec = (vi == 0) ? state.q : state.k; // the vector to rotate (query or key)
                         float v0 = vec.getFloat(poffset + ic);
-                        float v1 = vec.getFloat(poffset + ic + headSize/2);
+                        float v1 = vec.getFloat(poffset + ic + headSize / 2);
                         vec.setFloat(poffset + ic, v0 * fcr - v1 * fci);
-                        vec.setFloat(poffset + ic + headSize/2, v0 * fci + v1 * fcr);
+                        vec.setFloat(poffset + ic + headSize / 2, v0 * fci + v1 * fcr);
                     }
                 }
             }
@@ -231,7 +230,7 @@ public final class InferenceCore {
             state.v.copyTo(0, state.valueCache[curLayer], position * kvDim, kvDim);
 
             // multihead attention. iterate over all heads
-            Parallel.parallelFor(0,  config.numberOfHeads(), h -> {
+            Parallel.parallelFor(0, config.numberOfHeads(), h -> {
                 // get the query vector for this head
                 // float* q = s.q + h * headSize;
                 int qOffset = h * headSize;
@@ -584,7 +583,7 @@ public final class InferenceCore {
         final Configuration configuration = model.configuration();
         final TornadoWeights weights = (TornadoWeights) model.weights();
 
-        MemorySegment.copy(weights.tokenEmbeddingTable.getSegment(), token * configuration.dim() * Float.BYTES, state.wrapX.getSegment(), 0, configuration.dim() * Float.BYTES);
+        MemorySegment.copy(weights.tokenEmbeddingTable.getSegment(), (long) token * configuration.dim() * Float.BYTES, state.wrapX.getSegment(), 0, configuration.dim() * Float.BYTES);
 
         return tornadoVMMasterPlan.tornadoVMForwardExecuteLayered(position);
     }
