@@ -2,10 +2,7 @@ package org.beehive.gpullama3.model.format;
 
 import org.beehive.gpullama3.tokenizer.impl.Qwen3Tokenizer;
 
-import java.util.ArrayList;
-import java.util.List;
-import java.util.Map;
-import java.util.Set;
+import java.util.*;
 
 /**
  * Utility tailored for the Chat Markup Language (ChatML) prompt format.
@@ -42,9 +39,9 @@ public class Qwen3ChatFormat implements ChatFormat {
         this.imStart = startHeader;
         this.imEnd = endHeader;
 
-        fimPrefix = specialTokens.getOrDefault("<|fim_prefix|>", -1);
-        fimSuffix = specialTokens.getOrDefault("<|fim_suffix|>", -1);
-        fimMiddle = specialTokens.getOrDefault("<|fim_middle|>", -1);
+        this.fimPrefix = specialTokens.getOrDefault("<|fim_prefix|>", -1);
+        this.fimSuffix = specialTokens.getOrDefault("<|fim_suffix|>", -1);
+        this.fimMiddle = specialTokens.getOrDefault("<|fim_middle|>", -1);
     }
 
     public ChatTokens chatTokens() {
@@ -66,7 +63,7 @@ public class Qwen3ChatFormat implements ChatFormat {
                 default -> null;
             };
             if (sToken != null) {
-                Integer token = tokenizer.getSpecialTokens().get("<｜User｜>");
+                Integer token = tokenizer.getSpecialTokens().get(sToken);
                 if (token == null) {
                     throw new IllegalStateException(String.format("Unknown token '%s'", sToken));
                 }
@@ -80,9 +77,11 @@ public class Qwen3ChatFormat implements ChatFormat {
         } else if (Role.FIM_MIDDLE.equals(message.role())) {
             tokens.add(fimMiddle);
         } else {
+            // Add the special token directly, don't try to encode it
             tokens.add(imStart);
-            tokens.addAll(this.tokenizer.encodeAsList(message.role().name()));
-            tokens.addAll(this.tokenizer.encodeAsList("\n"));
+            // Encode the role name as ordinary text (no special tokens in role names)
+            tokens.addAll(this.tokenizer.encodeOrdinaryAsList(message.role().name()));
+            tokens.addAll(this.tokenizer.encodeOrdinaryAsList("\n"));
         }
         return tokens;
     }
@@ -90,9 +89,11 @@ public class Qwen3ChatFormat implements ChatFormat {
     @Override
     public List<Integer> encodeMessage(Message message) {
         List<Integer> tokens = this.encodeHeader(message);
-        tokens.addAll(this.tokenizer.encodeAsList(message.content().strip()));
+        // Encode message content as ordinary text
+        tokens.addAll(this.tokenizer.encodeOrdinaryAsList(message.content().strip()));
         boolean isFim = Role.FIM_PREFIX.equals(message.role()) || Role.FIM_SUFFIX.equals(message.role()) || Role.FIM_MIDDLE.equals(message.role());
         if (imEnd != -1 && !isFim) {
+            // Add the end token directly
             tokens.add(imEnd);
         }
         return tokens;
@@ -108,9 +109,19 @@ public class Qwen3ChatFormat implements ChatFormat {
         if (imEnd == -1 && endOfText == -1) {
             throw new IllegalStateException("No stop token is defined.");
         }
-        if (imEnd == -1) {
-            return Set.of(endOfText);
+
+        // Only add valid token IDs (not -1)
+        Set<Integer> stopTokens = new HashSet<>();
+        if (imEnd != -1) {
+            stopTokens.add(imEnd);
         }
-        return Set.of(imEnd, endOfText, endOfTextFim);
+        if (endOfText != -1) {
+            stopTokens.add(endOfText);
+        }
+        if (endOfTextFim != -1) {
+            stopTokens.add(endOfTextFim);
+        }
+
+        return stopTokens;
     }
 }
