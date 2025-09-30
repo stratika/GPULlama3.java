@@ -271,10 +271,26 @@ public class Qwen3Tokenizer implements Tokenizer {
     }
     // @formatter:on
 
+    /**
+     * Encode text as ordinary tokens (no special token handling)
+     */
+    public List<Integer> encodeOrdinaryAsList(String text) {
+        // First convert to byte-encoded unicode representation
+        StringBuilder sb = new StringBuilder();
+        byte[] bytes = text.getBytes(StandardCharsets.UTF_8);
+        for (byte b : bytes) {
+            sb.appendCodePoint(BYTE_ENCODER.get(Byte.toUnsignedInt(b)));
+        }
+        // Then encode using BPE
+        return encodeOrdinary(sb.toString());
+    }
+
     @Override
     public List<Integer> encodeAsList(String text) {
         return Arrays.stream(encode(text)).boxed().toList();
     }
+
+
 
     public String decodeImpl(List<Integer> tokens) {
         StringBuilder sb = new StringBuilder();
