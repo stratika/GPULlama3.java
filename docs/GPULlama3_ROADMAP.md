@@ -1,13 +1,14 @@
 ### 🚧 Work-in-progress Features
 
-- [ ] **LangChain4j integration**
+- [Pending Merge] **LangChain4j integration**
 - [ ] **Additional quantization formats**
   - [ ] Q8 
   - [ ] Q4
   - [ ] INT8 native support for GPUs
 - [ ] **Additional architectures and model format**
   - [x] Mistral/Mixtral models
-  - [ ] Qwen
+  - [x] Qwen
+  - [x] Phi-3
   - [ ] Gemma/Gemma2 models
   - [ ] TinyLlamas
   - [ ] SafeTensors format
