@@ -5,6 +5,7 @@
 ![CUDA](https://img.shields.io/badge/CUDA/PTX-supported-76B900?style=for-the-badge&logo=nvidia)
 [![Docker OpenCL](https://img.shields.io/badge/Docker-OpenCL-2496ED?style=for-the-badge&logo=docker&logoColor=white)](https://hub.docker.com/r/beehivelab/gpullama3.java-nvidia-openjdk-opencl)
 [![Docker PTX](https://img.shields.io/badge/Docker-PTX-2496ED?style=for-the-badge&logo=docker&logoColor=white)](https://hub.docker.com/r/beehivelab/gpullama3.java-nvidia-openjdk-ptx)
+[![Maven Central](https://img.shields.io/maven-central/v/io.github.beehive-lab/gpu-llama3?style=for-the-badge&logo=apache-maven&color=blue)](https://central.sonatype.com/artifact/io.github.beehive-lab/gpu-llama3)
 [![GPULlama3.java DeepWiki](https://deepwiki.com/badge.svg)](https://deepwiki.com/beehive-lab/GPULlama3.java)
 
 -----------
@@ -158,6 +159,17 @@ make
 python llama-tornado --gpu  --verbose-init --opencl --model beehive-llama-3.2-1b-instruct-fp16.gguf --prompt "tell me a joke"
 ```
 -----------
+## 📦 Maven Dependency
+
+You can add **GPULlama3.java** directly to your Maven project by including the following dependency in your `pom.xml`:
+
+```xml
+<dependency>
+    <groupId>io.github.beehive-lab</groupId>
+    <artifactId>gpu-llama3</artifactId>
+    <version>0.2.2</version>
+</dependency>
+```
 
 ## ☕ Integration with Your Java Codebase or Tools
 
