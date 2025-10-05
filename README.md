@@ -3,9 +3,13 @@
 ![TornadoVM](https://img.shields.io/badge/TornadoVM-enabled-green?style=for-the-badge&logo=apache)
 ![OpenCL](https://img.shields.io/badge/OpenCL-supported-blue?style=for-the-badge&logo=khronos)
 ![CUDA](https://img.shields.io/badge/CUDA/PTX-supported-76B900?style=for-the-badge&logo=nvidia)
+
+
 [![Docker OpenCL](https://img.shields.io/badge/Docker-OpenCL-2496ED?style=for-the-badge&logo=docker&logoColor=white)](https://hub.docker.com/r/beehivelab/gpullama3.java-nvidia-openjdk-opencl)
 [![Docker PTX](https://img.shields.io/badge/Docker-PTX-2496ED?style=for-the-badge&logo=docker&logoColor=white)](https://hub.docker.com/r/beehivelab/gpullama3.java-nvidia-openjdk-ptx)
 [![Maven Central](https://img.shields.io/maven-central/v/io.github.beehive-lab/gpu-llama3?style=for-the-badge&logo=apache-maven&color=blue)](https://central.sonatype.com/artifact/io.github.beehive-lab/gpu-llama3)
+
+[![LangChain4j](https://img.shields.io/badge/LangChain4j-1.7.1+-purple?style=for-the-badge&logo=link&logoColor=white)](https://docs.langchain4j.dev/)
 [![GPULlama3.java DeepWiki](https://deepwiki.com/badge.svg)](https://deepwiki.com/beehive-lab/GPULlama3.java)
 
 -----------
@@ -26,6 +30,26 @@ Previous integration of TornadoVM and Llama2 it can be found in <a href="https:/
 </tr>
 </table>
 
+-----------
+## <img src="https://github.com/user-attachments/assets/51b76554-0b01-4e18-a567-600901ab8c5f" alt="LangChain4j" height="38" style="vertical-align: middle; margin-right: 8px;"> Integration with LangChain4j
+
+Since **LangChain4j v1.7.1**, `GPULlama3.java` is officially supported as a **model provider**.  
+This means you can directly use *GPULlama3.java* inside your LangChain4j applications without extra glue code, just run on your GPU.
+
+📖 Learn more: [LangChain4j Documentation](https://docs.langchain4j.dev/)
+
+[Example agentic workflows with GPULlama3.java + LangChain4j 🚀](https://github.com/mikepapadim/devoxx25-demo-gpullama3-langchain4j/tree/main)
+
+How to use:
+```java
+GPULlama3ChatModel model = GPULlama3ChatModel.builder()
+        .modelPath(modelPath)
+        .temperature(0.9)       // more creative
+        .topP(0.9)              // more variety
+        .maxTokens(2048)
+        .onGPU(Boolean.TRUE) // if false, runs on CPU though a lightweight implementation of llama3.java
+        .build();
+```
 -----------
 #### **[Interactive-mode]** Running on a RTX 5090 with nvtop on bottom to track GPU utilization and memory usage.
 
