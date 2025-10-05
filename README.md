@@ -7,9 +7,10 @@
 
 [![Docker OpenCL](https://img.shields.io/badge/Docker-OpenCL-2496ED?style=for-the-badge&logo=docker&logoColor=white)](https://hub.docker.com/r/beehivelab/gpullama3.java-nvidia-openjdk-opencl)
 [![Docker PTX](https://img.shields.io/badge/Docker-PTX-2496ED?style=for-the-badge&logo=docker&logoColor=white)](https://hub.docker.com/r/beehivelab/gpullama3.java-nvidia-openjdk-ptx)
-[![Maven Central](https://img.shields.io/maven-central/v/io.github.beehive-lab/gpu-llama3?style=for-the-badge&logo=apache-maven&color=blue)](https://central.sonatype.com/artifact/io.github.beehive-lab/gpu-llama3)
+
 
 [![LangChain4j](https://img.shields.io/badge/LangChain4j-1.7.1+-purple?style=for-the-badge&logo=link&logoColor=white)](https://docs.langchain4j.dev/)
+[![Maven Central](https://img.shields.io/maven-central/v/io.github.beehive-lab/gpu-llama3?style=for-the-badge&logo=apache-maven&color=blue)](https://central.sonatype.com/artifact/io.github.beehive-lab/gpu-llama3)
 [![GPULlama3.java DeepWiki](https://deepwiki.com/badge.svg)](https://deepwiki.com/beehive-lab/GPULlama3.java)
 
 -----------
