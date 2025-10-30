@@ -1,6 +1,9 @@
 # Simple Makefile for Maven build without tests
 .PHONY: build clean package help
 
+# Maven wrapper
+MVN = ./mvnw
+
 # Default target
 all: package
 
@@ -9,16 +12,16 @@ build: clean package
 
 # Clean the project
 clean:
-	mvn clean
+	$(MVN) clean
 
 # Package the project without running tests
 package:
-	mvn package -DskipTests
+	$(MVN) package -DskipTests
 
 
 # Combined clean and package
 package-with-clean:
-	mvn clean package -DskipTests
+	$(MVN) clean package -DskipTests
 
 # Display help
 help:
