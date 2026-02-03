@@ -13,6 +13,7 @@ public class LlamaApp {
     // Configuration flags for hardware acceleration and optimizations
     public static final boolean USE_VECTOR_API = Boolean.parseBoolean(System.getProperty("llama.VectorAPI", "true"));   // Enable Java Vector API for CPU acceleration
     public static final boolean SHOW_PERF_INTERACTIVE = Boolean.parseBoolean(System.getProperty("llama.ShowPerfInteractive", "true")); // Show performance metrics in interactive mode
+    public static final boolean PERSIST_DATA_ON_DEVICE = Boolean.parseBoolean(System.getProperty("llama.PersistDataOnDevice", "true")); // Keep activation data on GPU between layers (vs explicit host/device transfers)
 
     private static void runSingleInstruction(Model model, Sampler sampler, Options options) {
         String response = model.runInstructOnce(sampler, options);

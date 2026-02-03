@@ -1,5 +1,7 @@
 package org.beehive.gpullama3.tornadovm.layers.type.q8_0;
 
+import static org.beehive.gpullama3.LlamaApp.PERSIST_DATA_ON_DEVICE;
+
 import org.beehive.gpullama3.inference.state.State;
 import org.beehive.gpullama3.inference.weights.Weights;
 import org.beehive.gpullama3.inference.weights.tornado.Qwen2TornadoWeights;
@@ -48,7 +50,11 @@ public class LogitsQ8_0Layer extends AbstractLayer {
     private TaskGraph setupLogitsTaskGraph(TornadoWeights weights, Configuration config) {
         var logits = new TaskGraph("logits");
         // === Data Setup ===
-        logits.consumeFromDevice(lastTaskGraphID, state.wrapX);
+        if (PERSIST_DATA_ON_DEVICE) {
+            logits.consumeFromDevice(lastTaskGraphID, state.wrapX);
+        } else {
+            logits.transferToDevice(DataTransferMode.EVERY_EXECUTION, state.wrapX);
+        }
         logits.transferToDevice(DataTransferMode.EVERY_EXECUTION, state.tempLogits);
         logits.transferToDevice(DataTransferMode.FIRST_EXECUTION,
                         context, //

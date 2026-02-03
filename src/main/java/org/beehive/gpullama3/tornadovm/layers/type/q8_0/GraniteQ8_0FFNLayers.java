@@ -1,5 +1,7 @@
 package org.beehive.gpullama3.tornadovm.layers.type.q8_0;
 
+import static org.beehive.gpullama3.LlamaApp.PERSIST_DATA_ON_DEVICE;
+
 import org.beehive.gpullama3.inference.state.GraniteState;
 import org.beehive.gpullama3.inference.state.LlamaState;
 import org.beehive.gpullama3.inference.weights.tornado.GraniteTornadoWeights;
@@ -148,7 +150,11 @@ public class GraniteQ8_0FFNLayers extends AbstractFFNLayers {
         TaskGraph unifiedLayer = new TaskGraph(layerTaskGraphName);
 
         // === Data Setup ===
-        unifiedLayer.consumeFromDevice(state.wrapX);
+        if (PERSIST_DATA_ON_DEVICE) {
+            unifiedLayer.consumeFromDevice(state.wrapX);
+        } else {
+            unifiedLayer.transferToDevice(DataTransferMode.EVERY_EXECUTION, state.wrapX);
+        }
         unifiedLayer.transferToDevice(DataTransferMode.FIRST_EXECUTION,
                 // Copy-in weights per layer for batched-layered layout (Q8 format)
                 weights.rms_att_weightLayered[layerIndex].asFloatArray(),
@@ -255,7 +261,11 @@ public class GraniteQ8_0FFNLayers extends AbstractFFNLayers {
                 config.hiddenDim(), config.dim(), LOCAL_WORK_GROUP_SIZE_ALLOC, config.residualScale());
 
         // Keep activation X on device for next layer
-        unifiedLayer.persistOnDevice(state.wrapX);
+        if (PERSIST_DATA_ON_DEVICE) {
+            unifiedLayer.persistOnDevice(state.wrapX);
+        } else {
+            unifiedLayer.transferToHost(DataTransferMode.EVERY_EXECUTION, state.wrapX);
+        }
 
         return unifiedLayer;
     }

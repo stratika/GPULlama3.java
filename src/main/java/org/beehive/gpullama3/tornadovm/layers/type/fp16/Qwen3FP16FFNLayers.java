@@ -1,5 +1,7 @@
 package org.beehive.gpullama3.tornadovm.layers.type.fp16;
 
+import static org.beehive.gpullama3.LlamaApp.PERSIST_DATA_ON_DEVICE;
+
 import org.beehive.gpullama3.inference.state.Qwen3State;
 import org.beehive.gpullama3.inference.weights.tornado.Qwen3TornadoWeights;
 import org.beehive.gpullama3.model.qwen3.Qwen3Configuration;
@@ -232,7 +234,11 @@ public class Qwen3FP16FFNLayers extends AbstractFFNLayers {
         var unifiedLayer = new TaskGraph(taskGraphName);
 
         // === Data Setup ===
-        unifiedLayer.consumeFromDevice(state.wrapX);
+        if (PERSIST_DATA_ON_DEVICE) {
+            unifiedLayer.consumeFromDevice(state.wrapX);
+        } else {
+            unifiedLayer.transferToDevice(DataTransferMode.EVERY_EXECUTION, state.wrapX);
+        }
         unifiedLayer.transferToDevice(DataTransferMode.FIRST_EXECUTION,
                 // Attention weights
                 weights.rms_att_weightLayered[layerIndex].asFloatArray(),   // RMS norm weights
@@ -395,8 +401,12 @@ public class Qwen3FP16FFNLayers extends AbstractFFNLayers {
                         weights.w2Layered[layerIndex].asHalfFloatArray(),  // W2 (down)
                         qwen3Config.hiddenDim(),      // input dim
                         qwen3Config.dim(),            // output dim
-                        LOCAL_WORK_GROUP_SIZE_ALLOC)
-                .persistOnDevice(qwen3State.wrapX);
+                        LOCAL_WORK_GROUP_SIZE_ALLOC);
+        if (PERSIST_DATA_ON_DEVICE) {
+            unifiedLayer.persistOnDevice(qwen3State.wrapX);
+        } else {
+            unifiedLayer.transferToHost(DataTransferMode.EVERY_EXECUTION, qwen3State.wrapX);
+        }
 
         return unifiedLayer;
     }

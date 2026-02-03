@@ -1,5 +1,7 @@
 package org.beehive.gpullama3.tornadovm.layers.type.fp16;
 
+import static org.beehive.gpullama3.LlamaApp.PERSIST_DATA_ON_DEVICE;
+
 import org.beehive.gpullama3.inference.state.Qwen2State;
 import org.beehive.gpullama3.inference.weights.tornado.Qwen2TornadoWeights;
 import org.beehive.gpullama3.model.qwen2.Qwen2Configuration;
@@ -238,7 +240,11 @@ public class Qwen2FP16FFNLayers extends AbstractFFNLayers {
     TaskGraph setupSingleQwen2FFNLayer(Qwen2TornadoWeights weights, int layerIndex) {
         var taskGraphName = "layer_" + layerIndex;
         TaskGraph unifiedLayer = new TaskGraph(taskGraphName);
-        unifiedLayer.consumeFromDevice(state.wrapX);
+        if (PERSIST_DATA_ON_DEVICE) {
+            unifiedLayer.consumeFromDevice(state.wrapX);
+        } else {
+            unifiedLayer.transferToDevice(DataTransferMode.EVERY_EXECUTION, state.wrapX);
+        }
         unifiedLayer.transferToDevice(DataTransferMode.FIRST_EXECUTION,
                 // Attention weights
                 weights.rms_att_weightLayered[layerIndex].asFloatArray(),
@@ -402,8 +408,12 @@ public class Qwen2FP16FFNLayers extends AbstractFFNLayers {
                         weights.w2Layered[layerIndex].asHalfFloatArray(),  // W2 (down)
                         config.hiddenDim(),           // input dim
                         config.dim(),                 // output dim
-                        LOCAL_WORK_GROUP_SIZE_ALLOC)
-                .persistOnDevice(state.wrapX);
+                        LOCAL_WORK_GROUP_SIZE_ALLOC);
+        if (PERSIST_DATA_ON_DEVICE) {
+            unifiedLayer.persistOnDevice(state.wrapX);
+        } else {
+            unifiedLayer.transferToHost(DataTransferMode.EVERY_EXECUTION, state.wrapX);
+        }
 
         return unifiedLayer;
     }

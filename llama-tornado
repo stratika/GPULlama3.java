@@ -87,6 +87,9 @@ class LlamaRunner:
         if args.verbose_init:
             cmd.append("-Dllama.EnableTimingForTornadoVMInit=true")
 
+        # Data persistence option (default: true = keep data on GPU between layers)
+        cmd.append(f"-Dllama.PersistDataOnDevice={str(args.persist_data).lower()}")
+
         # Debug options
         debug_config = []
 
@@ -138,6 +141,9 @@ class LlamaRunner:
             "-Dtornado.loop.interchange=true",
             f"-Dtornado.eventpool.maxwaitevents={args.max_wait_events}",
         ]
+        # Add bytecode dump directory if specified
+        if args.dump_bytecodes_dir:
+            tornado_runtime_config.append(f"-Dtornado.dump.bytecodes.dir={args.dump_bytecodes_dir}")
         cmd.extend(tornado_runtime_config)
 
         # Backend-specific configuration
@@ -413,6 +419,19 @@ def create_parser() -> argparse.ArgumentParser:
     hw_group.add_argument("--gpu-memory", default="14GB", help="GPU memory allocation")
     hw_group.add_argument("--heap-min", default="20g", help="Minimum JVM heap size")
     hw_group.add_argument("--heap-max", default="20g", help="Maximum JVM heap size")
+    hw_group.add_argument(
+        "--persist-data",
+        dest="persist_data",
+        action="store_true",
+        default=True,
+        help="Keep activation data on GPU between layers (default: true, better performance)",
+    )
+    hw_group.add_argument(
+        "--no-persist-data",
+        dest="persist_data",
+        action="store_false",
+        help="Transfer data between host and GPU for each layer (slower, useful for debugging)",
+    )
 
     # Debug and profiling
     debug_group = parser.add_argument_group("Debug and Profiling")
@@ -424,6 +443,12 @@ def create_parser() -> argparse.ArgumentParser:
         "--profiler-dump-dir",
         default=None,
         help="Directory for profiler output",
+    )
+    debug_group.add_argument(
+        "--dump-bytecodes-dir",
+        dest="dump_bytecodes_dir",
+        default=None,
+        help="Directory to dump TornadoVM bytecodes (enables bytecode dumping)",
     )
 
     # TornadoVM Execution Verbose options

@@ -1,5 +1,7 @@
 package org.beehive.gpullama3.tornadovm.layers;
 
+import static org.beehive.gpullama3.LlamaApp.PERSIST_DATA_ON_DEVICE;
+
 import org.beehive.gpullama3.inference.state.State;
 import org.beehive.gpullama3.inference.weights.Weights;
 import org.beehive.gpullama3.model.granite.GraniteConfiguration;
@@ -24,21 +26,26 @@ public class ActivationGranite extends Activation {
         KernelContext kernelContext = new KernelContext();
 
         // @formatter:off
+        TaskGraph taskGraph;
         switch (config.quantization()) {
             case "FP16" -> {
-                this.activationUpdate = new TaskGraph(taskGraphHandle)
+                taskGraph = new TaskGraph(taskGraphHandle)
                         .transferToDevice(DataTransferMode.EVERY_EXECUTION, state.embeddingX)
-                        .task("updateX", GraniteKernels::convertFP16toFP32withGraniteScale, kernelContext, (HalfFloatArray) state.embeddingX, state.wrapX,  config.embeddingScale())
-                        .persistOnDevice(state.wrapX);
+                        .task("updateX", GraniteKernels::convertFP16toFP32withGraniteScale, kernelContext, (HalfFloatArray) state.embeddingX, state.wrapX,  config.embeddingScale());
             }
             case "Q8_0" -> {
-                this.activationUpdate = new TaskGraph(taskGraphHandle)
+                taskGraph = new TaskGraph(taskGraphHandle)
                         .transferToDevice(DataTransferMode.EVERY_EXECUTION, state.embeddingX)
-                        .task("updateX", GraniteKernels::convertQ8_0toFP32withGraniteScale, kernelContext, (ByteArray) state.embeddingX, state.wrapX, config.embeddingScale())
-                        .persistOnDevice(state.wrapX);
+                        .task("updateX", GraniteKernels::convertQ8_0toFP32withGraniteScale, kernelContext, (ByteArray) state.embeddingX, state.wrapX, config.embeddingScale());
             }
             default -> throw new UnsupportedOperationException("Unsupported quantization format: " + config.quantization());
         }
+        if (PERSIST_DATA_ON_DEVICE) {
+            taskGraph.persistOnDevice(state.wrapX);
+        } else {
+            taskGraph.transferToHost(DataTransferMode.EVERY_EXECUTION, state.wrapX);
+        }
+        this.activationUpdate = taskGraph;
         // @formatter:on
     }
 

@@ -1,5 +1,7 @@
 package org.beehive.gpullama3.tornadovm.layers.type.fp16;
 
+import static org.beehive.gpullama3.LlamaApp.PERSIST_DATA_ON_DEVICE;
+
 import org.beehive.gpullama3.inference.state.Phi3State;
 import org.beehive.gpullama3.inference.weights.tornado.Phi3TornadoWeights;
 import org.beehive.gpullama3.model.phi3.Phi3Configuration;
@@ -210,7 +212,11 @@ public class Phi3FP16FFNLayers extends AbstractFFNLayers {
     TaskGraph setupSinglePhi3FFNLayer(Phi3TornadoWeights weights, int layerIndex) {
         var taskGraphName = "layer_" + layerIndex;
         var unifiedLayer = new TaskGraph(taskGraphName);
-        unifiedLayer.consumeFromDevice(phi3State.wrapX);
+        if (PERSIST_DATA_ON_DEVICE) {
+            unifiedLayer.consumeFromDevice(phi3State.wrapX);
+        } else {
+            unifiedLayer.transferToDevice(DataTransferMode.EVERY_EXECUTION, phi3State.wrapX);
+        }
         unifiedLayer.transferToDevice(DataTransferMode.FIRST_EXECUTION,
                 // Attention weights
                 weights.rms_att_weightLayered[layerIndex].asFloatArray(),
@@ -324,7 +330,11 @@ public class Phi3FP16FFNLayers extends AbstractFFNLayers {
                 phi3Config.dim(),             // output dim
                 LOCAL_WORK_GROUP_SIZE_ALLOC);
 
-        unifiedLayer.persistOnDevice(phi3State.wrapX);
+        if (PERSIST_DATA_ON_DEVICE) {
+            unifiedLayer.persistOnDevice(phi3State.wrapX);
+        } else {
+            unifiedLayer.transferToHost(DataTransferMode.EVERY_EXECUTION, phi3State.wrapX);
+        }
         return unifiedLayer;
     }
 

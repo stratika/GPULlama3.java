@@ -1,5 +1,7 @@
 package org.beehive.gpullama3.tornadovm.layers.type.fp16;
 
+import static org.beehive.gpullama3.LlamaApp.PERSIST_DATA_ON_DEVICE;
+
 import org.beehive.gpullama3.inference.state.State;
 import org.beehive.gpullama3.inference.weights.Weights;
 import org.beehive.gpullama3.inference.weights.tornado.LlamaTornadoWeights;
@@ -183,7 +185,11 @@ public class LlamaFP16FFNLayers extends AbstractFFNLayers {
         TaskGraph unifiedLayer = new TaskGraph(layerTaskGraphName);
 
         // === Data Setup ===
-        unifiedLayer.consumeFromDevice(state.wrapX);
+        if (PERSIST_DATA_ON_DEVICE) {
+            unifiedLayer.consumeFromDevice(state.wrapX);
+        } else {
+            unifiedLayer.transferToDevice(DataTransferMode.EVERY_EXECUTION, state.wrapX);
+        }
         unifiedLayer.transferToDevice(DataTransferMode.FIRST_EXECUTION,
                 weights.rms_att_weightLayered[layerIndex].asFloatArray(),
                 weights.wqLayered[layerIndex].asHalfFloatArray(),
@@ -285,7 +291,11 @@ public class LlamaFP16FFNLayers extends AbstractFFNLayers {
                 weights.w2Layered[layerIndex].asHalfFloatArray(),
                 config.hiddenDim(), config.dim(), LOCAL_WORK_GROUP_SIZE_ALLOC);
 
-        unifiedLayer.persistOnDevice(state.wrapX);
+        if (PERSIST_DATA_ON_DEVICE) {
+            unifiedLayer.persistOnDevice(state.wrapX);
+        } else {
+            unifiedLayer.transferToHost(DataTransferMode.EVERY_EXECUTION, state.wrapX);
+        }
 
         return unifiedLayer;
     }
